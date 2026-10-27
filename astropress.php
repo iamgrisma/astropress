@@ -93,12 +93,16 @@ function astropress() {
 /**
  * Legacy Global Accessors for Seamless Backward Compatibility
  */
-function r2_by_grisma() {
-    return astropress();
+if (!function_exists('r2_by_grisma')) {
+    function r2_by_grisma() {
+        return astropress();
+    }
 }
 
-function topnepali_headless() {
-    return astropress();
+if (!function_exists('topnepali_headless')) {
+    function topnepali_headless() {
+        return astropress();
+    }
 }
 
 // Bootstrap

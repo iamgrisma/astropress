@@ -320,6 +320,27 @@ class AstroPress_Admin {
         } elseif (!AstroPress_Encryption::has_strong_salts()) {
             echo '<div class="notice notice-warning is-dismissible"><p><strong>AstroPress:</strong> AUTH_KEY / SECURE_AUTH_KEY in wp-config.php are empty or default. Define unique security keys in wp-config.php for maximum encryption security.</p></div>';
         }
+
+        // Check for active legacy standalone plugins that AstroPress unifies
+        if (function_exists('is_plugin_active')) {
+            $legacy_active = array();
+            if (is_plugin_active('r2-by-grisma/r2-by-grisma.php') || (defined('R2G_FILE') && R2G_FILE !== ASTROPRESS_FILE)) {
+                $legacy_active[] = 'R2 by Grisma';
+            }
+            if (is_plugin_active('headless/headless.php') || is_plugin_active('headless/topnepali-headless.php') || (defined('TOPNEPALI_HEADLESS_FILE') && TOPNEPALI_HEADLESS_FILE !== ASTROPRESS_FILE)) {
+                $legacy_active[] = 'TopNepali Headless Engine';
+            }
+
+            if (!empty($legacy_active)) {
+                $deactivate_url = wp_nonce_url(admin_url('admin.php?page=astropress&astropress_deactivate_legacy=1'), 'astropress_deactivate_legacy_nonce');
+                echo '<div class="notice notice-info is-dismissible">';
+                echo '<p><strong>AstroPress Migration Detected:</strong> The following legacy plugin(s) are still active: <em>' . esc_html(implode(', ', $legacy_active)) . '</em>. ';
+                echo 'AstroPress has unified all headless bridge, cache invalidation, and R2 offloading functionality with 100% backward compatibility. ';
+                echo 'All existing settings and media records are automatically preserved. You can safely deactivate the legacy plugins to avoid duplicate background hooks.</p>';
+                echo '<p><a href="' . esc_url($deactivate_url) . '" class="button button-primary">Deactivate Legacy Plugins</a></p>';
+                echo '</div>';
+            }
+        }
     }
 
     /**
@@ -753,6 +774,23 @@ class AstroPress_Admin {
             set_transient('astropress_notice', array(
                 'type'    => 'success',
                 'message' => esc_html__('Triggered global edge cache invalidation across all Cloudflare POPs.', 'astropress'),
+            ), 30);
+            wp_safe_redirect(admin_url('admin.php?page=astropress'));
+            exit;
+        }
+
+        // Deactivate Legacy Plugins Action
+        if (isset($_GET['astropress_deactivate_legacy']) && check_admin_referer('astropress_deactivate_legacy_nonce')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            $legacy_slugs = array(
+                'r2-by-grisma/r2-by-grisma.php',
+                'headless/headless.php',
+                'headless/topnepali-headless.php',
+            );
+            deactivate_plugins($legacy_slugs);
+            set_transient('astropress_notice', array(
+                'type'    => 'success',
+                'message' => esc_html__('Legacy plugins deactivated successfully! AstroPress is now exclusively managing all headless bridge and R2 media operations.', 'astropress'),
             ), 30);
             wp_safe_redirect(admin_url('admin.php?page=astropress'));
             exit;
