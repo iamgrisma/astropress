@@ -1,0 +1,630 @@
+<?php
+/**
+ * Native WordPress Core Plugin Update & Rollback Pipeline via GitHub Releases
+ *
+ * Reliably pulls release assets from GitHub (iamgrisma/astropress) using WordPress Core's
+ * native Plugin_Upgrader sandbox and WP_Filesystem API without hosting false-positive flags.
+ * Supports granular version inspection, automatic background updates, and instant rollback.
+ *
+ * @package AstroPress
+ * @author  Grisma <https://grisma.com.np>
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class AstroPress_Updater {
+    /**
+     * GitHub Repository Information
+     */
+    const GITHUB_OWNER = 'iamgrisma';
+    const GITHUB_REPO  = 'astropress';
+    const PLUGIN_SLUG  = 'astropress';
+
+    /**
+     * Singleton instance
+     *
+     * @var AstroPress_Updater|null
+     */
+    private static $instance = null;
+
+    /**
+     * Cache keys
+     */
+    const TRANSIENT_LATEST   = 'astropress_github_latest_release';
+    const TRANSIENT_RELEASES = 'astropress_github_all_releases';
+
+    /**
+     * Get singleton instance
+     *
+     * @return AstroPress_Updater
+     */
+    public static function instance() {
+        if (is_null(self::$instance)) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    /**
+     * Prevent cloning of the singleton instance
+     */
+    private function __clone() {}
+
+    /**
+     * Constructor
+     */
+    private function __construct() {
+        // Native WordPress Update Pipeline Filters
+        add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_update'));
+        add_filter('site_transient_update_plugins', array($this, 'check_for_update'));
+        add_filter('plugins_api', array($this, 'plugin_popup_info'), 20, 3);
+        add_filter('auto_update_plugin', array($this, 'filter_auto_update_plugin'), 10, 2);
+        add_filter('upgrader_source_selection', array($this, 'fix_unzipped_folder_name'), 10, 4);
+        add_filter('upgrader_package_options', array($this, 'filter_upgrader_package_options'), 10, 1);
+
+        // Admin actions & AJAX
+        if (is_admin()) {
+            add_action('load-update-core.php', array($this, 'on_force_check_page'));
+            add_action('load-plugins.php', array($this, 'on_plugins_page'));
+            add_action('admin_init', array($this, 'handle_manual_check'));
+            add_action('wp_ajax_astropress_check_updates', array($this, 'ajax_check_updates'));
+            add_action('wp_ajax_r2g_check_updates', array($this, 'ajax_check_updates'));
+            add_filter('plugin_auto_update_setting_html', array($this, 'filter_auto_update_html'), 10, 3);
+        }
+    }
+
+    /**
+     * Flush cache immediately when administrator clicks "Check Again" on update-core.php
+     */
+    public function on_force_check_page() {
+        if (!empty($_GET['force-check']) && current_user_can('update_plugins')) {
+            delete_transient(self::TRANSIENT_LATEST);
+            delete_transient(self::TRANSIENT_RELEASES);
+            delete_transient('r2g_github_latest_release');
+            delete_transient('r2g_github_all_releases');
+            $this->get_latest_release(true);
+            $this->get_all_releases(true);
+        }
+    }
+
+    /**
+     * Ensure fresh release info when administrator visits plugins list
+     */
+    public function on_plugins_page() {
+        $latest = get_transient(self::TRANSIENT_LATEST);
+        if ($latest === false && current_user_can('update_plugins')) {
+            $this->get_latest_release(true);
+        }
+    }
+
+    /**
+     * Get plugin basename (e.g., astropress/astropress.php)
+     *
+     * @return string
+     */
+    public function get_plugin_basename() {
+        return plugin_basename(ASTROPRESS_FILE);
+    }
+
+    /**
+     * Hook into WordPress update_plugins transient
+     *
+     * @param object $transient
+     * @return object
+     */
+    public function check_for_update($transient) {
+        if (empty($transient) || !is_object($transient)) {
+            return $transient;
+        }
+
+        if (!isset($transient->response) || !is_array($transient->response)) {
+            $transient->response = array();
+        }
+        if (!isset($transient->no_update) || !is_array($transient->no_update)) {
+            $transient->no_update = array();
+        }
+        if (!isset($transient->checked) || !is_array($transient->checked)) {
+            $transient->checked = array();
+        }
+
+        $plugin_file = $this->get_plugin_basename();
+        $transient->checked[$plugin_file] = ASTROPRESS_VERSION;
+
+        $force = false;
+        if (is_admin() && !empty($_GET['force-check'])) {
+            $force = true;
+        }
+
+        $latest = $this->get_latest_release($force);
+
+        if (empty($latest) || empty($latest['version'])) {
+            return $transient;
+        }
+
+        $item = new stdClass();
+        $item->id           = self::PLUGIN_SLUG;
+        $item->slug         = self::PLUGIN_SLUG;
+        $item->plugin       = $plugin_file;
+        $item->new_version  = $latest['version'];
+        $item->url          = $latest['url'];
+        $item->package      = $latest['package'];
+        $item->tested       = '6.8';
+        $item->requires     = '5.8';
+        $item->requires_php = '7.4';
+        $item->icons        = array();
+        $item->banners      = array();
+
+        // Check if remote version is strictly higher than current
+        if (version_compare(ASTROPRESS_VERSION, $latest['version'], '<')) {
+            $transient->response[$plugin_file] = $item;
+            if (isset($transient->no_update[$plugin_file])) {
+                unset($transient->no_update[$plugin_file]);
+            }
+        } else {
+            $transient->no_update[$plugin_file] = $item;
+            if (isset($transient->response[$plugin_file])) {
+                unset($transient->response[$plugin_file]);
+            }
+        }
+
+        // Also register under known legacy folder keys so WordPress detects updates regardless of directory casing/name
+        $alternate_keys = array(
+            'astropress/astropress.php',
+            'astropress-main/astropress.php',
+            'r2-by-grisma/r2-by-grisma.php',
+            'R2-by-Grisma/r2-by-grisma.php',
+            'topnepali-headless/topnepali-headless.php',
+        );
+        foreach ($alternate_keys as $alt_key) {
+            if ($alt_key !== $plugin_file && (isset($transient->checked[$alt_key]) || isset($transient->response[$alt_key]) || isset($transient->no_update[$alt_key]))) {
+                $alt_item = clone $item;
+                $alt_item->plugin = $alt_key;
+                if (version_compare(ASTROPRESS_VERSION, $latest['version'], '<')) {
+                    $transient->response[$alt_key] = $alt_item;
+                    if (isset($transient->no_update[$alt_key])) {
+                        unset($transient->no_update[$alt_key]);
+                    }
+                } else {
+                    $transient->no_update[$alt_key] = $alt_item;
+                    if (isset($transient->response[$alt_key])) {
+                        unset($transient->response[$alt_key]);
+                    }
+                }
+            }
+        }
+
+        return $transient;
+    }
+
+    /**
+     * Fetch latest release from GitHub API with caching
+     *
+     * @param bool $force
+     * @return array|null
+     */
+    public function get_latest_release($force = false) {
+        if (!$force) {
+            $cached = get_transient(self::TRANSIENT_LATEST);
+            if ($cached !== false && is_array($cached)) {
+                return $cached;
+            }
+        }
+
+        $url = sprintf('https://api.github.com/repos/%s/%s/releases/latest', self::GITHUB_OWNER, self::GITHUB_REPO);
+
+        $response = wp_remote_get($url, array(
+            'timeout'   => 10,
+            'sslverify' => true,
+            'headers'   => array(
+                'Accept'     => 'application/vnd.github.v3+json',
+                'User-Agent' => 'AstroPress-WP/' . ASTROPRESS_VERSION . '; ' . home_url(),
+            ),
+        ));
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            $fallback = get_option('astropress_last_known_latest_release', get_option('r2g_last_known_latest_release', null));
+            if (!empty($fallback) && is_array($fallback)) {
+                return $fallback;
+            }
+            return null;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if (!is_array($data) || empty($data['tag_name'])) {
+            return null;
+        }
+
+        $tag = ltrim($data['tag_name'], 'vV');
+        $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $data['tag_name']);
+
+        // Prioritize custom built astropress.zip in release assets
+        if (!empty($data['assets']) && is_array($data['assets'])) {
+            foreach ($data['assets'] as $asset) {
+                if (isset($asset['name']) && strpos(strtolower($asset['name']), 'astropress') !== false && substr($asset['name'], -4) === '.zip') {
+                    $package_url = $asset['browser_download_url'];
+                    break;
+                }
+            }
+            // If no exact match, take any attached zip asset
+            if (empty($package_url) || strpos($package_url, 'zipball') !== false) {
+                foreach ($data['assets'] as $asset) {
+                    if (isset($asset['browser_download_url']) && substr($asset['browser_download_url'], -4) === '.zip') {
+                        $package_url = $asset['browser_download_url'];
+                        break;
+                    }
+                }
+            }
+        }
+        if (empty($package_url)) {
+            $package_url = $data['zipball_url'] ?? '';
+        }
+
+        $result = array(
+            'version'     => $tag,
+            'tag_name'    => $data['tag_name'],
+            'url'         => $data['html_url'] ?? sprintf('https://github.com/%s/%s', self::GITHUB_OWNER, self::GITHUB_REPO),
+            'package'     => $package_url,
+            'published'   => $data['published_at'] ?? '',
+            'changelog'   => $data['body'] ?? '',
+            'author'      => $data['author']['login'] ?? 'iamgrisma',
+        );
+
+        // Cache for 6 hours
+        set_transient(self::TRANSIENT_LATEST, $result, 6 * HOUR_IN_SECONDS);
+        update_option('astropress_last_known_latest_release', $result, false);
+
+        return $result;
+    }
+
+    /**
+     * Fetch all recent releases for Rollback and Version Inspection
+     *
+     * @param bool $force
+     * @return array
+     */
+    public function get_all_releases($force = false) {
+        if (!$force) {
+            $cached = get_transient(self::TRANSIENT_RELEASES);
+            if ($cached !== false && is_array($cached) && !empty($cached)) {
+                return $cached;
+            }
+        }
+
+        $releases = array();
+        $page = 1;
+
+        do {
+            $url = sprintf('https://api.github.com/repos/%s/%s/releases?per_page=100&page=%d', self::GITHUB_OWNER, self::GITHUB_REPO, $page);
+
+            $response = wp_remote_get($url, array(
+                'timeout'   => 15,
+                'sslverify' => true,
+                'headers'   => array(
+                    'Accept'     => 'application/vnd.github.v3+json',
+                    'User-Agent' => 'AstroPress-WP/' . ASTROPRESS_VERSION . '; ' . home_url(),
+                ),
+            ));
+
+            if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+                break;
+            }
+
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+
+            if (!is_array($data) || empty($data)) {
+                break;
+            }
+
+            foreach ($data as $rel) {
+                if (empty($rel['tag_name']) || !empty($rel['draft'])) {
+                    continue;
+                }
+
+                $tag = ltrim($rel['tag_name'], 'vV');
+                $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $rel['tag_name']);
+
+                if (!empty($rel['assets']) && is_array($rel['assets'])) {
+                    foreach ($rel['assets'] as $asset) {
+                        if (isset($asset['name']) && strpos(strtolower($asset['name']), 'astropress') !== false && substr($asset['name'], -4) === '.zip') {
+                            $package_url = $asset['browser_download_url'];
+                            break;
+                        }
+                    }
+                }
+                if (empty($package_url)) {
+                    $package_url = $rel['zipball_url'] ?? '';
+                }
+
+                $releases[] = array(
+                    'version'     => $tag,
+                    'tag_name'    => $rel['tag_name'],
+                    'url'         => $rel['html_url'] ?? sprintf('https://github.com/%s/%s', self::GITHUB_OWNER, self::GITHUB_REPO),
+                    'package'     => $package_url,
+                    'published'   => $rel['published_at'] ?? '',
+                    'changelog'   => $rel['body'] ?? '',
+                    'author'      => $rel['author']['login'] ?? 'iamgrisma',
+                    'prerelease'  => !empty($rel['prerelease']),
+                );
+            }
+
+            if (count($data) < 100) {
+                break;
+            }
+            $page++;
+        } while ($page <= 5);
+
+        if (!empty($releases)) {
+            // Cache for 6 hours
+            set_transient(self::TRANSIENT_RELEASES, $releases, 6 * HOUR_IN_SECONDS);
+            update_option('astropress_last_known_releases', $releases, false);
+            return $releases;
+        }
+
+        $fallback = get_option('astropress_last_known_releases', get_option('r2g_last_known_releases', array()));
+        if (!empty($fallback) && is_array($fallback)) {
+            return $fallback;
+        }
+
+        return array();
+    }
+
+    /**
+     * Native WordPress Plugin Details Popup (View details)
+     *
+     * @param false|object|array $result
+     * @param string $action
+     * @param object $args
+     * @return false|object
+     */
+    public function plugin_popup_info($result, $action, $args) {
+        if ($action !== 'plugin_information' || empty($args->slug) || ($args->slug !== self::PLUGIN_SLUG && $args->slug !== 'r2-by-grisma')) {
+            return $result;
+        }
+
+        $latest = $this->get_latest_release();
+        if (empty($latest)) {
+            return $result;
+        }
+
+        $res = new stdClass();
+        $res->name          = 'AstroPress - Universal Headless & Cloudflare R2 Suite';
+        $res->slug          = self::PLUGIN_SLUG;
+        $res->version       = $latest['version'];
+        $res->author        = '<a href="https://github.com/' . esc_attr(self::GITHUB_OWNER) . '">' . esc_html($latest['author']) . '</a>';
+        $res->homepage      = $latest['url'];
+        $res->download_link = $latest['package'];
+        $res->tested        = '6.8';
+        $res->requires      = '5.8';
+        $res->requires_php  = '7.4';
+        $res->last_updated  = !empty($latest['published']) ? date_i18n('Y-m-d H:i', strtotime($latest['published'])) : '';
+        $res->sections      = array(
+            'description' => '<p>Universal WordPress Headless Bridge with Cloudflare Pages/Workers Cache Purging, Edge Warmer, Rank Math SEO & Native Cloudflare R2 Media Offloader.</p>',
+            'changelog'   => !empty($latest['changelog']) ? nl2br(esc_html($latest['changelog'])) : '<p>Maintenance and feature updates.</p>',
+        );
+
+        return $res;
+    }
+
+    /**
+     * Fix extracted folder name to strictly 'astropress'
+     *
+     * When GitHub zips are extracted, they often expand to 'iamgrisma-astropress-xyz'
+     * or 'astropress-1.0.0'. This hook renames the folder to 'astropress' so
+     * WordPress does not duplicate or break the plugin path.
+     *
+     * @param string $source
+     * @param string $remote_source
+     * @param WP_Upgrader $upgrader
+     * @param array|null $hook_extra
+     * @return string|WP_Error
+     */
+    public function fix_unzipped_folder_name($source, $remote_source, $upgrader, $hook_extra = null) {
+        global $wp_filesystem;
+
+        // Verify this update is for our plugin
+        $is_target = false;
+        if (!empty($hook_extra['plugin']) && (stripos($hook_extra['plugin'], self::PLUGIN_SLUG) !== false || stripos($hook_extra['plugin'], 'r2-by-grisma') !== false)) {
+            $is_target = true;
+        }
+
+        $proper_folder_name = self::PLUGIN_SLUG;
+        $new_source = trailingslashit($remote_source) . $proper_folder_name . '/';
+
+        // Check if astropress.php or r2-by-grisma.php exists directly in $source
+        if ($wp_filesystem->exists(trailingslashit($source) . 'astropress.php') || $wp_filesystem->exists(trailingslashit($source) . 'r2-by-grisma.php')) {
+            $is_target = true;
+            $actual_source = $source;
+        } else {
+            // Check subdirectories inside $source (handles GitHub repo zipballs or nested zips)
+            $actual_source = null;
+            $dir_list = $wp_filesystem->dirlist($source);
+            if (!empty($dir_list) && is_array($dir_list)) {
+                foreach ($dir_list as $entry) {
+                    if (!empty($entry['type']) && $entry['type'] === 'd') {
+                        $candidate = trailingslashit($source) . $entry['name'];
+                        if ($wp_filesystem->exists($candidate . '/astropress.php') || $wp_filesystem->exists($candidate . '/r2-by-grisma.php')) {
+                            $is_target = true;
+                            $actual_source = $candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!$actual_source) {
+                $actual_source = $source;
+            }
+        }
+
+        if (!$is_target) {
+            return $source;
+        }
+
+        // If actual source already matches target path exactly
+        if (untrailingslashit($actual_source) === untrailingslashit($new_source)) {
+            return $new_source;
+        }
+
+        // Remove existing target directory in temporary remote_source if it exists
+        if ($wp_filesystem->exists($new_source)) {
+            $wp_filesystem->delete($new_source, true);
+        }
+
+        // Move to the exact plugin slug folder
+        $moved = $wp_filesystem->move($actual_source, $new_source, true);
+        if ($moved) {
+            return $new_source;
+        }
+
+        // Fallback: Copy and delete if move failed across filesystem boundaries
+        if ($wp_filesystem->copy_dir($actual_source, $new_source)) {
+            $wp_filesystem->delete($actual_source, true);
+            return $new_source;
+        }
+
+        return $source;
+    }
+
+    /**
+     * Handle custom rollback or specific version package selection in native upgrader
+     *
+     * @param array $options
+     * @return array
+     */
+    public function filter_upgrader_package_options($options) {
+        $target_version = null;
+        if (!empty($_GET['astropress_target_version'])) {
+            $target_version = sanitize_text_field($_GET['astropress_target_version']);
+        } elseif (!empty($_GET['r2g_target_version'])) {
+            $target_version = sanitize_text_field($_GET['r2g_target_version']);
+        }
+
+        $plugin_arg = !empty($_GET['plugin']) ? $_GET['plugin'] : '';
+        if ($target_version && (strpos($plugin_arg, self::PLUGIN_SLUG) !== false || strpos($plugin_arg, 'r2-by-grisma') !== false)) {
+            $tag = (strpos($target_version, 'v') === 0) ? $target_version : 'v' . $target_version;
+
+            // Direct release asset URL
+            $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $tag);
+
+            // Check if cached release metadata has custom package URL
+            $releases = $this->get_all_releases();
+            if (!empty($releases) && is_array($releases)) {
+                foreach ($releases as $rel) {
+                    if ($rel['version'] === $target_version && !empty($rel['package'])) {
+                        $package_url = $rel['package'];
+                        break;
+                    }
+                }
+            }
+
+            $options['package'] = $package_url;
+        }
+
+        return $options;
+    }
+
+    /**
+     * Filter automatic background updates
+     *
+     * @param bool $update
+     * @param object $item
+     * @return bool
+     */
+    public function filter_auto_update_plugin($update, $item) {
+        $plugin_file = $this->get_plugin_basename();
+        if (!empty($item->plugin) && ($item->plugin === $plugin_file || stripos($item->plugin, self::PLUGIN_SLUG) !== false)) {
+            return true;
+        }
+        return $update;
+    }
+
+    /**
+     * Auto-update column label in Plugins list
+     *
+     * @param string $html
+     * @param string $plugin_file
+     * @param array $plugin_data
+     * @return string
+     */
+    public function filter_auto_update_html($html, $plugin_file, $plugin_data) {
+        if ($plugin_file === $this->get_plugin_basename() || stripos($plugin_file, self::PLUGIN_SLUG) !== false) {
+            return '<span class="label" style="color:#007017;font-weight:600;">' . esc_html__('Managed via GitHub Releases', 'astropress') . '</span>';
+        }
+        return $html;
+    }
+
+    /**
+     * Handle manual force check from admin button
+     */
+    public function handle_manual_check() {
+        if ((isset($_GET['astropress_check_updates']) || isset($_GET['r2g_check_updates'])) &&
+            (check_admin_referer('astropress_manual_check_nonce') || check_admin_referer('r2g_manual_check_nonce'))
+        ) {
+            if (!current_user_can('update_plugins')) {
+                wp_die(esc_html__('Unauthorized.', 'astropress'));
+            }
+
+            delete_transient(self::TRANSIENT_LATEST);
+            delete_transient(self::TRANSIENT_RELEASES);
+            delete_transient('r2g_github_latest_release');
+            delete_transient('r2g_github_all_releases');
+            delete_site_transient('update_plugins');
+
+            $this->get_latest_release(true);
+            $this->get_all_releases(true);
+
+            if (function_exists('wp_update_plugins')) {
+                wp_update_plugins();
+            }
+
+            wp_safe_redirect(remove_query_arg(array('astropress_check_updates', 'r2g_check_updates', '_wpnonce')));
+            exit;
+        }
+    }
+
+    /**
+     * AJAX action to check for updates and return release list
+     */
+    public function ajax_check_updates() {
+        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+
+        delete_transient(self::TRANSIENT_LATEST);
+        delete_transient(self::TRANSIENT_RELEASES);
+        delete_site_transient('update_plugins');
+
+        $latest = $this->get_latest_release(true);
+        $all = $this->get_all_releases(true);
+
+        if (function_exists('wp_update_plugins')) {
+            wp_update_plugins();
+        }
+
+        $has_update = false;
+        if (!empty($latest['version'])) {
+            $has_update = version_compare(ASTROPRESS_VERSION, $latest['version'], '<');
+        }
+
+        wp_send_json_success(array(
+            'current_version' => ASTROPRESS_VERSION,
+            'latest_version'  => $latest['version'] ?? ASTROPRESS_VERSION,
+            'has_update'      => $has_update,
+            'latest'          => $latest,
+            'releases'        => $all,
+        ));
+    }
+}
+
+// Register backwards compatibility aliases
+if (!class_exists('R2G_Updater')) {
+    class_alias('AstroPress_Updater', 'R2G_Updater');
+}
+if (!class_exists('TopNepali_Headless_Updater')) {
+    class_alias('AstroPress_Updater', 'TopNepali_Headless_Updater');
+}

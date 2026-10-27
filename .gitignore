@@ -1,0 +1,15 @@
+# System & OS
+.DS_Store
+Thumbs.db
+
+# Archives & Temporary files
+*.zip
+*.tar.gz
+*.bak
+dist/
+vendor/
+node_modules/
+
+# Local credentials & temp logs
+.env
+*.log

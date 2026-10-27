@@ -1,0 +1,127 @@
+# AstroPress
+
+**Universal Headless WordPress & Cloudflare R2 Suite for Astro on Cloudflare Pages and Workers.**
+
+AstroPress seamlessly combines high-performance headless cache invalidation, automated edge cache warming, pure PHP Cloudflare R2 media offloading, on-the-fly WebP/AVIF optimization, Rank Math / Yoast SEO bridge, and a native GitHub core update pipeline into a single, cohesive companion plugin.
+
+---
+
+## 🌟 Key Architecture & Features
+
+### 1. Instant Edge Cache Invalidation & Revalidation Webhook
+- **Event-Driven Purging**: Automatically triggers authenticated revalidation webhooks to your Astro frontend (`/api/revalidate`) when posts, pages, categories, tags, or navigation menus are created, updated, or deleted.
+- **Asynchronous & Non-Blocking**: Dispatches HTTP POST requests via non-blocking sockets (`blocking => false`), guaranteeing zero publishing latency in the WordPress block editor.
+- **LiteSpeed Cache Sync**: Intercepts LiteSpeed Cache purge actions to keep Cloudflare edge caches in lockstep.
+
+### 2. Edge Cache Warmer (Interactive & Background Cron)
+- **Zero SSR Cold Boots**: Pre-warms Cloudflare POP edge caches for recently updated content, top categories, and sitemaps so visitors experience instant 20ms page loads.
+- **Dual Mode**:
+  - **Interactive AJAX Warmer**: Live visual progress bar with granular delay and batch controls.
+  - **Background WP-Cron Warmer**: Runs asynchronously in the background with pause, resume, and cancellation support.
+
+### 3. Pure PHP Cloudflare R2 Offloader (Zero AWS SDK Bloat)
+- **Pure SigV4 Engine**: 100% native PHP AWS Signature Version 4 implementation (< 35KB footprint) without bloated 50MB vendor SDKs.
+- **Dual Storage vs. R2-Only**:
+  - `Dual Storage (Recommended)`: Retains local copies alongside Cloudflare R2 backup.
+  - `R2 Only (Disk Saver)`: Automatically removes local server media upon successful upload to Cloudflare R2 to conserve server disk space.
+- **Live Bucket Discovery**: Discovers and lists R2 buckets under your Cloudflare Account directly inside the admin dashboard.
+- **Custom CDN Domain**: Automatically rewrites media URLs, `srcset` attributes, and post content to your custom public CDN domain (e.g. `media.example.com`).
+
+### 4. Dual-Stage Image Optimizer & Next-Gen Formats
+- **Dual Engine**: reSmush.it cloud compression API as primary offload engine with automatic, seamless fallback to native Server GD / Imagick.
+- **On-the-Fly WebP & AVIF Conversion**: Automatically converts raster images (JPEG, PNG) to lightweight WebP or AVIF format on upload.
+- **Dimensions & EXIF**: Automatically downscales oversized camera photos and strips unnecessary EXIF metadata.
+- **Upload Interceptor**: Optional visual upload interceptor bar with per-upload format selection.
+
+### 5. Rank Math & Yoast SEO Bridge
+- **Rendered `<head>` REST API**: Exposes the fully rendered `<head>` HTML (canonical tags, meta robots, OpenGraph, Twitter Cards, JSON-LD Schema) on `/wp/v2/posts`, `/wp/v2/pages`, and `/wp-json/astropress/v1/head`.
+- **Domain Normalization**: Rewrites internal origin URLs in canonical links, OpenGraph tags, and sitemaps directly to the production Astro domain.
+- **Dynamic Redirection**: Detects Rank Math 301/302 redirects and exposes them via `/wp-json/astropress/v1/redirection?slug=...` for instant edge redirects in Astro middleware.
+- **404 Monitor Log API**: Exposes Rank Math 404 access logs via authenticated REST endpoint for automated monitoring.
+
+### 6. Native GitHub Updates & 1-Click Rollback
+- **Direct GitHub Releases Pipeline**: Automatically checks for updates directly from [iamgrisma/astropress](https://github.com/iamgrisma/astropress) releases (`astropress.zip`).
+- **Core Upgrader Sandbox**: Uses WordPress Core's native `Plugin_Upgrader` sandbox, eliminating false-positive security warnings from hosting providers.
+- **1-Click Rollback**: Switch or rollback to any previous version directly from the admin dashboard.
+
+---
+
+## 🚀 Installation
+
+### Option 1: Native GitHub Release Zip (Recommended)
+1. Download `astropress.zip` from the [Latest Release](https://github.com/iamgrisma/astropress/releases/latest).
+2. In your WordPress admin, go to **Plugins > Add New Plugin > Upload Plugin**.
+3. Choose `astropress.zip` and click **Install Now**.
+4. Activate the plugin and navigate to **AstroPress** in the sidebar.
+
+### Option 2: Git Clone
+```bash
+cd wp-content/plugins
+git clone https://github.com/iamgrisma/astropress.git astropress
+```
+
+---
+
+## 🛠️ Configuration
+
+### 1. Headless Bridge
+- **Astro Frontend URL**: Your production Astro website domain (e.g., `https://example.com`).
+- **Revalidation Secret Key**: Secret token shared between WordPress and Cloudflare Pages/Workers (`REVALIDATE_SECRET`).
+- Click **Test Handshake** to verify live connectivity.
+
+### 2. Cloudflare R2
+- **Cloudflare Account ID**: Found on your Cloudflare dashboard sidebar.
+- **R2 Access Key ID & Secret Access Key**: Generated from Cloudflare R2 > Manage R2 API Tokens.
+- **R2 Bucket Name**: Select from discovered buckets or enter manually.
+- **Custom CDN Domain**: Your custom public domain configured on the R2 bucket (e.g., `media.example.com`).
+
+---
+
+## 🔄 Astro Integration Example
+
+In your Astro project running on Cloudflare Pages or Workers:
+
+```ts
+// src/pages/api/revalidate.ts
+import type { APIRoute } from 'astro';
+
+export const POST: APIRoute = async ({ request, locals }) => {
+  const secret = request.headers.get('x-revalidate-secret');
+  if (secret !== locals.runtime.env.REVALIDATE_SECRET) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+  }
+
+  const payload = await request.json();
+  const { slug, type, action } = payload;
+
+  // Purge Cloudflare Zone Cache or Edge Cache for targeted paths
+  // ...
+
+  return new Response(JSON.stringify({ revalidated: true, slug }), { status: 200 });
+};
+```
+
+---
+
+## 🧩 Backward Compatibility
+
+AstroPress is engineered with 100% backward compatibility for existing installations of:
+- **R2 by Grisma**: Aliases `R2_By_Grisma`, `r2_by_grisma()`, `R2G_*` classes, `r2g_*` options, and `_r2g_*` postmeta.
+- **TopNepali Headless Bridge**: Aliases `TopNepali_Headless`, `topnepali_headless()`, `TopNepali_Headless_*` classes, and `topnepali_headless_*` options.
+
+Existing installations upgrade seamlessly without reconfiguring credentials or breaking database schema.
+
+---
+
+## 👨‍💻 Author & Developer
+
+- **Author**: Grisma
+- **Developer**: Grisma Bhandari
+- **Website**: [grisma.com.np](https://grisma.com.np) | [grisma.info.np](https://grisma.info.np)
+- **Repository**: [iamgrisma/astropress](https://github.com/iamgrisma/astropress)
+
+---
+
+## 📄 License
+
+GPL-2.0-or-later. Created with ❤️ by Grisma Bhandari.
