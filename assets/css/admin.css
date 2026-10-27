@@ -592,3 +592,91 @@
   height: 22px;
   padding: 0 6px;
 }
+
+/* Badges Extension */
+.astropress-badge-blue {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0284c7;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+/* Cloudflare Quick Connect Assistant Card */
+.astropress-cf-connect-card {
+  border-left: 4px solid #f6821f !important;
+  background: linear-gradient(to right, #fffdfa 0%, #ffffff 100%);
+}
+
+.astropress-quick-results-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.astropress-cf-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.astropress-cf-resource-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.astropress-cf-resource-card h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.astropress-cf-resource-card p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+/* Webhook Delivery Audit Log Table */
+.astropress-log-table th {
+  font-weight: 600;
+  color: #334155;
+}
+
+.astropress-log-table td {
+  vertical-align: middle;
+}
+
+.astropress-code-pill {
+  font-family: Menlo, Consolas, Monaco, monospace;
+  font-size: 12px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.astropress-log-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.astropress-log-url-preview {
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.astropress-resend-btn {
+  padding: 0 8px !important;
+  height: 28px !important;
+  line-height: 26px !important;
+}

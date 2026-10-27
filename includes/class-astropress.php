@@ -37,6 +37,11 @@ class AstroPress {
     const OPTION_WARM_BATCH_SIZE   = 'astropress_warm_batch_size';
     const OPTION_SUBDOMAIN_SHIELD  = 'astropress_subdomain_shield';
     const OPTION_SUBDOMAIN_NOINDEX = 'astropress_subdomain_noindex';
+    const OPTION_CF_API_TOKEN      = 'astropress_cf_api_token';
+    const OPTION_CF_ZONE_ID        = 'astropress_cf_zone_id';
+    const OPTION_CF_DEPLOY_HOOK    = 'astropress_cf_deploy_hook';
+    const OPTION_DEBOUNCE_ENABLED  = 'astropress_debounce_enabled';
+    const OPTION_CF_DIRECT_PURGE   = 'astropress_cf_direct_purge';
 
     // In-memory memoized option values
     private $cached_frontend_url = null;
@@ -101,7 +106,17 @@ class AstroPress {
 
         // Core lifecycle hooks
         add_action('init', array($this, 'init'));
+        add_action('astropress_retry_webhooks', array($this, 'on_retry_webhooks_cron'));
         add_filter('plugin_action_links_' . plugin_basename(ASTROPRESS_FILE), array($this, 'add_plugin_action_links'));
+    }
+
+    /**
+     * Cron callback: Retry failed webhooks
+     */
+    public function on_retry_webhooks_cron() {
+        if (isset($this->cache) && method_exists($this->cache, 'retry_failed_webhooks')) {
+            $this->cache->retry_failed_webhooks();
+        }
     }
 
     /**
@@ -213,6 +228,10 @@ class AstroPress {
         return (bool) get_option(self::OPTION_LSCWP_SYNC, get_option('topnepali_headless_lscwp_sync', '1'));
     }
 
+    public function should_sync_litespeed() {
+        return $this->should_sync_lscwp();
+    }
+
     public function get_warm_delay() {
         return (int) get_option(self::OPTION_WARM_DELAY, get_option('topnepali_headless_warm_delay', 5));
     }
@@ -227,6 +246,27 @@ class AstroPress {
 
     public function should_noindex_backend() {
         return (bool) get_option(self::OPTION_SUBDOMAIN_NOINDEX, get_option('topnepali_headless_subdomain_noindex', '0'));
+    }
+
+    public function get_cf_api_token() {
+        $val = get_option(self::OPTION_CF_API_TOKEN, '');
+        return !empty($val) ? AstroPress_Encryption::decrypt($val) : '';
+    }
+
+    public function get_cf_zone_id() {
+        return (string) get_option(self::OPTION_CF_ZONE_ID, '');
+    }
+
+    public function get_cf_deploy_hook() {
+        return (string) get_option(self::OPTION_CF_DEPLOY_HOOK, '');
+    }
+
+    public function should_debounce_webhooks() {
+        return (bool) get_option(self::OPTION_DEBOUNCE_ENABLED, '1');
+    }
+
+    public function should_direct_purge_cloudflare() {
+        return (bool) get_option(self::OPTION_CF_DIRECT_PURGE, '0');
     }
 
     /**
@@ -245,6 +285,8 @@ class AstroPress {
             self::OPTION_WARM_BATCH_SIZE   => 5,
             self::OPTION_SUBDOMAIN_SHIELD  => '0',
             self::OPTION_SUBDOMAIN_NOINDEX => '0',
+            self::OPTION_DEBOUNCE_ENABLED  => '1',
+            self::OPTION_CF_DIRECT_PURGE   => '0',
             'r2g_compress_enabled'         => 1,
             'r2g_compress_format'          => 'webp',
             'r2g_compress_quality'         => 82,
@@ -267,6 +309,7 @@ class AstroPress {
     public static function deactivate() {
         wp_clear_scheduled_hook('astropress_warmer_cron');
         wp_clear_scheduled_hook('r2g_warmer_cron');
+        wp_clear_scheduled_hook('astropress_retry_webhooks');
     }
 
     /**

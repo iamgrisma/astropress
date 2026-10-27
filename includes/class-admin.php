@@ -75,6 +75,13 @@ class AstroPress_Admin {
             add_action('wp_ajax_astropress_preview_compression', array($this, 'ajax_preview_compression'));
             add_action('wp_ajax_r2g_preview_compression', array($this, 'ajax_preview_compression'));
 
+            // AJAX Handlers for Webhook Logs, Direct Purge, Deploy Hook & Cloudflare Quick Connect
+            add_action('wp_ajax_astropress_resend_webhook', array($this, 'ajax_resend_webhook'));
+            add_action('wp_ajax_astropress_clear_webhook_logs', array($this, 'ajax_clear_webhook_logs'));
+            add_action('wp_ajax_astropress_cf_quick_connect', array($this, 'ajax_cf_quick_connect'));
+            add_action('wp_ajax_astropress_purge_cf_zone', array($this, 'ajax_purge_cf_zone'));
+            add_action('wp_ajax_astropress_trigger_deploy_hook', array($this, 'ajax_trigger_deploy_hook'));
+
             // Security Notices
             add_action('admin_notices', array($this, 'render_security_notices'));
         }
@@ -158,6 +165,15 @@ class AstroPress_Admin {
             'Cache Warmer',
             'manage_options',
             'astropress&tab=warmer',
+            array($this, 'render_settings_page')
+        );
+
+        add_submenu_page(
+            'astropress',
+            'Webhook Logs — AstroPress',
+            'Webhook Logs',
+            'manage_options',
+            'astropress&tab=logs',
             array($this, 'render_settings_page')
         );
 
@@ -556,6 +572,15 @@ class AstroPress_Admin {
             update_option(AstroPress::OPTION_REWRITE_LINKS, isset($_POST['rewrite_links']) ? '1' : '0');
             update_option(AstroPress::OPTION_SUBDOMAIN_SHIELD, isset($_POST['subdomain_shield']) ? '1' : '0');
             update_option(AstroPress::OPTION_SUBDOMAIN_NOINDEX, isset($_POST['subdomain_noindex']) ? '1' : '0');
+            update_option(AstroPress::OPTION_DEBOUNCE_ENABLED, isset($_POST['debounce_enabled']) ? '1' : '0');
+            update_option(AstroPress::OPTION_CF_DIRECT_PURGE, isset($_POST['cf_direct_purge']) ? '1' : '0');
+            update_option(AstroPress::OPTION_CF_ZONE_ID, sanitize_text_field(wp_unslash($_POST['cf_zone_id'] ?? '')));
+            update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, esc_url_raw(trim(wp_unslash($_POST['cf_deploy_hook'] ?? ''))));
+
+            $cf_token = trim(wp_unslash($_POST['cf_api_token'] ?? ''));
+            if (!empty($cf_token) && strpos($cf_token, '••••') === false) {
+                update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($cf_token));
+            }
 
             set_transient('astropress_notice', array(
                 'type'    => 'success',
@@ -1067,6 +1092,238 @@ class AstroPress_Admin {
     }
 
     /**
+     * AJAX: Resend a logged webhook
+     */
+    public function ajax_resend_webhook() {
+        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+
+        $log_id = sanitize_text_field($_POST['log_id'] ?? '');
+        if (empty($log_id)) {
+            wp_send_json_error(array('message' => esc_html__('Missing log ID.', 'astropress')));
+        }
+
+        $res = $this->core->cache->resend_webhook($log_id);
+        if (!empty($res['success'])) {
+            wp_send_json_success(array('message' => esc_html__('Webhook re-dispatched successfully.', 'astropress'), 'result' => $res));
+        } else {
+            wp_send_json_error(array('message' => $res['message'] ?? esc_html__('Failed to resend webhook.', 'astropress')));
+        }
+    }
+
+    /**
+     * AJAX: Clear Webhook Logs
+     */
+    public function ajax_clear_webhook_logs() {
+        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+
+        $this->core->cache->clear_webhook_logs();
+        wp_send_json_success(array('message' => esc_html__('Webhook logs cleared successfully.', 'astropress')));
+    }
+
+    /**
+     * AJAX: Purge Cloudflare Zone Cache
+     */
+    public function ajax_purge_cf_zone() {
+        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+
+        $purge_everything = !empty($_POST['purge_everything']);
+        $urls_raw         = $_POST['urls'] ?? array();
+        $urls             = is_array($urls_raw) ? array_map('sanitize_text_field', $urls_raw) : array();
+
+        $success = $this->core->cache->purge_cloudflare_zone($urls, $purge_everything);
+        if ($success) {
+            wp_send_json_success(array('message' => esc_html__('Cloudflare Zone Cache purged successfully.', 'astropress')));
+        } else {
+            wp_send_json_error(array('message' => esc_html__('Cloudflare Zone purge failed. Check your API Token and Zone ID.', 'astropress')));
+        }
+    }
+
+    /**
+     * AJAX: Trigger Deploy Hook
+     */
+    public function ajax_trigger_deploy_hook() {
+        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+
+        $success = $this->core->cache->trigger_deploy_hook('Manual Trigger from AstroPress Admin');
+        if ($success) {
+            wp_send_json_success(array('message' => esc_html__('Cloudflare Pages deploy hook triggered successfully.', 'astropress')));
+        } else {
+            wp_send_json_error(array('message' => esc_html__('Deploy hook trigger failed. Verify your Deploy Hook URL.', 'astropress')));
+        }
+    }
+
+    /**
+     * AJAX: Cloudflare 1-Click Quick Connect Auto-Discovery
+     */
+    public function ajax_cf_quick_connect() {
+        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+
+        $token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
+        if (empty($token) || strpos($token, '••••') !== false) {
+            $token = $this->core->get_cf_api_token();
+        }
+
+        if (empty($token)) {
+            wp_send_json_error(array('message' => esc_html__('Please provide a valid Cloudflare API Token.', 'astropress')));
+        }
+
+        // 1. Verify token
+        $verify_res = wp_remote_get('https://api.cloudflare.com/client/v4/user/tokens/verify', array(
+            'timeout' => 10,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+
+        if (is_wp_error($verify_res)) {
+            wp_send_json_error(array('message' => 'Could not connect to Cloudflare: ' . $verify_res->get_error_message()));
+        }
+
+        $verify_body = json_decode(wp_remote_retrieve_body($verify_res), true);
+        if (empty($verify_body['success'])) {
+            wp_send_json_error(array('message' => esc_html__('Invalid or expired Cloudflare API Token.', 'astropress')));
+        }
+
+        // 2. Fetch Accounts
+        $acc_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts?per_page=20', array(
+            'timeout' => 10,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+        $accounts = array();
+        $matched_account = null;
+
+        if (!is_wp_error($acc_res)) {
+            $acc_body = json_decode(wp_remote_retrieve_body($acc_res), true);
+            if (!empty($acc_body['result']) && is_array($acc_body['result'])) {
+                foreach ($acc_body['result'] as $acc) {
+                    $item = array(
+                        'id'   => sanitize_text_field($acc['id'] ?? ''),
+                        'name' => sanitize_text_field($acc['name'] ?? ''),
+                    );
+                    $accounts[] = $item;
+                    if (!$matched_account) {
+                        $matched_account = $item;
+                    }
+                }
+            }
+        }
+
+        // 3. Fetch Zones
+        $zone_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?status=active&per_page=50', array(
+            'timeout' => 10,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+        $zones = array();
+        $matched_zone = null;
+
+        $site_host     = wp_parse_url(home_url(), PHP_URL_HOST);
+        $frontend_host = wp_parse_url($this->core->get_frontend_url(), PHP_URL_HOST);
+
+        if (!is_wp_error($zone_res)) {
+            $zone_body = json_decode(wp_remote_retrieve_body($zone_res), true);
+            if (!empty($zone_body['result']) && is_array($zone_body['result'])) {
+                foreach ($zone_body['result'] as $z) {
+                    $z_item = array(
+                        'id'     => sanitize_text_field($z['id'] ?? ''),
+                        'name'   => sanitize_text_field($z['name'] ?? ''),
+                        'status' => sanitize_text_field($z['status'] ?? ''),
+                    );
+                    $zones[] = $z_item;
+
+                    if ($site_host && (strpos($site_host, $z_item['name']) !== false || $site_host === $z_item['name'])) {
+                        $matched_zone = $z_item;
+                    } elseif ($frontend_host && (strpos($frontend_host, $z_item['name']) !== false || $frontend_host === $z_item['name'])) {
+                        $matched_zone = $z_item;
+                    }
+                }
+                if (!$matched_zone && !empty($zones)) {
+                    $matched_zone = $zones[0];
+                }
+            }
+        }
+
+        // 4. Fetch R2 Buckets (if account found)
+        $buckets = array();
+        if ($matched_account && !empty($matched_account['id'])) {
+            $bucket_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts/' . rawurlencode($matched_account['id']) . '/r2/buckets', array(
+                'timeout' => 10,
+                'headers' => array('Authorization' => 'Bearer ' . $token),
+            ));
+            if (!is_wp_error($bucket_res)) {
+                $b_body = json_decode(wp_remote_retrieve_body($bucket_res), true);
+                if (!empty($b_body['result']['buckets']) && is_array($b_body['result']['buckets'])) {
+                    foreach ($b_body['result']['buckets'] as $b) {
+                        $buckets[] = sanitize_text_field($b['name'] ?? '');
+                    }
+                }
+            }
+        }
+
+        // 5. Fetch Pages projects (if account found)
+        $pages_projects = array();
+        if ($matched_account && !empty($matched_account['id'])) {
+            $pages_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts/' . rawurlencode($matched_account['id']) . '/pages/projects', array(
+                'timeout' => 10,
+                'headers' => array('Authorization' => 'Bearer ' . $token),
+            ));
+            if (!is_wp_error($pages_res)) {
+                $p_body = json_decode(wp_remote_retrieve_body($pages_res), true);
+                if (!empty($p_body['result']) && is_array($p_body['result'])) {
+                    foreach ($p_body['result'] as $p) {
+                        $pages_projects[] = array(
+                            'name'      => sanitize_text_field($p['name'] ?? ''),
+                            'subdomain' => sanitize_text_field($p['subdomain'] ?? ''),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Auto-save if user checked "Apply Discovered Settings"
+        $applied = false;
+        if (!empty($_POST['apply'])) {
+            update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($token));
+            if ($matched_account) {
+                update_option('r2g_account_id', $matched_account['id']);
+                update_option('astropress_r2_account_id', $matched_account['id']);
+            }
+            if ($matched_zone) {
+                update_option(AstroPress::OPTION_CF_ZONE_ID, $matched_zone['id']);
+                update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
+            }
+            if (!empty($buckets) && empty(get_option('r2g_bucket', ''))) {
+                update_option('r2g_bucket', $buckets[0]);
+                update_option('astropress_r2_bucket', $buckets[0]);
+            }
+            $applied = true;
+        }
+
+        wp_send_json_success(array(
+            'message'         => esc_html__('Cloudflare resources discovered successfully.', 'astropress'),
+            'accounts'        => $accounts,
+            'matched_account' => $matched_account,
+            'zones'           => $zones,
+            'matched_zone'    => $matched_zone,
+            'buckets'         => $buckets,
+            'pages_projects'  => $pages_projects,
+            'applied'         => $applied,
+        ));
+    }
+
+    /**
      * Render Master Settings Page
      */
     public function render_settings_page() {
@@ -1144,6 +1401,9 @@ class AstroPress_Admin {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=warmer')); ?>" class="nav-tab <?php echo ($active_tab === 'warmer') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-performance"></span> <?php esc_html_e('Cache Warmer', 'astropress'); ?>
                 </a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="nav-tab <?php echo ($active_tab === 'logs') ? 'nav-tab-active' : ''; ?>">
+                    <span class="dashicons dashicons-list-view"></span> <?php esc_html_e('Webhook Logs', 'astropress'); ?>
+                </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=sync')); ?>" class="nav-tab <?php echo ($active_tab === 'sync') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-update"></span> <?php esc_html_e('Media Sync', 'astropress'); ?>
                 </a>
@@ -1172,6 +1432,9 @@ class AstroPress_Admin {
                         break;
                     case 'warmer':
                         $this->render_tab_warmer();
+                        break;
+                    case 'logs':
+                        $this->render_tab_logs();
                         break;
                     case 'sync':
                         $this->render_tab_sync($stats);
@@ -1435,6 +1698,34 @@ class AstroPress_Admin {
                 </form>
             </div>
         </div>
+
+        <div class="astropress-card astropress-cf-connect-card" style="margin-top:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:15px;">
+                <div style="display:flex; gap:12px; align-items:flex-start;">
+                    <span class="dashicons dashicons-cloud" style="font-size:32px; width:32px; height:32px; color:#f6821f; margin-top:2px;"></span>
+                    <div>
+                        <h3 style="margin:0 0 4px 0;"><?php esc_html_e('Cloudflare 1-Click Quick Connect Assistant', 'astropress'); ?></h3>
+                        <p style="margin:0; color:#64748b;"><?php esc_html_e('Auto-discover your Account ID, matching Zone ID, and R2 Buckets directly from your Cloudflare Scoped API Token.', 'astropress'); ?></p>
+                    </div>
+                </div>
+                <div class="astropress-btn-group">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="button button-secondary">
+                        <span class="dashicons dashicons-list-view"></span> <?php esc_html_e('View Webhook Logs', 'astropress'); ?>
+                    </a>
+                </div>
+            </div>
+
+            <div style="margin-top:15px;" class="astropress-inline-form">
+                <input type="password" id="astropress_quick_cf_token" class="regular-text" placeholder="Paste Cloudflare API Token..." autocomplete="off" style="min-width:320px;" />
+                <button type="button" class="button button-primary" id="astropress-quick-connect-btn">
+                    <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Discover Resources', 'astropress'); ?>
+                </button>
+                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="button button-secondary">
+                    <?php esc_html_e('Create Scoped Token', 'astropress'); ?> &rarr;
+                </a>
+            </div>
+            <div id="astropress-quick-connect-results" style="margin-top:15px; display:none;"></div>
+        </div>
         <?php
     }
 
@@ -1442,7 +1733,10 @@ class AstroPress_Admin {
      * Tab: Headless Bridge Settings
      */
     private function render_tab_bridge($frontend_url, $is_connected) {
-        $secret = $this->core->get_secret();
+        $secret         = $this->core->get_secret();
+        $cf_token       = $this->core->get_cf_api_token();
+        $cf_zone_id     = $this->core->get_cf_zone_id();
+        $cf_deploy_hook = $this->core->get_cf_deploy_hook();
         ?>
         <div class="astropress-card" style="max-width:850px;">
             <h2><?php esc_html_e('Headless Astro Connection', 'astropress'); ?></h2>
@@ -1492,6 +1786,7 @@ class AstroPress_Admin {
                                 <label><input type="checkbox" name="purge_feeds" value="1" <?php checked($this->core->should_purge_feeds()); ?> /> <?php esc_html_e('Purge RSS and Atom feeds on new post publication', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="purge_taxonomy" value="1" <?php checked($this->core->should_purge_taxonomy()); ?> /> <?php esc_html_e('Purge category and tag archives when terms are edited', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="purge_menu" value="1" <?php checked($this->core->should_purge_menu()); ?> /> <?php esc_html_e('Purge global cache when navigation menus are updated', 'astropress'); ?></label><br />
+                                <label><input type="checkbox" name="debounce_enabled" value="1" <?php checked($this->core->should_debounce_webhooks()); ?> /> <?php esc_html_e('Debounce webhooks (batch multiple invalidations into a single payload on shutdown)', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="lscwp_sync" value="1" <?php checked($this->core->should_sync_lscwp()); ?> /> <?php esc_html_e('Synchronize with LiteSpeed Cache purge events', 'astropress'); ?></label>
                             </fieldset>
                         </td>
@@ -1522,6 +1817,58 @@ class AstroPress_Admin {
                     </tr>
                 </table>
 
+                <hr style="margin:25px 0; border:0; border-top:1px solid #e2e8f0;" />
+
+                <h2><?php esc_html_e('Direct Cloudflare Zone Purge & Deploy Hook', 'astropress'); ?></h2>
+                <p><?php esc_html_e('Optionally purge Cloudflare Edge cache directly via Cloudflare API v4 and trigger Pages/Workers deployment webhooks upon full site rebuilds.', 'astropress'); ?></p>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="astropress_cf_api_token"><?php esc_html_e('Cloudflare API Token', 'astropress'); ?></label></th>
+                        <td>
+                            <div class="astropress-inline-form">
+                                <input type="password" id="astropress_cf_api_token" name="cf_api_token" value="<?php echo !empty($cf_token) ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Bearer Token" autocomplete="off" />
+                                <button type="button" class="button" id="astropress-toggle-cf-token"><?php esc_html_e('Show', 'astropress'); ?></button>
+                                <button type="button" class="button button-secondary" id="astropress-test-cf-token"><?php esc_html_e('Test & Discover', 'astropress'); ?></button>
+                            </div>
+                            <p class="description">
+                                <?php esc_html_e('Requires Zone.Cache Purge and Zone.Read permissions.', 'astropress'); ?>
+                                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Create Token in Cloudflare', 'astropress'); ?> &rarr;</a>
+                            </p>
+                            <div id="astropress-cf-token-status" style="margin-top:8px;"></div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="astropress_cf_zone_id"><?php esc_html_e('Cloudflare Zone ID', 'astropress'); ?></label></th>
+                        <td>
+                            <div class="astropress-inline-form">
+                                <input type="text" id="astropress_cf_zone_id" name="cf_zone_id" value="<?php echo esc_attr($cf_zone_id); ?>" class="regular-text" placeholder="32-character hexadecimal Zone ID" />
+                                <button type="button" class="button" id="astropress-purge-cf-now"><?php esc_html_e('Purge Edge Now', 'astropress'); ?></button>
+                            </div>
+                            <p class="description"><?php esc_html_e('Found in Cloudflare Dashboard under Domain Overview &rarr; API &rarr; Zone ID.', 'astropress'); ?></p>
+                            <div id="astropress-cf-purge-status" style="margin-top:8px;"></div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Direct Zone Purge', 'astropress'); ?></th>
+                        <td>
+                            <label><input type="checkbox" name="cf_direct_purge" value="1" <?php checked($this->core->should_direct_purge_cloudflare()); ?> /> <?php esc_html_e('Enable Direct Cloudflare Zone API Purge on content updates', 'astropress'); ?></label>
+                            <p class="description"><?php esc_html_e('Instructs Cloudflare edge nodes directly to invalidate cached HTML/JSON assets alongside the Astro webhook.', 'astropress'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="astropress_cf_deploy_hook"><?php esc_html_e('Cloudflare Pages Deploy Hook', 'astropress'); ?></label></th>
+                        <td>
+                            <div class="astropress-inline-form">
+                                <input type="url" id="astropress_cf_deploy_hook" name="cf_deploy_hook" value="<?php echo esc_attr($cf_deploy_hook); ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." />
+                                <button type="button" class="button" id="astropress-trigger-deploy-now"><?php esc_html_e('Trigger Deploy', 'astropress'); ?></button>
+                            </div>
+                            <p class="description"><?php esc_html_e('Optional: Trigger a static site build in Cloudflare Pages when a full cache purge is requested.', 'astropress'); ?></p>
+                            <div id="astropress-deploy-status" style="margin-top:8px;"></div>
+                        </td>
+                    </tr>
+                </table>
+
                 <p class="submit">
                     <button type="submit" name="astropress_save_automation" class="button button-primary"><?php esc_html_e('Save Cache Rules', 'astropress'); ?></button>
                 </p>
@@ -1541,6 +1888,26 @@ class AstroPress_Admin {
         $custom_domain = get_option('r2g_custom_domain', '');
         $storage_mode  = get_option('r2g_storage_mode', 'both');
         ?>
+        <div class="astropress-card astropress-cf-connect-card" style="max-width:850px; margin-bottom:20px;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                <span class="dashicons dashicons-admin-plugins" style="font-size:28px; width:28px; height:28px; color:#f6821f;"></span>
+                <div>
+                    <h3 style="margin:0;"><?php esc_html_e('Cloudflare Quick Connect Assistant', 'astropress'); ?></h3>
+                    <p style="margin:2px 0 0 0; color:#64748b;"><?php esc_html_e('Paste your Cloudflare API Token to automatically populate Account ID, match Zone ID, and discover R2 Buckets.', 'astropress'); ?></p>
+                </div>
+            </div>
+            <div class="astropress-inline-form">
+                <input type="password" id="astropress_quick_cf_token_r2" class="regular-text" placeholder="Paste Cloudflare API Token..." autocomplete="off" style="min-width:320px;" />
+                <button type="button" class="button button-primary" id="astropress-quick-connect-btn-r2">
+                    <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Discover Resources', 'astropress'); ?>
+                </button>
+                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="button button-secondary">
+                    <?php esc_html_e('Create Token', 'astropress'); ?> &rarr;
+                </a>
+            </div>
+            <div id="astropress-quick-connect-results-r2" style="margin-top:12px; display:none;"></div>
+        </div>
+
         <div class="astropress-card" style="max-width:850px;">
             <h2><?php esc_html_e('Cloudflare R2 Object Storage', 'astropress'); ?></h2>
             <p><?php esc_html_e('Offload media library uploads to zero-egress Cloudflare R2 object storage using native SigV4 authentication without heavy AWS SDKs.', 'astropress'); ?></p>

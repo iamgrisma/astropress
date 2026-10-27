@@ -6,20 +6,27 @@ AstroPress seamlessly combines high-performance headless cache invalidation, aut
 
 ---
 
-## 🌟 Key Architecture & Features
+## Key Architecture & Features
 
 ### 1. Instant Edge Cache Invalidation & Revalidation Webhook
 - **Event-Driven Purging**: Automatically triggers authenticated revalidation webhooks to your Astro frontend (`/api/revalidate`) when posts, pages, categories, tags, or navigation menus are created, updated, or deleted.
 - **Asynchronous & Non-Blocking**: Dispatches HTTP POST requests via non-blocking sockets (`blocking => false`), guaranteeing zero publishing latency in the WordPress block editor.
+- **Micro-Queue Debouncing**: Consolidates multiple concurrent edits and bulk updates within a single request onto PHP `shutdown` to eliminate webhook storms.
 - **LiteSpeed Cache Sync**: Intercepts LiteSpeed Cache purge actions to keep Cloudflare edge caches in lockstep.
 
-### 2. Edge Cache Warmer (Interactive & Background Cron)
+### 2. Direct Cloudflare Edge Invalidation & Deploy Hooks
+- **Direct Cloudflare Zone Cache API Purge**: Directly instructs Cloudflare Edge POP nodes to purge files or entire zone caches via Cloudflare API v4.
+- **Pages Deploy Hook**: Triggers on-demand static builds in Cloudflare Pages upon full cache purges.
+- **Webhook Delivery Audit Log**: Complete delivery history with latency, HTTP response codes, payload preview, and 1-click resend capability.
+- **Automated Cron Retries**: Failed webhooks are safely queued with exponential backoff and retried automatically.
+
+### 3. Edge Cache Warmer (Interactive & Background Cron)
 - **Zero SSR Cold Boots**: Pre-warms Cloudflare POP edge caches for recently updated content, top categories, and sitemaps so visitors experience instant 20ms page loads.
 - **Dual Mode**:
   - **Interactive AJAX Warmer**: Live visual progress bar with granular delay and batch controls.
   - **Background WP-Cron Warmer**: Runs asynchronously in the background with pause, resume, and cancellation support.
 
-### 3. Pure PHP Cloudflare R2 Offloader (Zero AWS SDK Bloat)
+### 4. Pure PHP Cloudflare R2 Offloader (Zero AWS SDK Bloat)
 - **Pure SigV4 Engine**: 100% native PHP AWS Signature Version 4 implementation (< 35KB footprint) without bloated 50MB vendor SDKs.
 - **Dual Storage vs. R2-Only**:
   - `Dual Storage (Recommended)`: Retains local copies alongside Cloudflare R2 backup.
@@ -27,32 +34,32 @@ AstroPress seamlessly combines high-performance headless cache invalidation, aut
 - **Live Bucket Discovery**: Discovers and lists R2 buckets under your Cloudflare Account directly inside the admin dashboard.
 - **Custom CDN Domain**: Automatically rewrites media URLs, `srcset` attributes, and post content to your custom public CDN domain (e.g. `media.example.com`).
 
-### 4. Dual-Stage Image Optimizer & Next-Gen Formats
+### 5. Dual-Stage Image Optimizer & Next-Gen Formats
 - **Dual Engine**: reSmush.it cloud compression API as primary offload engine with automatic, seamless fallback to native Server GD / Imagick.
 - **On-the-Fly WebP & AVIF Conversion**: Automatically converts raster images (JPEG, PNG) to lightweight WebP or AVIF format on upload.
 - **Dimensions & EXIF**: Automatically downscales oversized camera photos and strips unnecessary EXIF metadata.
 - **Upload Interceptor**: Optional visual upload interceptor bar with per-upload format selection.
 
-### 5. Rank Math & Yoast SEO Bridge
+### 6. Rank Math & Yoast SEO Bridge
 - **Rendered `<head>` REST API**: Exposes the fully rendered `<head>` HTML (canonical tags, meta robots, OpenGraph, Twitter Cards, JSON-LD Schema) on `/wp/v2/posts`, `/wp/v2/pages`, and `/wp-json/astropress/v1/head`.
 - **Domain Normalization**: Rewrites internal origin URLs in canonical links, OpenGraph tags, and sitemaps directly to the production Astro domain.
 - **Dynamic Redirection**: Detects Rank Math 301/302 redirects and exposes them via `/wp-json/astropress/v1/redirection?slug=...` for instant edge redirects in Astro middleware.
 - **404 Monitor Log API**: Exposes Rank Math 404 access logs via authenticated REST endpoint for automated monitoring.
 
-### 6. Native GitHub Updates & 1-Click Rollback
+### 7. Native GitHub Updates & 1-Click Rollback
 - **Direct GitHub Releases Pipeline**: Automatically checks for updates directly from [iamgrisma/astropress](https://github.com/iamgrisma/astropress) releases (`astropress.zip`).
 - **Core Upgrader Sandbox**: Uses WordPress Core's native `Plugin_Upgrader` sandbox, eliminating false-positive security warnings from hosting providers.
 - **1-Click Rollback**: Switch or rollback to any previous version directly from the admin dashboard.
 
-### 7. Guided Onboarding Wizard & Diagnostics
-- **Step-by-Step Onboarding**: Streamlined 5-step setup wizard that guides you through connecting your Astro site, entering R2 credentials, selecting image optimization presets, and configuring cache rules.
+### 8. Guided Onboarding Wizard & Cloudflare Quick Connect
+- **Cloudflare 1-Click Quick Connect**: Auto-discovers Cloudflare Account ID, matching Zone ID, R2 buckets, and Pages projects directly from a scoped API token.
+- **Step-by-Step Onboarding**: Streamlined setup wizard guiding you through connecting Astro, entering R2 credentials, selecting image optimization presets, and configuring edge cache rules.
 - **Pre-Flight Readiness Check**: Verifies server cryptographic extensions (OpenSSL / libsodium), cURL, GD/Imagick, WebP/AVIF format support, and security salts.
 - **Copyable Astro Code Snippets**: Production-ready code templates for Astro API routes (`/api/revalidate.ts`), edge redirection middleware (`src/middleware.ts`), and `.env` configs.
-- **Live Image Compression Tester**: Test and preview compression quality and byte savings live before uploading to production.
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Option 1: Native GitHub Release Zip (Recommended)
 1. Download `astropress.zip` from the [Latest Release](https://github.com/iamgrisma/astropress/releases/latest).
@@ -68,7 +75,7 @@ git clone https://github.com/iamgrisma/astropress.git astropress
 
 ---
 
-## 🛠️ Configuration
+## Configuration
 
 ### 1. Headless Bridge
 - **Astro Frontend URL**: Your production Astro website domain (e.g., `https://example.com`).
@@ -83,7 +90,7 @@ git clone https://github.com/iamgrisma/astropress.git astropress
 
 ---
 
-## 🔄 Astro Integration Example
+## Astro Integration Example
 
 In your Astro project running on Cloudflare Pages or Workers:
 
@@ -98,18 +105,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const payload = await request.json();
-  const { slug, type, action } = payload;
+  const { slug, type, action, urls } = payload;
 
-  // Purge Cloudflare Zone Cache or Edge Cache for targeted paths
+  // Invalidate edge caches for targeted paths
   // ...
 
-  return new Response(JSON.stringify({ revalidated: true, slug }), { status: 200 });
+  return new Response(JSON.stringify({ revalidated: true, slug, urls }), { status: 200 });
 };
 ```
 
 ---
 
-## 🧩 Backward Compatibility
+## Backward Compatibility
 
 AstroPress is engineered with 100% backward compatibility for existing installations of:
 - **R2 by Grisma**: Aliases `R2_By_Grisma`, `r2_by_grisma()`, `R2G_*` classes, `r2g_*` options, and `_r2g_*` postmeta.
@@ -119,7 +126,7 @@ Existing installations upgrade seamlessly without reconfiguring credentials or b
 
 ---
 
-## 👨‍💻 Author & Developer
+## Author & Developer
 
 - **Author**: Grisma
 - **Developer**: Grisma Bhandari
@@ -128,6 +135,6 @@ Existing installations upgrade seamlessly without reconfiguring credentials or b
 
 ---
 
-## 📄 License
+## License
 
-GPL-2.0-or-later. Created with ❤️ by Grisma Bhandari.
+GPL-2.0-or-later. Created by Grisma Bhandari.

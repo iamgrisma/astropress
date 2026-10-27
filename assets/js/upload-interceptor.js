@@ -210,7 +210,7 @@
       this.hasCompressedPreview = false;
       const $previewBtn = $('#r2g-btn-preview-compress');
       $previewBtn.prop('disabled', false).removeClass('r2g-recompress');
-      $previewBtn.find('.r2g-preview-btn-text').text('⚡ Preview Compression');
+      $previewBtn.find('.r2g-preview-btn-text').text('Preview Compression');
 
       if ($('#r2g-compress-result').is(':visible')) {
         $('#r2g-stat-dirty-note').text('(Settings modified — click Preview to re-test, or proceed with new settings)').show();
@@ -270,7 +270,7 @@
                 <div class="r2g-preview-actions">
                   <button type="button" class="button r2g-btn-preview-compress" id="r2g-btn-preview-compress">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    <span class="r2g-preview-btn-text">⚡ Preview Compression</span>
+                    <span class="r2g-preview-btn-text">Preview Compression</span>
                   </button>
                   <div class="r2g-compress-result" id="r2g-compress-result" style="display:none;">
                     <div class="r2g-compress-stats">
@@ -406,25 +406,25 @@
 
             if (res.data.engine_status === 'fallback') {
               $('#r2g-preview-tag').text('PREVIEW (SERVER GD FALLBACK: ' + self.format.toUpperCase() + ')').css({ background: '#d97706' });
-              $('#r2g-stat-dirty-note').text('⚠️ ' + (res.data.engine_message || 'Fallback to Server GD')).css({ color: '#b45309' }).show();
+              $('#r2g-stat-dirty-note').text('[Notice] ' + (res.data.engine_message || 'Fallback to Server GD')).css({ color: '#b45309' }).show();
             } else if (res.data.engine_used === 'resmush') {
               $('#r2g-preview-tag').text('PREVIEW (RESMUSH.IT API: ' + self.format.toUpperCase() + ')').css({ background: '#7c3aed' });
-              $('#r2g-stat-dirty-note').text('✓ ' + (res.data.engine_message || 'Optimized via reSmush.it')).css({ color: '#059669' }).show();
+              $('#r2g-stat-dirty-note').text('OK: ' + (res.data.engine_message || 'Optimized via reSmush.it')).css({ color: '#059669' }).show();
             } else {
               $('#r2g-preview-tag').text('PREVIEW (SERVER GD: ' + self.format.toUpperCase() + ')').css({ background: '#0284c7' });
-              $('#r2g-stat-dirty-note').text('✓ ' + (res.data.engine_message || 'Optimized via Server GD')).css({ color: '#059669' }).show();
+              $('#r2g-stat-dirty-note').text('OK: ' + (res.data.engine_message || 'Optimized via Server GD')).css({ color: '#059669' }).show();
             }
 
             self.updateSavingsDisplay(res.data.orig_size, res.data.comp_size);
             self.adaptButtonsAfterPreview();
           } else {
             alert('Optimization preview failed: ' + (res.data?.message || 'Server error'));
-            $label.text('⚡ Preview Compression');
+            $label.text('Preview Compression');
           }
         },
         error: function(xhr, status, error) {
           alert('Preview request error: ' + error);
-          $label.text('⚡ Preview Compression');
+          $label.text('Preview Compression');
         },
         complete: function() {
           self.setPreviewBusy(false);
@@ -497,7 +497,7 @@
         $('#r2g-preview-tag').text('ORIGINAL').css({ background: 'rgba(15, 23, 42, 0.75)' });
 
         $('#r2g-btn-preview-compress').prop('disabled', false).removeClass('r2g-recompress');
-        $('#r2g-btn-preview-compress .r2g-preview-btn-text').text('⚡ Preview Compression');
+        $('#r2g-btn-preview-compress .r2g-preview-btn-text').text('Preview Compression');
         $('#r2g-compress-result').hide();
         $('#r2g-stat-dirty-note').hide();
 

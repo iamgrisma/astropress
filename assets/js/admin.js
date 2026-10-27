@@ -544,5 +544,313 @@
       });
     });
 
+    // ========================================================
+    // 9. Cloudflare API Token & Direct Purge Handlers
+    // ========================================================
+    $('#astropress-toggle-cf-token').on('click', function(e) {
+      e.preventDefault();
+      const $input = $('#astropress_cf_api_token');
+      if ($input.attr('type') === 'password') {
+        $input.attr('type', 'text');
+        $(this).text('Hide');
+      } else {
+        $input.attr('type', 'password');
+        $(this).text('Show');
+      }
+    });
+
+    $('#astropress-test-cf-token').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const token = $('#astropress_cf_api_token').val();
+      const $status = $('#astropress-cf-token-status');
+
+      $btn.prop('disabled', true).text('Verifying...');
+      $status.html('<span style="color:#64748b;">Testing token with Cloudflare API...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_cf_quick_connect',
+          cf_api_token: token,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            let msg = '✓ Token verified! ';
+            if (res.data.matched_account) {
+              msg += 'Account: ' + res.data.matched_account.name + '. ';
+            }
+            if (res.data.matched_zone) {
+              msg += 'Zone: ' + res.data.matched_zone.name + ' (' + res.data.matched_zone.id + ').';
+              if (!$('#astropress_cf_zone_id').val()) {
+                $('#astropress_cf_zone_id').val(res.data.matched_zone.id);
+              }
+            }
+            $status.html('<span style="color:#057a55;font-weight:600;">' + msg + '</span>');
+          } else {
+            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Verification failed') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#e02424;font-weight:600;">✗ Request error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).text('Test & Discover');
+        }
+      });
+    });
+
+    $('#astropress-purge-cf-now').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#astropress-cf-purge-status');
+      if (!confirm('Purge entire Cloudflare Edge Zone Cache now?')) return;
+
+      $btn.prop('disabled', true).text('Purging...');
+      $status.html('<span style="color:#64748b;">Purging zone cache via Cloudflare API...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_purge_cf_zone',
+          purge_everything: 1,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#057a55;font-weight:600;">✓ ' + res.data.message + '</span>');
+          } else {
+            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Purge failed') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#e02424;font-weight:600;">✗ Network error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).text('Purge Edge Now');
+        }
+      });
+    });
+
+    $('#astropress-trigger-deploy-now').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#astropress-deploy-status');
+      if (!confirm('Trigger Cloudflare Pages deploy hook now?')) return;
+
+      $btn.prop('disabled', true).text('Triggering...');
+      $status.html('<span style="color:#64748b;">Sending POST to deploy hook...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_trigger_deploy_hook',
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#057a55;font-weight:600;">✓ ' + res.data.message + '</span>');
+          } else {
+            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Trigger failed') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#e02424;font-weight:600;">✗ Network error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).text('Trigger Deploy');
+        }
+      });
+    });
+
+    // ========================================================
+    // 10. Webhook Delivery Audit Log Controls
+    // ========================================================
+    $('#astropress-refresh-logs').on('click', function(e) {
+      e.preventDefault();
+      location.reload();
+    });
+
+    $('#astropress-clear-logs').on('click', function(e) {
+      e.preventDefault();
+      if (!confirm('Are you sure you want to clear all webhook delivery audit logs?')) return;
+      const $btn = $(this);
+      $btn.prop('disabled', true);
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_clear_webhook_logs',
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            location.reload();
+          } else {
+            alert(res.data?.message || 'Failed to clear logs.');
+            $btn.prop('disabled', false);
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Network error: ' + err);
+          $btn.prop('disabled', false);
+        }
+      });
+    });
+
+    $(document).on('click', '.astropress-resend-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const logId = $btn.data('id');
+      const originalHtml = $btn.html();
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_resend_webhook',
+          log_id: logId,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            alert('Webhook re-sent successfully!');
+            location.reload();
+          } else {
+            alert(res.data?.message || 'Failed to resend webhook.');
+            $btn.prop('disabled', false).html(originalHtml);
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Network error: ' + err);
+          $btn.prop('disabled', false).html(originalHtml);
+        }
+      });
+    });
+
+    // ========================================================
+    // 11. Cloudflare 1-Click Quick Connect Assistant
+    // ========================================================
+    function handleQuickConnect(tokenInputSelector, resultsContainerSelector, btnSelector) {
+      $(btnSelector).on('click', function(e) {
+        e.preventDefault();
+        const $btn = $(this);
+        const token = $(tokenInputSelector).val().trim();
+        const $results = $(resultsContainerSelector);
+
+        if (!token) {
+          alert('Please paste your Cloudflare API Token first.');
+          return;
+        }
+
+        $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Discovering...');
+        $results.show().html('<div class="astropress-quick-results-box"><span style="color:#64748b;">Querying Cloudflare accounts, zones, and R2 buckets...</span></div>');
+
+        $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_cf_quick_connect',
+            cf_api_token: token,
+            nonce: nonce,
+          },
+          success: function(res) {
+            if (res.success) {
+              const data = res.data;
+              let html = '<div class="astropress-quick-results-box">';
+              html += '<h4 style="margin:0 0 10px 0; color:#057a55;">✓ Cloudflare Resources Auto-Discovered:</h4>';
+              html += '<div class="astropress-cf-resource-grid">';
+
+              if (data.matched_account) {
+                html += '<div class="astropress-cf-resource-card"><h4>Account</h4><p>' + data.matched_account.name + ' <br><small style="color:#64748b;font-weight:normal;">' + data.matched_account.id + '</small></p></div>';
+              }
+              if (data.matched_zone) {
+                html += '<div class="astropress-cf-resource-card"><h4>Zone (Domain)</h4><p>' + data.matched_zone.name + ' <br><small style="color:#64748b;font-weight:normal;">' + data.matched_zone.id + '</small></p></div>';
+              }
+              if (data.buckets && data.buckets.length > 0) {
+                html += '<div class="astropress-cf-resource-card"><h4>R2 Buckets (' + data.buckets.length + ')</h4><p>' + data.buckets.join(', ') + '</p></div>';
+              }
+              if (data.pages_projects && data.pages_projects.length > 0) {
+                const projectNames = data.pages_projects.map(function(p) { return p.name; }).join(', ');
+                html += '<div class="astropress-cf-resource-card"><h4>Pages Projects</h4><p>' + projectNames + '</p></div>';
+              }
+
+              html += '</div>';
+              html += '<button type="button" class="button button-primary astropress-apply-cf-btn" data-token="' + encodeURIComponent(token) + '">Apply Discovered Settings to WordPress</button>';
+              html += '</div>';
+
+              $results.html(html);
+
+              if (data.matched_account && $('#r2_account_id').length) {
+                $('#r2_account_id').val(data.matched_account.id);
+              }
+              if (data.matched_zone && $('#astropress_cf_zone_id').length) {
+                $('#astropress_cf_zone_id').val(data.matched_zone.id);
+              }
+              if (data.buckets && data.buckets.length > 0 && $('#r2_bucket').length && !$('#r2_bucket').val()) {
+                $('#r2_bucket').val(data.buckets[0]);
+              }
+            } else {
+              $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Discovery failed') + '</span></div>');
+            }
+          },
+          error: function(xhr, status, err) {
+            $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;">✗ Request error: ' + err + '</span></div>');
+          },
+          complete: function() {
+            $btn.prop('disabled', false).html('<span class="dashicons dashicons-search"></span> Auto-Discover Resources');
+          }
+        });
+      });
+    }
+
+    handleQuickConnect('#astropress_quick_cf_token', '#astropress-quick-connect-results', '#astropress-quick-connect-btn');
+    handleQuickConnect('#astropress_quick_cf_token_r2', '#astropress-quick-connect-results-r2', '#astropress-quick-connect-btn-r2');
+
+    $(document).on('click', '.astropress-apply-cf-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const token = decodeURIComponent($btn.data('token'));
+      $btn.prop('disabled', true).text('Applying & Saving...');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_cf_quick_connect',
+          cf_api_token: token,
+          apply: 1,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success && res.data?.applied) {
+            alert('Settings applied successfully! Reloading...');
+            location.reload();
+          } else {
+            alert(res.data?.message || 'Failed to apply settings.');
+            $btn.prop('disabled', false).text('Apply Discovered Settings to WordPress');
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Network error: ' + err);
+          $btn.prop('disabled', false).text('Apply Discovered Settings to WordPress');
+        }
+      });
+    });
+
   });
 })(jQuery);
