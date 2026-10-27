@@ -3,7 +3,7 @@
  * Plugin Name:       AstroPress
  * Plugin URI:        https://github.com/iamgrisma/astropress
  * Description:       Universal Headless WordPress & Cloudflare R2 Suite for Astro on Cloudflare Pages and Workers. Features instant edge cache invalidation, automated background warmer, pure PHP SigV4 R2 media offloading, WebP/reSmush optimization, Rank Math & Yoast SEO bridge, native GitHub core updates and rollback.
- * Version:           1.1.0
+ * Version:           1.1.1
  * Author:            Grisma
  * Author URI:        https://grisma.com.np
  * Developer:         Grisma Bhandari
@@ -25,7 +25,7 @@ if (!defined('ABSPATH')) {
 
 // Core Plugin Constants
 if (!defined('ASTROPRESS_VERSION')) {
-    define('ASTROPRESS_VERSION', '1.1.0');
+    define('ASTROPRESS_VERSION', '1.1.1');
 }
 if (!defined('ASTROPRESS_FILE')) {
     define('ASTROPRESS_FILE', __FILE__);
@@ -35,32 +35,6 @@ if (!defined('ASTROPRESS_PATH')) {
 }
 if (!defined('ASTROPRESS_URL')) {
     define('ASTROPRESS_URL', plugin_dir_url(__FILE__));
-}
-
-// Backward Compatibility Constants for existing integrations
-if (!defined('R2G_VERSION')) {
-    define('R2G_VERSION', ASTROPRESS_VERSION);
-}
-if (!defined('R2G_FILE')) {
-    define('R2G_FILE', ASTROPRESS_FILE);
-}
-if (!defined('R2G_PATH')) {
-    define('R2G_PATH', ASTROPRESS_PATH);
-}
-if (!defined('R2G_URL')) {
-    define('R2G_URL', ASTROPRESS_URL);
-}
-if (!defined('TOPNEPALI_HEADLESS_VERSION')) {
-    define('TOPNEPALI_HEADLESS_VERSION', ASTROPRESS_VERSION);
-}
-if (!defined('TOPNEPALI_HEADLESS_FILE')) {
-    define('TOPNEPALI_HEADLESS_FILE', ASTROPRESS_FILE);
-}
-if (!defined('TOPNEPALI_HEADLESS_PATH')) {
-    define('TOPNEPALI_HEADLESS_PATH', ASTROPRESS_PATH);
-}
-if (!defined('TOPNEPALI_HEADLESS_URL')) {
-    define('TOPNEPALI_HEADLESS_URL', ASTROPRESS_URL);
 }
 
 // Require Core Modules
@@ -91,22 +65,78 @@ function astropress() {
 }
 
 /**
- * Legacy Global Accessors for Seamless Backward Compatibility
+ * Register backward compatibility shims (constants, functions, class aliases)
+ * only after all active plugins have loaded (priority 999), and only if legacy plugins are absent.
  */
-if (!function_exists('r2_by_grisma')) {
-    function r2_by_grisma() {
-        return astropress();
-    }
-}
+function astropress_register_legacy_shims() {
+    // R2 by Grisma Compatibility
+    if (!class_exists('R2_By_Grisma', false)) {
+        if (!defined('R2G_VERSION')) define('R2G_VERSION', ASTROPRESS_VERSION);
+        if (!defined('R2G_FILE'))    define('R2G_FILE', ASTROPRESS_FILE);
+        if (!defined('R2G_PATH'))    define('R2G_PATH', ASTROPRESS_PATH);
+        if (!defined('R2G_URL'))     define('R2G_URL', ASTROPRESS_URL);
 
-if (!function_exists('topnepali_headless')) {
-    function topnepali_headless() {
-        return astropress();
+        if (!function_exists('r2_by_grisma')) {
+            function r2_by_grisma() {
+                return astropress();
+            }
+        }
+
+        $r2_aliases = array(
+            'R2_By_Grisma'      => 'AstroPress',
+            'R2G_Encryption'    => 'AstroPress_Encryption',
+            'R2G_Database'      => 'AstroPress_Database',
+            'R2G_Client'        => 'AstroPress_R2_Client',
+            'R2G_Optimizer'     => 'AstroPress_Optimizer',
+            'R2G_Media_Handler' => 'AstroPress_Media_Handler',
+            'R2G_URL_Rewriter'  => 'AstroPress_URL_Rewriter',
+            'R2G_Media_Library' => 'AstroPress_Media_Library',
+            'R2G_Sync'          => 'AstroPress_Sync',
+            'R2G_Admin'         => 'AstroPress_Admin',
+            'R2G_Updater'       => 'AstroPress_Updater',
+        );
+
+        foreach ($r2_aliases as $alias => $original) {
+            if (!class_exists($alias, false)) {
+                class_alias($original, $alias);
+            }
+        }
+    }
+
+    // TopNepali Headless Compatibility
+    if (!class_exists('TopNepali_Headless', false)) {
+        if (!defined('TOPNEPALI_HEADLESS_VERSION')) define('TOPNEPALI_HEADLESS_VERSION', ASTROPRESS_VERSION);
+        if (!defined('TOPNEPALI_HEADLESS_FILE'))    define('TOPNEPALI_HEADLESS_FILE', ASTROPRESS_FILE);
+        if (!defined('TOPNEPALI_HEADLESS_PATH'))    define('TOPNEPALI_HEADLESS_PATH', ASTROPRESS_PATH);
+        if (!defined('TOPNEPALI_HEADLESS_URL'))     define('TOPNEPALI_HEADLESS_URL', ASTROPRESS_URL);
+
+        if (!function_exists('topnepali_headless')) {
+            function topnepali_headless() {
+                return astropress();
+            }
+        }
+
+        $tn_aliases = array(
+            'TopNepali_Headless'          => 'AstroPress',
+            'TopNepali_Headless_Cache'    => 'AstroPress_Cache',
+            'TopNepali_Headless_SEO'      => 'AstroPress_SEO',
+            'TopNepali_Headless_REST'     => 'AstroPress_REST',
+            'TopNepali_Headless_Security' => 'AstroPress_Security',
+            'TopNepali_Headless_Admin'    => 'AstroPress_Admin',
+            'TopNepali_Headless_Updater'  => 'AstroPress_Updater',
+        );
+
+        foreach ($tn_aliases as $alias => $original) {
+            if (!class_exists($alias, false)) {
+                class_alias($original, $alias);
+            }
+        }
     }
 }
 
 // Bootstrap
 add_action('plugins_loaded', 'astropress', 5);
+add_action('plugins_loaded', 'astropress_register_legacy_shims', 999);
 
 // Plugin Activation Hook
 register_activation_hook(__FILE__, function() {

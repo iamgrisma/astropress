@@ -408,8 +408,3 @@ class AstroPress_R2_Client {
         );
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Client')) {
-    class_alias('AstroPress_R2_Client', 'R2G_Client');
-}

@@ -662,11 +662,3 @@ class AstroPress_Updater {
         ));
     }
 }
-
-// Register backwards compatibility aliases
-if (!class_exists('R2G_Updater')) {
-    class_alias('AstroPress_Updater', 'R2G_Updater');
-}
-if (!class_exists('TopNepali_Headless_Updater')) {
-    class_alias('AstroPress_Updater', 'TopNepali_Headless_Updater');
-}

@@ -624,8 +624,3 @@ class AstroPress_SEO {
         update_option('astropress_redirects_synced_v1', 1);
     }
 }
-
-// Register backwards compatibility alias
-if (!class_exists('TopNepali_Headless_SEO')) {
-    class_alias('AstroPress_SEO', 'TopNepali_Headless_SEO');
-}

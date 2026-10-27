@@ -342,8 +342,3 @@ class AstroPress_Encryption {
         return substr($secret, 0, 4) . str_repeat('•', 16) . substr($secret, -4);
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Encryption')) {
-    class_alias('AstroPress_Encryption', 'R2G_Encryption');
-}

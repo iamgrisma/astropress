@@ -386,11 +386,3 @@ class AstroPress {
         }
     }
 }
-
-// Register backwards compatibility aliases
-if (!class_exists('TopNepali_Headless')) {
-    class_alias('AstroPress', 'TopNepali_Headless');
-}
-if (!class_exists('R2_By_Grisma')) {
-    class_alias('AstroPress', 'R2_By_Grisma');
-}

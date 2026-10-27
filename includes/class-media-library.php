@@ -578,8 +578,3 @@ class AstroPress_Media_Library {
         wp_send_json_error(array('message' => !empty($opt_res['message']) ? $opt_res['message'] : 'Optimization failed.'));
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Media_Library')) {
-    class_alias('AstroPress_Media_Library', 'R2G_Media_Library');
-}

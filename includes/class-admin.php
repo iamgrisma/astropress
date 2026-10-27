@@ -322,24 +322,25 @@ class AstroPress_Admin {
         }
 
         // Check for active legacy standalone plugins that AstroPress unifies
-        if (function_exists('is_plugin_active')) {
-            $legacy_active = array();
-            if (is_plugin_active('r2-by-grisma/r2-by-grisma.php') || (defined('R2G_FILE') && R2G_FILE !== ASTROPRESS_FILE)) {
-                $legacy_active[] = 'R2 by Grisma';
-            }
-            if (is_plugin_active('headless/headless.php') || is_plugin_active('headless/topnepali-headless.php') || (defined('TOPNEPALI_HEADLESS_FILE') && TOPNEPALI_HEADLESS_FILE !== ASTROPRESS_FILE)) {
-                $legacy_active[] = 'TopNepali Headless Engine';
-            }
+        if (!function_exists('is_plugin_active')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        $legacy_active = array();
+        if (is_plugin_active('r2-by-grisma/r2-by-grisma.php') || (defined('R2G_FILE') && R2G_FILE !== ASTROPRESS_FILE)) {
+            $legacy_active[] = 'R2 by Grisma';
+        }
+        if (is_plugin_active('topnepali-headless/topnepali-headless.php') || is_plugin_active('headless/headless.php') || is_plugin_active('headless/topnepali-headless.php') || (defined('TOPNEPALI_HEADLESS_FILE') && TOPNEPALI_HEADLESS_FILE !== ASTROPRESS_FILE)) {
+            $legacy_active[] = 'TopNepali Headless Engine';
+        }
 
-            if (!empty($legacy_active)) {
-                $deactivate_url = wp_nonce_url(admin_url('admin.php?page=astropress&astropress_deactivate_legacy=1'), 'astropress_deactivate_legacy_nonce');
-                echo '<div class="notice notice-info is-dismissible">';
-                echo '<p><strong>AstroPress Migration Detected:</strong> The following legacy plugin(s) are still active: <em>' . esc_html(implode(', ', $legacy_active)) . '</em>. ';
-                echo 'AstroPress has unified all headless bridge, cache invalidation, and R2 offloading functionality with 100% backward compatibility. ';
-                echo 'All existing settings and media records are automatically preserved. You can safely deactivate the legacy plugins to avoid duplicate background hooks.</p>';
-                echo '<p><a href="' . esc_url($deactivate_url) . '" class="button button-primary">Deactivate Legacy Plugins</a></p>';
-                echo '</div>';
-            }
+        if (!empty($legacy_active)) {
+            $deactivate_url = wp_nonce_url(admin_url('admin.php?page=astropress&astropress_deactivate_legacy=1'), 'astropress_deactivate_legacy_nonce');
+            echo '<div class="notice notice-info is-dismissible">';
+            echo '<p><strong>AstroPress Migration Detected:</strong> The following legacy plugin(s) are still active: <em>' . esc_html(implode(', ', $legacy_active)) . '</em>. ';
+            echo 'AstroPress has unified all headless bridge, cache invalidation, and R2 offloading functionality with 100% backward compatibility. ';
+            echo 'All existing settings and media records are automatically preserved. You can safely deactivate the legacy plugins to avoid duplicate background hooks.</p>';
+            echo '<p><a href="' . esc_url($deactivate_url) . '" class="button button-primary">Deactivate Legacy Plugins</a></p>';
+            echo '</div>';
         }
     }
 
@@ -784,6 +785,7 @@ class AstroPress_Admin {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
             $legacy_slugs = array(
                 'r2-by-grisma/r2-by-grisma.php',
+                'topnepali-headless/topnepali-headless.php',
                 'headless/headless.php',
                 'headless/topnepali-headless.php',
             );
@@ -2354,12 +2356,4 @@ CDN_MEDIA_URL=https://<?php echo esc_html($custom_domain); ?>
         </div>
         <?php
     }
-}
-
-// Register backwards compatibility aliases
-if (!class_exists('TopNepali_Headless_Admin')) {
-    class_alias('AstroPress_Admin', 'TopNepali_Headless_Admin');
-}
-if (!class_exists('R2G_Admin')) {
-    class_alias('AstroPress_Admin', 'R2G_Admin');
 }

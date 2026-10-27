@@ -561,8 +561,3 @@ class AstroPress_Database {
         );
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Database')) {
-    class_alias('AstroPress_Database', 'R2G_Database');
-}

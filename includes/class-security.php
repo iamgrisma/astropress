@@ -147,8 +147,3 @@ class AstroPress_Security {
         }
     }
 }
-
-// Register backwards compatibility alias
-if (!class_exists('TopNepali_Headless_Security')) {
-    class_alias('AstroPress_Security', 'TopNepali_Headless_Security');
-}

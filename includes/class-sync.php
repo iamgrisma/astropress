@@ -251,8 +251,3 @@ class AstroPress_Sync {
         ));
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Sync')) {
-    class_alias('AstroPress_Sync', 'R2G_Sync');
-}

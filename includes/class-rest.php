@@ -453,8 +453,3 @@ class AstroPress_REST {
         ));
     }
 }
-
-// Register backwards compatibility alias
-if (!class_exists('TopNepali_Headless_REST')) {
-    class_alias('AstroPress_REST', 'TopNepali_Headless_REST');
-}

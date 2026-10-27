@@ -889,8 +889,3 @@ class AstroPress_Media_Handler {
         AstroPress_Database::remove($attachment_id);
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Media_Handler')) {
-    class_alias('AstroPress_Media_Handler', 'R2G_Media_Handler');
-}

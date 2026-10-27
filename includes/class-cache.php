@@ -843,8 +843,3 @@ class AstroPress_Cache {
         return null;
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('TopNepali_Headless_Cache')) {
-    class_alias('AstroPress_Cache', 'TopNepali_Headless_Cache');
-}

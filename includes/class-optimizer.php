@@ -14,6 +14,20 @@ if (!defined('ABSPATH')) {
 }
 
 class AstroPress_Optimizer {
+    /**
+     * Singleton instance
+     *
+     * @var AstroPress_Optimizer|null
+     */
+    private static $instance = null;
+
+    public static function instance() {
+        if (is_null(self::$instance)) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
     const RESMUSH_ENDPOINT  = 'https://api.resmush.it/';
     const RESMUSH_MAX_BYTES = 5242880;
     const RESMUSH_TIMEOUT   = 60;
@@ -565,9 +579,4 @@ class AstroPress_Optimizer {
         $seconds = (int) apply_filters('astropress_resmush_backoff_seconds', $seconds);
         set_transient(self::RESMUSH_BACKOFF_KEY, time() + $seconds, $seconds);
     }
-}
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_Optimizer')) {
-    class_alias('AstroPress_Optimizer', 'R2G_Optimizer');
 }

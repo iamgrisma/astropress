@@ -429,8 +429,3 @@ class AstroPress_URL_Rewriter {
         return str_replace($baseurl_insecure, $target_url, $content);
     }
 }
-
-// Backward Compatibility Class Alias
-if (!class_exists('R2G_URL_Rewriter')) {
-    class_alias('AstroPress_URL_Rewriter', 'R2G_URL_Rewriter');
-}
