@@ -250,6 +250,59 @@ class AstroPress_Cache {
     public function on_site_info_change() {
         $this->dispatch_revalidation(null, 'site_info', 'update', array('/', '/blogs', '/blog', '/rss.xml', '/sitemap.xml'));
     }
+
+    /**
+     * Warmer Delegation for Backward Compatibility
+     */
+    public function get_warmup_urls($preset = 'standard') {
+        return isset($this->core->warmer) ? $this->core->warmer->get_warmup_urls($preset) : array();
+    }
+
+    public function warm_url_batch($urls = array()) {
+        return isset($this->core->warmer) ? $this->core->warmer->warm_url_batch($urls) : array();
+    }
+
+    public function start_background_job($preset = 'standard', $delay_ms = 1000, $batch_size = 2) {
+        return isset($this->core->warmer) ? $this->core->warmer->start_background_job($preset, $delay_ms, $batch_size) : false;
+    }
+
+    public function run_background_worker() {
+        return isset($this->core->warmer) ? $this->core->warmer->run_background_worker() : null;
+    }
+
+    public function get_background_job_status() {
+        return isset($this->core->warmer) ? $this->core->warmer->get_background_job_status() : array();
+    }
+
+    public function pause_background_job() {
+        return isset($this->core->warmer) ? $this->core->warmer->pause_background_job() : false;
+    }
+
+    public function resume_background_job() {
+        return isset($this->core->warmer) ? $this->core->warmer->resume_background_job() : false;
+    }
+
+    public function cancel_background_job() {
+        return isset($this->core->warmer) ? $this->core->warmer->cancel_background_job() : false;
+    }
+
+    public function clear_background_job() {
+        return isset($this->core->warmer) ? $this->core->warmer->clear_background_job() : false;
+    }
+
+    public function warm_recent_content() {
+        $recent = $this->get_warmup_urls('recent');
+        if (!empty($recent)) {
+            $this->warm_url_batch(array_slice($recent, 0, 10));
+        }
+    }
+
+    public function __call($name, $arguments) {
+        if (isset($this->core->warmer) && method_exists($this->core->warmer, $name)) {
+            return call_user_func_array(array($this->core->warmer, $name), $arguments);
+        }
+        return null;
+    }
 }
 
 // Backward Compatibility Class Alias

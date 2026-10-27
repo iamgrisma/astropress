@@ -2,7 +2,8 @@
  * AstroPress Admin Scripts
  *
  * Handles live Headless handshake testing, interactive Edge cache warming,
- * Cloudflare R2 bucket discovery, live connection testing, and bulk media sync.
+ * Cloudflare R2 bucket discovery, live connection testing, bulk media sync,
+ * code snippet clipboard copying, and compression preview testing.
  *
  * @package AstroPress
  * @author  Grisma <https://grisma.com.np>
@@ -15,6 +16,15 @@
     const config = window.astropressConfig || {};
     const ajaxurl = config.ajaxUrl || window.ajaxurl || '/wp-admin/admin-ajax.php';
     const nonce = config.nonce || '';
+
+    // Helper: format bytes
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
 
     // ========================================================
     // 1. Revalidation Secret Toggle & Generator
@@ -31,15 +41,25 @@
       }
     });
 
-    $('#astropress-generate-secret').on('click', function(e) {
-      e.preventDefault();
+    function generateRandomSecret() {
       const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-';
       let secret = 'ap_sec_';
       for (let i = 0; i < 32; i++) {
         secret += chars.charAt(Math.floor(Math.random() * chars.length));
       }
+      return secret;
+    }
+
+    $('#astropress-generate-secret').on('click', function(e) {
+      e.preventDefault();
+      const secret = generateRandomSecret();
       $('#astropress_secret').attr('type', 'text').val(secret);
       $('#astropress-toggle-secret').text('Hide');
+    });
+
+    $('#onboard-gen-secret').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard_secret').val(generateRandomSecret());
     });
 
     // ========================================================
@@ -71,7 +91,7 @@
           $status.html('<span style="color:#e02424;font-weight:600;">✗ Request error: ' + err + '</span>');
         },
         complete: function() {
-          $btn.prop('disabled', false).text('Test Handshake');
+          $btn.prop('disabled', false).text('Test Webhook Handshake');
         }
       });
     });
@@ -79,17 +99,7 @@
     // ========================================================
     // 3. Cloudflare R2 Discovery & Connection Testing
     // ========================================================
-    $('#astropress-fetch-buckets').on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const $status = $('#astropress-r2-status');
-      const accountId = $('#r2_account_id').val()?.trim();
-      const accessKey = $('#r2_access_key').val()?.trim();
-      let secretKey = $('#r2_secret_key').val()?.trim();
-      if (secretKey && secretKey.indexOf('••••') !== -1) {
-        secretKey = '';
-      }
-
+    function handleFetchBuckets($btn, $status, accountId, accessKey, secretKey, $targetInput) {
       if (!accountId || !accessKey) {
         $status.html('<span style="color:#e02424;">Please enter Account ID and Access Key ID first.</span>');
         return;
@@ -112,10 +122,7 @@
         success: function(res) {
           if (res.success && res.data?.buckets && res.data.buckets.length > 0) {
             const buckets = res.data.buckets;
-            const current = $('#r2_bucket').val()?.trim();
-            if (!current) {
-              $('#r2_bucket').val(buckets[0]);
-            }
+            $targetInput.val(buckets[0]);
             $status.html('<span style="color:#057a55;font-weight:600;">✓ Discovered ' + buckets.length + ' bucket(s): ' + buckets.join(', ') + '</span>');
           } else {
             $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Could not discover buckets.') + '</span>');
@@ -128,6 +135,34 @@
           $btn.prop('disabled', false).text('Discover Buckets');
         }
       });
+    }
+
+    $('#astropress-fetch-buckets').on('click', function(e) {
+      e.preventDefault();
+      let secretKey = $('#r2_secret_key').val()?.trim();
+      if (secretKey && secretKey.indexOf('••••') !== -1) secretKey = '';
+      handleFetchBuckets(
+        $(this),
+        $('#astropress-r2-status'),
+        $('#r2_account_id').val()?.trim(),
+        $('#r2_access_key').val()?.trim(),
+        secretKey,
+        $('#r2_bucket')
+      );
+    });
+
+    $('#onboard-fetch-buckets').on('click', function(e) {
+      e.preventDefault();
+      let secretKey = $('#onboard_r2_secret_key').val()?.trim();
+      if (secretKey && secretKey.indexOf('••••') !== -1) secretKey = '';
+      handleFetchBuckets(
+        $(this),
+        $('#onboard-r2-status'),
+        $('#onboard_r2_account_id').val()?.trim(),
+        $('#onboard_r2_access_key').val()?.trim(),
+        secretKey,
+        $('#onboard_r2_bucket')
+      );
     });
 
     $('#astropress-test-r2').on('click', function(e) {
@@ -181,7 +216,95 @@
     });
 
     // ========================================================
-    // 4. Interactive Edge Cache Warmer
+    // 4. Live Compression Preview Tester
+    // ========================================================
+    $('#astropress-run-preview-test').on('click', function(e) {
+      e.preventDefault();
+      const fileInput = document.getElementById('astropress-test-image-input');
+      const $btn = $(this);
+      const $result = $('#astropress-preview-result');
+
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('Please choose an image file to test first.');
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('action', 'astropress_preview_compression');
+      formData.append('nonce', nonce);
+      formData.append('image', file);
+      formData.append('format', $('#compress_format').val() || 'webp');
+      formData.append('quality', $('#compress_quality').val() || 82);
+      formData.append('max_width', $('#max_width').val() || 1920);
+      formData.append('engine', $('#compress_engine').val() || 'resmush');
+
+      $btn.prop('disabled', true).text('Compressing...');
+      $result.show().html('<p style="color:#64748b;">Processing image with selected engine and format...</p>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        success: function(res) {
+          if (res.success && res.data) {
+            const d = res.data;
+            const html = `
+              <div class="astropress-preview-result-card">
+                <img src="${d.data_uri}" alt="Compressed Preview" class="astropress-preview-img" />
+                <div>
+                  <h4 style="margin:0 0 6px 0; color:#0f172a; font-size:15px;">✓ Compression Successful!</h4>
+                  <table style="font-size:12px; line-height:1.6;">
+                    <tr><td><strong>Original Size:</strong></td><td>${formatBytes(d.original_size)}</td></tr>
+                    <tr><td><strong>Compressed Size:</strong></td><td>${formatBytes(d.compressed_size)}</td></tr>
+                    <tr><td><strong>Reduction:</strong></td><td><span class="astropress-text-success" style="font-size:14px; font-weight:700;">-${d.percent}%</span> (${formatBytes(d.saved_bytes)} saved)</td></tr>
+                    <tr><td><strong>Engine:</strong></td><td><code>${d.engine_used || 'reSmush'}</code></td></tr>
+                  </table>
+                </div>
+              </div>
+            `;
+            $result.html(html);
+          } else {
+            $result.html('<p style="color:#e02424;">✗ ' + (res.data?.message || 'Compression failed.') + '</p>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $result.html('<p style="color:#e02424;">✗ Request error: ' + err + '</p>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).text('Test Image Compression');
+        }
+      });
+    });
+
+    // ========================================================
+    // 5. Code Snippet Clipboard Copy
+    // ========================================================
+    $(document).on('click', '.astropress-copy-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const targetId = $btn.data('target');
+      const targetEl = document.getElementById(targetId);
+
+      if (targetEl) {
+        const text = targetEl.textContent || targetEl.innerText;
+        navigator.clipboard.writeText(text).then(function() {
+          const orig = $btn.text();
+          $btn.text('Copied!');
+          setTimeout(function() {
+            $btn.text(orig);
+          }, 2000);
+        }).catch(function() {
+          alert('Could not copy to clipboard.');
+        });
+      }
+    });
+
+    // ========================================================
+    // 6. Interactive Edge Cache Warmer
     // ========================================================
     let warmerUrls = [];
     let warmerIndex = 0;
@@ -303,7 +426,7 @@
     });
 
     // ========================================================
-    // 5. Bulk Media Sync to Cloudflare R2
+    // 7. Bulk Media Sync to Cloudflare R2
     // ========================================================
     let syncActive = false;
     let syncOffset = 0;
@@ -385,7 +508,7 @@
     });
 
     // ========================================================
-    // 6. Media Library Single Attachment AJAX Buttons
+    // 8. Media Library Single Attachment AJAX Buttons
     // ========================================================
     $(document).on('click', '.astropress-media-action-btn', function(e) {
       e.preventDefault();

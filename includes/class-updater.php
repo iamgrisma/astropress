@@ -374,6 +374,27 @@ class AstroPress_Updater {
     }
 
     /**
+     * Get secure package download URL (GitHub Release asset)
+     *
+     * @param string $raw_download_url
+     * @return string
+     */
+    public function get_secure_download_url($raw_download_url = '') {
+        $latest = $this->get_latest_release();
+        return !empty($latest['package']) ? $latest['package'] : sprintf('https://github.com/%s/%s/releases/latest/download/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, self::PLUGIN_SLUG);
+    }
+
+    /**
+     * Get remote release metadata
+     *
+     * @param bool $force
+     * @return array|null
+     */
+    public function get_remote_info($force = false) {
+        return $this->get_latest_release($force);
+    }
+
+    /**
      * Native WordPress Plugin Details Popup (View details)
      *
      * @param false|object|array $result

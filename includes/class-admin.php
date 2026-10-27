@@ -1,14 +1,17 @@
 <?php
 /**
- * AstroPress Admin Dashboard, Settings & Controls
+ * AstroPress Admin Dashboard, Guided Onboarding, Settings & Diagnostics
  *
- * Provides a unified tabbed interface for:
- * - Overview & System Status
- * - Headless Bridge & Cache Invalidation
- * - Edge Cache Warmer (Interactive & Background)
- * - Cloudflare R2 Credentials & CDN Delivery
- * - Image Optimization (WebP/AVIF, reSmush.it, GD/Imagick)
+ * Provides a unified, high-performance tabbed interface for:
+ * - Overview & Real-Time System Status
+ * - Step-by-Step Guided Setup & Onboarding Wizard
+ * - Headless Bridge & Cache Invalidation Webhooks
+ * - Edge Cache Warmer (Interactive & Background Cron)
+ * - Cloudflare R2 Credentials, Bucket Discovery & CDN Delivery
+ * - Image Optimization (WebP/AVIF, reSmush.it Cloud & Server GD/Imagick)
+ * - Live Compression Preview Tester
  * - Media Sync & Rollback
+ * - Copyable Astro Code Snippets & Architecture Blueprints
  * - GitHub Updates & Version Switcher
  *
  * @package AstroPress
@@ -115,19 +118,19 @@ class AstroPress_Admin {
 
         add_submenu_page(
             'astropress',
-            'Headless Bridge — AstroPress',
-            'Headless Bridge',
+            'Setup Wizard — AstroPress',
+            'Setup Wizard',
             'manage_options',
-            'astropress&tab=bridge',
+            'astropress&tab=onboarding',
             array($this, 'render_settings_page')
         );
 
         add_submenu_page(
             'astropress',
-            'Cache Warmer — AstroPress',
-            'Cache Warmer',
+            'Headless Bridge — AstroPress',
+            'Headless Bridge',
             'manage_options',
-            'astropress&tab=warmer',
+            'astropress&tab=bridge',
             array($this, 'render_settings_page')
         );
 
@@ -151,10 +154,28 @@ class AstroPress_Admin {
 
         add_submenu_page(
             'astropress',
+            'Cache Warmer — AstroPress',
+            'Cache Warmer',
+            'manage_options',
+            'astropress&tab=warmer',
+            array($this, 'render_settings_page')
+        );
+
+        add_submenu_page(
+            'astropress',
             'Media Sync — AstroPress',
             'Media Sync',
             'manage_options',
             'astropress&tab=sync',
+            array($this, 'render_settings_page')
+        );
+
+        add_submenu_page(
+            'astropress',
+            'Code & Snippets — AstroPress',
+            'Astro Snippets',
+            'manage_options',
+            'astropress&tab=integration',
             array($this, 'render_settings_page')
         );
 
@@ -210,7 +231,6 @@ class AstroPress_Admin {
             true
         );
 
-        // Compression config for upload manager & preview
         $compress_config = array(
             'engine'       => AstroPress_Optimizer::get_engine(),
             'storageMode'  => AstroPress_Media_Handler::get_storage_mode(),
@@ -235,7 +255,6 @@ class AstroPress_Admin {
             'compress'     => $compress_config,
         ));
 
-        // Legacy compatibility objects for scripts expecting topnepaliAdmin or r2g_compress_config
         wp_localize_script('astropress-admin-js', 'topnepaliAdmin', array(
             'ajaxUrl'     => admin_url('admin-ajax.php'),
             'nonce'       => wp_create_nonce('topnepali_admin_nonce'),
@@ -245,7 +264,6 @@ class AstroPress_Admin {
         ));
         wp_localize_script('astropress-admin-js', 'r2g_compress_config', $compress_config);
 
-        // Enqueue Upload Interceptor if on media screens or settings
         if ((int) get_option('r2g_interceptor_enabled', 1) === 1 || $is_astropress_page) {
             wp_enqueue_script(
                 'astropress-upload-interceptor',
@@ -396,7 +414,82 @@ class AstroPress_Admin {
     }
 
     /**
-     * Handle Admin Form Submissions (Headless Bridge, Automation, Cloudflare R2, Optimizer)
+     * Pre-Flight System Capabilities & Health Diagnostics
+     *
+     * @return array
+     */
+    public function get_preflight_checks() {
+        $checks = array();
+
+        // 1. PHP Version
+        $php_ok = version_compare(PHP_VERSION, '7.4', '>=');
+        $checks['php'] = array(
+            'label'   => 'PHP Version',
+            'value'   => PHP_VERSION,
+            'status'  => $php_ok ? 'pass' : 'fail',
+            'message' => $php_ok ? 'Compatible (7.4+)' : 'Requires PHP 7.4 or higher.',
+        );
+
+        // 2. cURL Extension
+        $curl_ok = extension_loaded('curl');
+        $checks['curl'] = array(
+            'label'   => 'cURL Extension',
+            'value'   => $curl_ok ? 'Installed' : 'Missing',
+            'status'  => $curl_ok ? 'pass' : 'fail',
+            'message' => $curl_ok ? 'Ready for SigV4 and Webhooks' : 'Required for Cloudflare R2 and Edge Cache webhooks.',
+        );
+
+        // 3. Cryptography (OpenSSL or Sodium)
+        $crypto_ok = AstroPress_Encryption::is_available();
+        $checks['crypto'] = array(
+            'label'   => 'Credential Encryption',
+            'value'   => extension_loaded('sodium') ? 'libsodium (AES-256)' : (extension_loaded('openssl') ? 'OpenSSL (AES-256-GCM)' : 'None'),
+            'status'  => $crypto_ok ? 'pass' : 'warn',
+            'message' => $crypto_ok ? 'Hardware-accelerated AES-256 encryption active' : 'Install OpenSSL or Sodium for encrypted R2 credentials.',
+        );
+
+        // 4. WordPress Security Salts
+        $salts_ok = AstroPress_Encryption::has_strong_salts();
+        $checks['salts'] = array(
+            'label'   => 'Security Salts',
+            'value'   => $salts_ok ? 'Defined' : 'Default / Missing',
+            'status'  => $salts_ok ? 'pass' : 'warn',
+            'message' => $salts_ok ? 'Unique cryptographic salts in wp-config.php' : 'Define unique salts in wp-config.php for maximum key isolation.',
+        );
+
+        // 5. Image Processing Library
+        $gd_ok = extension_loaded('gd');
+        $imagick_ok = extension_loaded('imagick');
+        $checks['image_lib'] = array(
+            'label'   => 'Image Processing',
+            'value'   => $imagick_ok ? 'Imagick Active' : ($gd_ok ? 'GD Active' : 'Missing'),
+            'status'  => ($gd_ok || $imagick_ok) ? 'pass' : 'warn',
+            'message' => ($gd_ok || $imagick_ok) ? 'Ready for on-the-fly conversion' : 'reSmush.it cloud API will be used exclusively.',
+        );
+
+        // 6. WebP Support
+        $webp_ok = AstroPress_Optimizer::can_generate_webp();
+        $checks['webp'] = array(
+            'label'   => 'WebP Conversion',
+            'value'   => $webp_ok ? 'Supported' : 'Cloud Fallback',
+            'status'  => $webp_ok ? 'pass' : 'info',
+            'message' => $webp_ok ? 'Native server generation enabled' : 'WebP generated via reSmush.it Cloud API.',
+        );
+
+        // 7. AVIF Support
+        $avif_ok = AstroPress_Optimizer::can_generate_avif();
+        $checks['avif'] = array(
+            'label'   => 'AVIF Conversion',
+            'value'   => $avif_ok ? 'Supported' : 'Not available',
+            'status'  => $avif_ok ? 'pass' : 'info',
+            'message' => $avif_ok ? 'Native AVIF generation active' : 'Requires PHP 8.1+ with libavif.',
+        );
+
+        return $checks;
+    }
+
+    /**
+     * Handle Admin Form Submissions
      */
     public function handle_save_settings() {
         if (!current_user_can('manage_options')) {
@@ -538,6 +631,71 @@ class AstroPress_Admin {
             wp_safe_redirect(admin_url('admin.php?page=astropress&tab=optimizer'));
             exit;
         }
+
+        // 5. Save Quick Onboarding Form
+        if (isset($_POST['astropress_save_onboarding']) && check_admin_referer('astropress_onboarding_action', 'astropress_onboarding_nonce')) {
+            // Frontend
+            $frontend_url = esc_url_raw(rtrim(trim(wp_unslash($_POST['onboard_frontend_url'] ?? '')), '/'));
+            $secret       = sanitize_text_field(trim(wp_unslash($_POST['onboard_secret'] ?? '')));
+            if (!empty($frontend_url)) {
+                update_option(AstroPress::OPTION_FRONTEND_URL, $frontend_url);
+                update_option('topnepali_headless_frontend_url', $frontend_url);
+            }
+            if (!empty($secret)) {
+                update_option(AstroPress::OPTION_SECRET, $secret);
+                update_option('topnepali_headless_secret', $secret);
+            }
+
+            // R2
+            $account_id    = sanitize_text_field(wp_unslash($_POST['onboard_r2_account_id'] ?? ''));
+            $access_key    = sanitize_text_field(wp_unslash($_POST['onboard_r2_access_key'] ?? ''));
+            $posted_secret = trim(wp_unslash($_POST['onboard_r2_secret_key'] ?? ''));
+            $bucket        = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket'] ?? ''));
+            $custom_domain = sanitize_text_field(wp_unslash($_POST['onboard_r2_custom_domain'] ?? ''));
+
+            if (!empty($account_id)) {
+                update_option('r2g_account_id', $account_id);
+                update_option('astropress_r2_account_id', $account_id);
+            }
+            if (!empty($access_key)) {
+                update_option('r2g_access_key', $access_key);
+                update_option('astropress_r2_access_key', $access_key);
+            }
+            if (!empty($posted_secret)) {
+                $encrypted_secret = AstroPress_Encryption::encrypt($posted_secret);
+                update_option('r2g_secret_key', $encrypted_secret);
+                update_option('astropress_r2_secret_key', $encrypted_secret);
+            }
+            if (!empty($bucket)) {
+                update_option('r2g_bucket', $bucket);
+                update_option('astropress_r2_bucket', $bucket);
+            }
+            if (!empty($custom_domain)) {
+                $clean_domain = preg_replace('#^https?://#', '', rtrim($custom_domain, '/'));
+                update_option('r2g_custom_domain', $clean_domain);
+                update_option('astropress_r2_custom_domain', $clean_domain);
+            }
+
+            // Defaults
+            update_option(AstroPress::OPTION_CONNECTED, '1');
+            update_option(AstroPress::OPTION_REWRITE_LINKS, '1');
+            update_option(AstroPress::OPTION_PURGE_ON_SAVE, '1');
+            update_option(AstroPress::OPTION_SUBDOMAIN_SHIELD, '1');
+            update_option(AstroPress::OPTION_SUBDOMAIN_NOINDEX, '1');
+            update_option('r2g_auto_upload', 1);
+            update_option('r2g_rewrite_urls', 1);
+            update_option('r2g_compress_enabled', 1);
+            update_option('r2g_compress_format', 'webp');
+            update_option('r2g_compress_quality', 82);
+
+            set_transient('astropress_notice', array(
+                'type'    => 'success',
+                'message' => esc_html__('AstroPress Setup Complete! Your architecture is now connected and protected.', 'astropress'),
+            ), 30);
+
+            wp_safe_redirect(admin_url('admin.php?page=astropress'));
+            exit;
+        }
     }
 
     /**
@@ -585,17 +743,17 @@ class AstroPress_Admin {
             wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
         }
 
-        $frontend_url = $this->core->get_frontend_url();
-        $secret       = $this->core->get_secret();
+        $frontend_url = sanitize_text_field($_POST['frontend_url'] ?? '') ?: $this->core->get_frontend_url();
+        $secret       = sanitize_text_field($_POST['secret'] ?? '') ?: $this->core->get_secret();
 
         if (empty($frontend_url) || empty($secret)) {
             wp_send_json_error(array(
-                'message' => 'Credentials not found in WordPress database. Please configure a new key.',
+                'message' => 'Please provide both the Frontend URL and Revalidation Secret token.',
                 'code'    => 404,
             ));
         }
 
-        $test_endpoint = $frontend_url . '/api/revalidate';
+        $test_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
         $start_time    = microtime(true);
         $response      = wp_remote_post($test_endpoint, array(
             'timeout'   => 8,
@@ -896,12 +1054,12 @@ class AstroPress_Admin {
             @unlink($res['output_path']);
 
             wp_send_json_success(array(
-                'original_size' => $orig_size,
+                'original_size'   => $orig_size,
                 'compressed_size' => $out_size,
-                'saved_bytes'   => max(0, $orig_size - $out_size),
-                'percent'       => ($orig_size > 0) ? round((($orig_size - $out_size) / $orig_size) * 100, 1) : 0,
-                'data_uri'      => 'data:' . $mime . ';base64,' . $out_data,
-                'engine_used'   => $res['engine_used'] ?? $engine,
+                'saved_bytes'     => max(0, $orig_size - $out_size),
+                'percent'         => ($orig_size > 0) ? round((($orig_size - $out_size) / $orig_size) * 100, 1) : 0,
+                'data_uri'        => 'data:' . $mime . ';base64,' . $out_data,
+                'engine_used'     => $res['engine_used'] ?? $engine,
             ));
         } else {
             wp_send_json_error(array('message' => !empty($res['error']) ? $res['error'] : 'Compression preview failed.'));
@@ -950,15 +1108,32 @@ class AstroPress_Admin {
                 </div>
             <?php endif; ?>
 
+            <?php if ((!$is_connected || empty($r2_bucket)) && $active_tab !== 'onboarding'): ?>
+                <div class="astropress-onboarding-banner">
+                    <div class="astropress-onboarding-banner-icon">
+                        <span class="dashicons dashicons-superhero-alt"></span>
+                    </div>
+                    <div class="astropress-onboarding-banner-content">
+                        <h3><?php esc_html_e('Welcome to AstroPress! Setup is incomplete.', 'astropress'); ?></h3>
+                        <p><?php esc_html_e('Follow the guided 5-minute setup wizard to connect your Astro site on Cloudflare Pages/Workers and configure native Cloudflare R2 media storage.', 'astropress'); ?></p>
+                    </div>
+                    <div class="astropress-onboarding-banner-action">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-primary">
+                            <?php esc_html_e('Launch Setup Wizard', 'astropress'); ?>
+                        </a>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <nav class="nav-tab-wrapper astropress-nav-tabs">
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress')); ?>" class="nav-tab <?php echo ($active_tab === 'dashboard') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-dashboard"></span> <?php esc_html_e('Overview', 'astropress'); ?>
                 </a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="nav-tab <?php echo ($active_tab === 'onboarding') ? 'nav-tab-active' : ''; ?>">
+                    <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
+                </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=bridge')); ?>" class="nav-tab <?php echo ($active_tab === 'bridge') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-rest-api"></span> <?php esc_html_e('Headless Bridge', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=warmer')); ?>" class="nav-tab <?php echo ($active_tab === 'warmer') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-performance"></span> <?php esc_html_e('Cache Warmer', 'astropress'); ?>
                 </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2')); ?>" class="nav-tab <?php echo ($active_tab === 'r2') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-database"></span> <?php esc_html_e('Cloudflare R2', 'astropress'); ?>
@@ -966,8 +1141,14 @@ class AstroPress_Admin {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=optimizer')); ?>" class="nav-tab <?php echo ($active_tab === 'optimizer') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-format-image"></span> <?php esc_html_e('Image Optimizer', 'astropress'); ?>
                 </a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=warmer')); ?>" class="nav-tab <?php echo ($active_tab === 'warmer') ? 'nav-tab-active' : ''; ?>">
+                    <span class="dashicons dashicons-performance"></span> <?php esc_html_e('Cache Warmer', 'astropress'); ?>
+                </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=sync')); ?>" class="nav-tab <?php echo ($active_tab === 'sync') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-update"></span> <?php esc_html_e('Media Sync', 'astropress'); ?>
+                </a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=integration')); ?>" class="nav-tab <?php echo ($active_tab === 'integration') ? 'nav-tab-active' : ''; ?>">
+                    <span class="dashicons dashicons-editor-code"></span> <?php esc_html_e('Astro Snippets', 'astropress'); ?>
                 </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=updates')); ?>" class="nav-tab <?php echo ($active_tab === 'updates') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-cloud-saved"></span> <?php esc_html_e('Updates & Rollback', 'astropress'); ?>
@@ -977,11 +1158,11 @@ class AstroPress_Admin {
             <div class="astropress-content">
                 <?php
                 switch ($active_tab) {
+                    case 'onboarding':
+                        $this->render_tab_onboarding($frontend_url, $is_connected);
+                        break;
                     case 'bridge':
                         $this->render_tab_bridge($frontend_url, $is_connected);
-                        break;
-                    case 'warmer':
-                        $this->render_tab_warmer();
                         break;
                     case 'r2':
                         $this->render_tab_r2();
@@ -989,8 +1170,14 @@ class AstroPress_Admin {
                     case 'optimizer':
                         $this->render_tab_optimizer();
                         break;
+                    case 'warmer':
+                        $this->render_tab_warmer();
+                        break;
                     case 'sync':
                         $this->render_tab_sync($stats);
+                        break;
+                    case 'integration':
+                        $this->render_tab_integration($frontend_url);
                         break;
                     case 'updates':
                         $this->render_tab_updates();
@@ -1007,6 +1194,146 @@ class AstroPress_Admin {
     }
 
     /**
+     * Tab: Guided Onboarding Wizard
+     */
+    private function render_tab_onboarding($frontend_url, $is_connected) {
+        $checks = $this->get_preflight_checks();
+        $secret = $this->core->get_secret();
+        $account_id = get_option('r2g_account_id', '');
+        $access_key = get_option('r2g_access_key', '');
+        $bucket = get_option('r2g_bucket', '');
+        $custom_domain = get_option('r2g_custom_domain', '');
+        ?>
+        <div class="astropress-wizard-wrap">
+            <div class="astropress-card">
+                <div class="astropress-wizard-header">
+                    <h2><?php esc_html_e('AstroPress Setup & Architecture Wizard', 'astropress'); ?></h2>
+                    <p><?php esc_html_e('Configure your headless WordPress bridge, Cloudflare R2 object storage, and image optimization pipeline in 5 easy steps.', 'astropress'); ?></p>
+                </div>
+
+                <!-- Pre-flight diagnostics -->
+                <div class="astropress-preflight-card">
+                    <h3><span class="dashicons dashicons-yes-alt"></span> <?php esc_html_e('Pre-Flight Server Readiness Check', 'astropress'); ?></h3>
+                    <div class="astropress-preflight-grid">
+                        <?php foreach ($checks as $k => $c): ?>
+                            <div class="astropress-preflight-item astropress-status-<?php echo esc_attr($c['status']); ?>">
+                                <span class="astropress-preflight-badge">
+                                    <?php echo ($c['status'] === 'pass') ? '✓' : (($c['status'] === 'fail') ? '✗' : 'ℹ'); ?>
+                                </span>
+                                <div>
+                                    <strong><?php echo esc_html($c['label']); ?>:</strong> <?php echo esc_html($c['value']); ?>
+                                    <div class="astropress-preflight-desc"><?php echo esc_html($c['message']); ?></div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <form method="post" action="">
+                    <?php wp_nonce_field('astropress_onboarding_action', 'astropress_onboarding_nonce'); ?>
+
+                    <div class="astropress-wizard-step">
+                        <div class="astropress-step-num">1</div>
+                        <div class="astropress-step-body">
+                            <h3><?php esc_html_e('Headless Astro Frontend Connection', 'astropress'); ?></h3>
+                            <p class="description"><?php esc_html_e('Where is your Astro site hosted on Cloudflare Pages or Workers?', 'astropress'); ?></p>
+
+                            <table class="form-table">
+                                <tr>
+                                    <th scope="row"><label for="onboard_frontend_url"><?php esc_html_e('Astro Frontend URL', 'astropress'); ?></label></th>
+                                    <td>
+                                        <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" placeholder="https://example.com" required />
+                                        <p class="description"><?php esc_html_e('Your canonical production Astro website URL (e.g., https://example.com).', 'astropress'); ?></p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="onboard_secret"><?php esc_html_e('Revalidation Secret', 'astropress'); ?></label></th>
+                                    <td>
+                                        <div class="astropress-inline-form">
+                                            <input type="text" id="onboard_secret" name="onboard_secret" value="<?php echo esc_attr($secret); ?>" class="regular-text" required />
+                                            <button type="button" class="button" id="onboard-gen-secret"><?php esc_html_e('Generate Random', 'astropress'); ?></button>
+                                        </div>
+                                        <p class="description"><?php esc_html_e('Set REVALIDATE_SECRET in Cloudflare Pages Environment Variables to this exact value.', 'astropress'); ?></p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="astropress-wizard-step">
+                        <div class="astropress-step-num">2</div>
+                        <div class="astropress-step-body">
+                            <h3><?php esc_html_e('Cloudflare R2 Object Storage Credentials', 'astropress'); ?></h3>
+                            <p class="description"><?php esc_html_e('Zero-egress object storage for media attachments. Generated from Cloudflare Dashboard -> R2 -> Manage R2 API Tokens.', 'astropress'); ?></p>
+
+                            <table class="form-table">
+                                <tr>
+                                    <th scope="row"><label for="onboard_r2_account_id"><?php esc_html_e('Cloudflare Account ID', 'astropress'); ?></label></th>
+                                    <td>
+                                        <input type="text" id="onboard_r2_account_id" name="onboard_r2_account_id" value="<?php echo esc_attr($account_id); ?>" class="regular-text" placeholder="32-character hex ID" />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="onboard_r2_access_key"><?php esc_html_e('R2 Access Key ID', 'astropress'); ?></label></th>
+                                    <td>
+                                        <input type="text" id="onboard_r2_access_key" name="onboard_r2_access_key" value="<?php echo esc_attr($access_key); ?>" class="regular-text" />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="onboard_r2_secret_key"><?php esc_html_e('R2 Secret Access Key', 'astropress'); ?></label></th>
+                                    <td>
+                                        <input type="password" id="onboard_r2_secret_key" name="onboard_r2_secret_key" placeholder="<?php echo !empty(get_option('r2g_secret_key')) ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" autocomplete="off" />
+                                        <p class="description"><?php esc_html_e('Stored securely using hardware AES-256 encryption at rest.', 'astropress'); ?></p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="onboard_r2_bucket"><?php esc_html_e('R2 Bucket Name', 'astropress'); ?></label></th>
+                                    <td>
+                                        <div class="astropress-inline-form">
+                                            <input type="text" id="onboard_r2_bucket" name="onboard_r2_bucket" value="<?php echo esc_attr($bucket); ?>" class="regular-text" placeholder="my-media-bucket" />
+                                            <button type="button" class="button" id="onboard-fetch-buckets"><?php esc_html_e('Discover Buckets', 'astropress'); ?></button>
+                                        </div>
+                                        <div id="onboard-r2-status" style="margin-top:6px;"></div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="onboard_r2_custom_domain"><?php esc_html_e('Public CDN Domain', 'astropress'); ?></label></th>
+                                    <td>
+                                        <input type="text" id="onboard_r2_custom_domain" name="onboard_r2_custom_domain" value="<?php echo esc_attr($custom_domain); ?>" class="regular-text" placeholder="media.example.com" />
+                                        <p class="description"><?php esc_html_e('Your public custom domain hooked to the R2 bucket.', 'astropress'); ?></p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="astropress-wizard-step">
+                        <div class="astropress-step-num">3</div>
+                        <div class="astropress-step-body">
+                            <h3><?php esc_html_e('Optimization & Shield Defaults', 'astropress'); ?></h3>
+                            <p class="description"><?php esc_html_e('The following industry-standard settings will be activated automatically:', 'astropress'); ?></p>
+
+                            <ul class="astropress-check-list">
+                                <li><span class="dashicons dashicons-yes"></span> <strong>WebP Balanced Compression</strong> (Quality 82%, reSmush.it Cloud API + local GD/Imagick fallback).</li>
+                                <li><span class="dashicons dashicons-yes"></span> <strong>Dual Storage Mode</strong> (Retains local media files alongside Cloudflare R2 backup).</li>
+                                <li><span class="dashicons dashicons-yes"></span> <strong>Subdomain Protection Shield</strong> (301-redirects public visitors away from backend to Astro, sends X-Robots-Tag: noindex).</li>
+                                <li><span class="dashicons dashicons-yes"></span> <strong>Instant Edge Invalidation</strong> (Automatically triggers `/api/revalidate` on post, page, taxonomy, and menu updates).</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="astropress-wizard-footer">
+                        <button type="submit" name="astropress_save_onboarding" class="button button-primary button-hero">
+                            <span class="dashicons dashicons-yes-alt"></span> <?php esc_html_e('Complete Setup & Activate AstroPress', 'astropress'); ?>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
      * Tab: Dashboard & Overview
      */
     private function render_tab_dashboard($frontend_url, $is_connected, $stats) {
@@ -1017,11 +1344,15 @@ class AstroPress_Admin {
         ?>
         <div class="astropress-grid-2">
             <div class="astropress-card">
-                <h2><?php esc_html_e('System Status', 'astropress'); ?></h2>
+                <h2><?php esc_html_e('System Status & Diagnostics', 'astropress'); ?></h2>
                 <table class="astropress-status-table">
                     <tr>
                         <td><strong><?php esc_html_e('Headless Frontend URL', 'astropress'); ?></strong></td>
-                        <td><code><?php echo esc_html($frontend_url); ?></code></td>
+                        <td>
+                            <a href="<?php echo esc_url($frontend_url); ?>" target="_blank" rel="noopener">
+                                <code><?php echo esc_html($frontend_url); ?></code> <span class="dashicons dashicons-external" style="font-size:13px;"></span>
+                            </a>
+                        </td>
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Bridge Status', 'astropress'); ?></strong></td>
@@ -1045,12 +1376,27 @@ class AstroPress_Admin {
                         <td><strong><?php esc_html_e('Image Engine', 'astropress'); ?></strong></td>
                         <td><span class="astropress-pill"><?php echo esc_html(strtoupper(AstroPress_Optimizer::get_engine())); ?></span></td>
                     </tr>
+                    <tr>
+                        <td><strong><?php esc_html_e('Subdomain Shield', 'astropress'); ?></strong></td>
+                        <td>
+                            <?php if ($this->core->should_shield_subdomain()): ?>
+                                <span class="astropress-pill" style="background:#def7ec;color:#03543f;">301 Redirect Active</span>
+                            <?php else: ?>
+                                <span class="astropress-pill" style="background:#f3f4f6;color:#4b5563;">Disabled</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
                 </table>
 
                 <div class="astropress-btn-group" style="margin-top:20px;">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=bridge')); ?>" class="button button-primary"><?php esc_html_e('Configure Bridge', 'astropress'); ?></a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2')); ?>" class="button button-secondary"><?php esc_html_e('R2 Settings', 'astropress'); ?></a>
+                    <button type="button" class="button button-primary" id="astropress-test-handshake">
+                        <span class="dashicons dashicons-admin-links"></span> <?php esc_html_e('Test Webhook Handshake', 'astropress'); ?>
+                    </button>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-secondary">
+                        <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
+                    </a>
                 </div>
+                <div id="astropress-handshake-status" style="margin-top:10px;"></div>
             </div>
 
             <div class="astropress-card">
@@ -1185,47 +1531,6 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: Cache Warmer
-     */
-    private function render_tab_warmer() {
-        ?>
-        <div class="astropress-card" style="max-width:850px;">
-            <h2><?php esc_html_e('Edge Cache Warmer', 'astropress'); ?></h2>
-            <p><?php esc_html_e('Pre-warm your Cloudflare Edge caches so that first-time visitors experience instantaneous 20ms page loads instead of SSR cold boots.', 'astropress'); ?></p>
-
-            <div class="astropress-warmer-controls">
-                <label for="astropress-warmer-preset"><strong><?php esc_html_e('Warmup Scope:', 'astropress'); ?></strong></label>
-                <select id="astropress-warmer-preset">
-                    <option value="standard"><?php esc_html_e('Standard (Homepage, Top Posts & Categories)', 'astropress'); ?></option>
-                    <option value="recent"><?php esc_html_e('Recent (Latest 50 Posts & Pages)', 'astropress'); ?></option>
-                    <option value="full"><?php esc_html_e('Full (All Published Posts, Pages & Categories)', 'astropress'); ?></option>
-                </select>
-
-                <button type="button" class="button button-primary" id="astropress-start-warmer">
-                    <span class="dashicons dashicons-controls-play"></span> <?php esc_html_e('Start Interactive Warmer', 'astropress'); ?>
-                </button>
-                <button type="button" class="button button-secondary" id="astropress-pause-warmer" style="display:none;">
-                    <span class="dashicons dashicons-controls-pause"></span> <?php esc_html_e('Pause', 'astropress'); ?>
-                </button>
-                <button type="button" class="button button-link-delete" id="astropress-cancel-warmer" style="display:none;">
-                    <?php esc_html_e('Cancel', 'astropress'); ?>
-                </button>
-            </div>
-
-            <div id="astropress-warmer-progress-container" style="display:none; margin-top:20px;">
-                <div class="astropress-progress-bar-wrap">
-                    <div class="astropress-progress-bar" id="astropress-warmer-progress-bar" style="width:0%;"></div>
-                </div>
-                <div class="astropress-progress-stats" id="astropress-warmer-progress-text">
-                    0 / 0 URLs (0%)
-                </div>
-                <div class="astropress-log-box" id="astropress-warmer-log"></div>
-            </div>
-        </div>
-        <?php
-    }
-
-    /**
      * Tab: Cloudflare R2 Credentials & CDN
      */
     private function render_tab_r2() {
@@ -1311,7 +1616,7 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: Image Optimizer
+     * Tab: Image Optimizer & Live Preview Tester
      */
     private function render_tab_optimizer() {
         $enabled   = (int) get_option('r2g_compress_enabled', 1);
@@ -1384,6 +1689,61 @@ class AstroPress_Admin {
                     <button type="submit" name="astropress_save_optimizer" class="button button-primary"><?php esc_html_e('Save Optimizer Settings', 'astropress'); ?></button>
                 </p>
             </form>
+
+            <hr style="margin:30px 0; border:0; border-top:1px solid #e2e8f0;" />
+
+            <!-- Live Compression Preview Tester -->
+            <h3><span class="dashicons dashicons-visibility"></span> <?php esc_html_e('Live Compression Preview Tester', 'astropress'); ?></h3>
+            <p><?php esc_html_e('Upload a sample image to see the exact byte reduction and inspect visual fidelity before applying settings site-wide.', 'astropress'); ?></p>
+
+            <div class="astropress-preview-tester">
+                <input type="file" id="astropress-test-image-input" accept="image/*" />
+                <button type="button" class="button button-secondary" id="astropress-run-preview-test">
+                    <?php esc_html_e('Test Image Compression', 'astropress'); ?>
+                </button>
+                <div id="astropress-preview-result" style="margin-top:15px; display:none;"></div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Tab: Cache Warmer
+     */
+    private function render_tab_warmer() {
+        ?>
+        <div class="astropress-card" style="max-width:850px;">
+            <h2><?php esc_html_e('Edge Cache Warmer', 'astropress'); ?></h2>
+            <p><?php esc_html_e('Pre-warm your Cloudflare Edge caches so that first-time visitors experience instantaneous 20ms page loads instead of SSR cold boots.', 'astropress'); ?></p>
+
+            <div class="astropress-warmer-controls">
+                <label for="astropress-warmer-preset"><strong><?php esc_html_e('Warmup Scope:', 'astropress'); ?></strong></label>
+                <select id="astropress-warmer-preset">
+                    <option value="standard"><?php esc_html_e('Standard (Homepage, Top Posts & Categories)', 'astropress'); ?></option>
+                    <option value="recent"><?php esc_html_e('Recent (Latest 50 Posts & Pages)', 'astropress'); ?></option>
+                    <option value="full"><?php esc_html_e('Full (All Published Posts, Pages & Categories)', 'astropress'); ?></option>
+                </select>
+
+                <button type="button" class="button button-primary" id="astropress-start-warmer">
+                    <span class="dashicons dashicons-controls-play"></span> <?php esc_html_e('Start Interactive Warmer', 'astropress'); ?>
+                </button>
+                <button type="button" class="button button-secondary" id="astropress-pause-warmer" style="display:none;">
+                    <span class="dashicons dashicons-controls-pause"></span> <?php esc_html_e('Pause', 'astropress'); ?>
+                </button>
+                <button type="button" class="button button-link-delete" id="astropress-cancel-warmer" style="display:none;">
+                    <?php esc_html_e('Cancel', 'astropress'); ?>
+                </button>
+            </div>
+
+            <div id="astropress-warmer-progress-container" style="display:none; margin-top:20px;">
+                <div class="astropress-progress-bar-wrap">
+                    <div class="astropress-progress-bar" id="astropress-warmer-progress-bar" style="width:0%;"></div>
+                </div>
+                <div class="astropress-progress-stats" id="astropress-warmer-progress-text">
+                    0 / 0 URLs (0%)
+                </div>
+                <div class="astropress-log-box" id="astropress-warmer-log"></div>
+            </div>
         </div>
         <?php
     }
@@ -1417,6 +1777,98 @@ class AstroPress_Admin {
                 </div>
 
                 <div class="astropress-log-box" id="astropress-sync-log" style="margin-top:20px; display:none;"></div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Tab: Astro Code Snippets & Architecture Blueprints
+     */
+    private function render_tab_integration($frontend_url) {
+        $secret = $this->core->get_secret();
+        $custom_domain = get_option('r2g_custom_domain', 'media.example.com');
+        ?>
+        <div class="astropress-card" style="max-width:900px;">
+            <h2><?php esc_html_e('Astro Project Integration Snippets', 'astropress'); ?></h2>
+            <p><?php esc_html_e('Copy and paste these lightweight, production-ready code blocks directly into your Astro project to enable instantaneous cache invalidation, edge redirects, and SEO injection.', 'astropress'); ?></p>
+
+            <div class="astropress-snippet-block">
+                <div class="astropress-snippet-header">
+                    <span>1. Revalidation Endpoint (<code>src/pages/api/revalidate.ts</code>)</span>
+                    <button type="button" class="button button-small astropress-copy-btn" data-target="code-revalidate"><?php esc_html_e('Copy', 'astropress'); ?></button>
+                </div>
+                <pre><code id="code-revalidate">import type { APIRoute } from 'astro';
+
+export const POST: APIRoute = async ({ request, locals }) => {
+  const secret = request.headers.get('x-revalidate-secret');
+  const expectedSecret = (locals as any)?.runtime?.env?.REVALIDATE_SECRET || process.env.REVALIDATE_SECRET;
+
+  if (!secret || secret !== expectedSecret) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+  }
+
+  try {
+    const payload = await request.json();
+    const { slug, type, action, urls } = payload;
+
+    // Optional: Purge specific Cloudflare Edge cache keys or caches.default
+    const purgeUrls = Array.isArray(urls) ? urls : (slug ? ['/' + slug] : ['/']);
+
+    return new Response(JSON.stringify({
+      revalidated: true,
+      purged: purgeUrls,
+      timestamp: Date.now()
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 400 });
+  }
+};</code></pre>
+            </div>
+
+            <div class="astropress-snippet-block" style="margin-top:20px;">
+                <div class="astropress-snippet-header">
+                    <span>2. Dynamic Edge Redirection Middleware (<code>src/middleware.ts</code>)</span>
+                    <button type="button" class="button button-small astropress-copy-btn" data-target="code-middleware"><?php esc_html_e('Copy', 'astropress'); ?></button>
+                </div>
+                <pre><code id="code-middleware">import { defineMiddleware } from 'astro:middleware';
+
+export const onRequest = defineMiddleware(async (context, next) => {
+  const url = new URL(context.request.url);
+  const slug = url.pathname.replace(/^\/|\/$/g, '');
+
+  if (slug && !slug.startsWith('api/') && !slug.includes('.')) {
+    try {
+      const wpOrigin = '<?php echo esc_js(home_url()); ?>';
+      const res = await fetch(`${wpOrigin}/wp-json/astropress/v1/redirection?slug=${encodeURIComponent(slug)}`, {
+        cf: { cacheTtl: 300 }
+      } as any);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.redirect_url) {
+          return context.redirect(data.redirect_url, data.redirect_type || 301);
+        }
+      }
+    } catch (_) {}
+  }
+
+  return next();
+});</code></pre>
+            </div>
+
+            <div class="astropress-snippet-block" style="margin-top:20px;">
+                <div class="astropress-snippet-header">
+                    <span>3. Cloudflare Environment Variables (<code>.env</code> / <code>wrangler.toml</code>)</span>
+                    <button type="button" class="button button-small astropress-copy-btn" data-target="code-env"><?php esc_html_e('Copy', 'astropress'); ?></button>
+                </div>
+                <pre><code id="code-env"># .env or Cloudflare Pages > Settings > Environment Variables
+REVALIDATE_SECRET=<?php echo esc_html($secret ?: 'your_generated_secret_here'); ?>
+
+WORDPRESS_API_URL=<?php echo esc_html(home_url()); ?>
+
+CDN_MEDIA_URL=https://<?php echo esc_html($custom_domain); ?>
+</code></pre>
             </div>
         </div>
         <?php

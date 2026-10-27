@@ -44,6 +44,12 @@ AstroPress seamlessly combines high-performance headless cache invalidation, aut
 - **Core Upgrader Sandbox**: Uses WordPress Core's native `Plugin_Upgrader` sandbox, eliminating false-positive security warnings from hosting providers.
 - **1-Click Rollback**: Switch or rollback to any previous version directly from the admin dashboard.
 
+### 7. Guided Onboarding Wizard & Diagnostics
+- **Step-by-Step Onboarding**: Streamlined 5-step setup wizard that guides you through connecting your Astro site, entering R2 credentials, selecting image optimization presets, and configuring cache rules.
+- **Pre-Flight Readiness Check**: Verifies server cryptographic extensions (OpenSSL / libsodium), cURL, GD/Imagick, WebP/AVIF format support, and security salts.
+- **Copyable Astro Code Snippets**: Production-ready code templates for Astro API routes (`/api/revalidate.ts`), edge redirection middleware (`src/middleware.ts`), and `.env` configs.
+- **Live Image Compression Tester**: Test and preview compression quality and byte savings live before uploading to production.
+
 ---
 
 ## 🚀 Installation
