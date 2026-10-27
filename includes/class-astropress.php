@@ -149,12 +149,40 @@ class AstroPress {
     }
 
     /**
+     * Retrieve setting with tri-tier fallback chain:
+     * 1. astropress_* (unified master)
+     * 2. astropress_headless_* (Grisma-AstroPress)
+     * 3. topnepali_headless_* (topnepali legacy)
+     *
+     * @param string $primary_key
+     * @param string $generic_headless_key
+     * @param string $legacy_key
+     * @param mixed $default
+     * @return mixed
+     */
+    public function get_compat_option($primary_key, $generic_headless_key, $legacy_key, $default = null) {
+        $val = get_option($primary_key, null);
+        if ($val !== null && $val !== '') {
+            return $val;
+        }
+        $val_headless = get_option($generic_headless_key, null);
+        if ($val_headless !== null && $val_headless !== '') {
+            return $val_headless;
+        }
+        $val_legacy = get_option($legacy_key, null);
+        if ($val_legacy !== null && $val_legacy !== '') {
+            return $val_legacy;
+        }
+        return $default;
+    }
+
+    /**
      * Check if plugin has verified connection to Astro frontend
      *
      * @return bool
      */
     public function is_connected() {
-        return (bool) get_option(self::OPTION_CONNECTED, get_option('topnepali_headless_connected', false));
+        return (bool) $this->get_compat_option(self::OPTION_CONNECTED, 'astropress_headless_connected', 'topnepali_headless_connected', false);
     }
 
     /**
@@ -165,7 +193,7 @@ class AstroPress {
      */
     public function get_frontend_url() {
         if ($this->cached_frontend_url === null) {
-            $url = get_option(self::OPTION_FRONTEND_URL, get_option('topnepali_headless_frontend_url', home_url()));
+            $url = $this->get_compat_option(self::OPTION_FRONTEND_URL, 'astropress_headless_frontend_url', 'topnepali_headless_frontend_url', home_url());
             if (empty($url)) {
                 $url = home_url();
             }
@@ -181,7 +209,7 @@ class AstroPress {
      */
     public function get_secret() {
         if ($this->cached_secret === null) {
-            $val = get_option(self::OPTION_SECRET, get_option('topnepali_headless_secret', ''));
+            $val = $this->get_compat_option(self::OPTION_SECRET, 'astropress_headless_secret', 'topnepali_headless_secret', '');
             $this->cached_secret = (string) $val;
         }
         return $this->cached_secret;
@@ -193,7 +221,7 @@ class AstroPress {
      * @return bool
      */
     public function should_rewrite_links() {
-        return (bool) get_option(self::OPTION_REWRITE_LINKS, get_option('topnepali_headless_rewrite_links', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_REWRITE_LINKS, 'astropress_headless_rewrite_links', 'topnepali_headless_rewrite_links', '1');
     }
 
     /**
@@ -202,30 +230,30 @@ class AstroPress {
      * @return bool
      */
     public function should_auto_update() {
-        return (bool) get_option(self::OPTION_AUTO_UPDATE, get_option('topnepali_headless_auto_update', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_AUTO_UPDATE, 'astropress_headless_auto_update', 'topnepali_headless_auto_update', '1');
     }
 
     /**
      * Cache automation setting getters
      */
     public function should_purge_on_save() {
-        return (bool) get_option(self::OPTION_PURGE_ON_SAVE, get_option('topnepali_headless_purge_on_save', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_PURGE_ON_SAVE, 'astropress_headless_purge_on_save', 'topnepali_headless_purge_on_save', '1');
     }
 
     public function should_purge_feeds() {
-        return (bool) get_option(self::OPTION_PURGE_FEEDS, get_option('topnepali_headless_purge_feeds', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_PURGE_FEEDS, 'astropress_headless_purge_feeds', 'topnepali_headless_purge_feeds', '1');
     }
 
     public function should_purge_taxonomy() {
-        return (bool) get_option(self::OPTION_PURGE_TAXONOMY, get_option('topnepali_headless_purge_taxonomy', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_PURGE_TAXONOMY, 'astropress_headless_purge_taxonomy', 'topnepali_headless_purge_taxonomy', '1');
     }
 
     public function should_purge_menu() {
-        return (bool) get_option(self::OPTION_PURGE_MENU, get_option('topnepali_headless_purge_menu', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_PURGE_MENU, 'astropress_headless_purge_menu', 'topnepali_headless_purge_menu', '1');
     }
 
     public function should_sync_lscwp() {
-        return (bool) get_option(self::OPTION_LSCWP_SYNC, get_option('topnepali_headless_lscwp_sync', '1'));
+        return (bool) $this->get_compat_option(self::OPTION_LSCWP_SYNC, 'astropress_headless_lscwp_sync', 'topnepali_headless_lscwp_sync', '1');
     }
 
     public function should_sync_litespeed() {
@@ -233,19 +261,19 @@ class AstroPress {
     }
 
     public function get_warm_delay() {
-        return (int) get_option(self::OPTION_WARM_DELAY, get_option('topnepali_headless_warm_delay', 5));
+        return (int) $this->get_compat_option(self::OPTION_WARM_DELAY, 'astropress_headless_warm_delay', 'topnepali_headless_warm_delay', 1000);
     }
 
     public function get_warm_batch_size() {
-        return (int) get_option(self::OPTION_WARM_BATCH_SIZE, get_option('topnepali_headless_warm_batch_size', 5));
+        return (int) $this->get_compat_option(self::OPTION_WARM_BATCH_SIZE, 'astropress_headless_warm_batch_size', 'topnepali_headless_warm_batch_size', 2);
     }
 
     public function should_shield_subdomain() {
-        return (bool) get_option(self::OPTION_SUBDOMAIN_SHIELD, get_option('topnepali_headless_subdomain_shield', '0'));
+        return (bool) $this->get_compat_option(self::OPTION_SUBDOMAIN_SHIELD, 'astropress_headless_subdomain_shield', 'topnepali_headless_subdomain_shield', '0');
     }
 
     public function should_noindex_backend() {
-        return (bool) get_option(self::OPTION_SUBDOMAIN_NOINDEX, get_option('topnepali_headless_subdomain_noindex', '0'));
+        return (bool) $this->get_compat_option(self::OPTION_SUBDOMAIN_NOINDEX, 'astropress_headless_subdomain_noindex', 'topnepali_headless_subdomain_noindex', '0');
     }
 
     public function get_cf_api_token() {

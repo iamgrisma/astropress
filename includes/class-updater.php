@@ -100,12 +100,25 @@ class AstroPress_Updater {
     }
 
     /**
-     * Get plugin basename (e.g., astropress/astropress.php)
+     * Get plugin basename (e.g., astropress/astropress.php), with support for legacy active folders
      *
+     * @param object|null $transient
      * @return string
      */
-    public function get_plugin_basename() {
-        return plugin_basename(ASTROPRESS_FILE);
+    public function get_plugin_basename($transient = null) {
+        $default_file = plugin_basename(ASTROPRESS_FILE);
+
+        if ($transient && is_object($transient) && !empty($transient->checked) && is_array($transient->checked)) {
+            foreach (array_keys($transient->checked) as $installed_plugin) {
+                if (strpos($installed_plugin, 'astropress.php') !== false ||
+                    strpos($installed_plugin, 'r2-by-grisma.php') !== false ||
+                    strpos($installed_plugin, 'headless.php') !== false) {
+                    return $installed_plugin;
+                }
+            }
+        }
+
+        return $default_file;
     }
 
     /**
@@ -129,7 +142,7 @@ class AstroPress_Updater {
             $transient->checked = array();
         }
 
-        $plugin_file = $this->get_plugin_basename();
+        $plugin_file = $this->get_plugin_basename($transient);
         $transient->checked[$plugin_file] = ASTROPRESS_VERSION;
 
         $force = false;
@@ -449,15 +462,21 @@ class AstroPress_Updater {
 
         // Verify this update is for our plugin
         $is_target = false;
-        if (!empty($hook_extra['plugin']) && (stripos($hook_extra['plugin'], self::PLUGIN_SLUG) !== false || stripos($hook_extra['plugin'], 'r2-by-grisma') !== false)) {
+        if (!empty($hook_extra['plugin']) && (
+            stripos($hook_extra['plugin'], self::PLUGIN_SLUG) !== false ||
+            stripos($hook_extra['plugin'], 'r2-by-grisma') !== false ||
+            stripos($hook_extra['plugin'], 'headless') !== false
+        )) {
             $is_target = true;
         }
 
         $proper_folder_name = self::PLUGIN_SLUG;
         $new_source = trailingslashit($remote_source) . $proper_folder_name . '/';
 
-        // Check if astropress.php or r2-by-grisma.php exists directly in $source
-        if ($wp_filesystem->exists(trailingslashit($source) . 'astropress.php') || $wp_filesystem->exists(trailingslashit($source) . 'r2-by-grisma.php')) {
+        // Check if astropress.php, r2-by-grisma.php, or headless.php exists directly in $source
+        if ($wp_filesystem->exists(trailingslashit($source) . 'astropress.php') ||
+            $wp_filesystem->exists(trailingslashit($source) . 'r2-by-grisma.php') ||
+            $wp_filesystem->exists(trailingslashit($source) . 'headless.php')) {
             $is_target = true;
             $actual_source = $source;
         } else {
@@ -468,7 +487,9 @@ class AstroPress_Updater {
                 foreach ($dir_list as $entry) {
                     if (!empty($entry['type']) && $entry['type'] === 'd') {
                         $candidate = trailingslashit($source) . $entry['name'];
-                        if ($wp_filesystem->exists($candidate . '/astropress.php') || $wp_filesystem->exists($candidate . '/r2-by-grisma.php')) {
+                        if ($wp_filesystem->exists($candidate . '/astropress.php') ||
+                            $wp_filesystem->exists($candidate . '/r2-by-grisma.php') ||
+                            $wp_filesystem->exists($candidate . '/headless.php')) {
                             $is_target = true;
                             $actual_source = $candidate;
                             break;

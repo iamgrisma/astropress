@@ -366,6 +366,30 @@ class AstroPress_Warmer {
             } else {
                 $code = wp_remote_retrieve_response_code($response);
                 $cf_cache = wp_remote_retrieve_header($response, 'cf-cache-status') ?: (wp_remote_retrieve_header($response, 'x-cache') ?: 'UNKNOWN');
+
+                // If Cloudflare returned 404 or server error, retry once with bypass headers to bust stale edge micro-cache
+                if (($code === 404 || $code >= 500) && !empty($this->core->get_secret())) {
+                    $bypass_res = wp_remote_get($full_url, array(
+                        'timeout'   => 12,
+                        'blocking'  => true,
+                        'sslverify' => true,
+                        'headers'   => array(
+                            'User-Agent'          => 'AstroPress-WP-Cache-Warmer/' . ASTROPRESS_VERSION,
+                            'Accept'              => 'text/html,application/xhtml+xml,application/xml',
+                            'x-revalidate-secret' => $this->core->get_secret(),
+                            'Pragma'              => 'no-cache',
+                            'Cache-Control'       => 'no-cache',
+                        ),
+                    ));
+                    if (!is_wp_error($bypass_res)) {
+                        $retry_code = wp_remote_retrieve_response_code($bypass_res);
+                        if ($retry_code >= 200 && $retry_code < 400) {
+                            $code     = $retry_code;
+                            $cf_cache = 'BYPASS-WARMED';
+                        }
+                    }
+                }
+
                 $results[] = array(
                     'url'         => $path,
                     'full_url'    => $full_url,
@@ -373,7 +397,9 @@ class AstroPress_Warmer {
                     'duration_ms' => $duration,
                     'cf_cache'    => strtoupper($cf_cache),
                     'success'     => ($code >= 200 && $code < 400),
-                    'message'     => "Status: {$code} ({$duration}ms) [CF: {$cf_cache}]",
+                    'message'     => ($code === 404)
+                        ? "404 NOT FOUND ({$duration}ms) [CF: {$cf_cache}]"
+                        : "Status: {$code} ({$duration}ms) [CF: {$cf_cache}]",
                 );
             }
         }
