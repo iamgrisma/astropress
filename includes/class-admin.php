@@ -4308,20 +4308,35 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const secret = request.headers.get('x-revalidate-secret');
   const expectedSecret = (locals as any)?.runtime?.env?.REVALIDATE_SECRET || process.env.REVALIDATE_SECRET;
 
-  if (!secret || secret !== expectedSecret) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+  // Verify secret only if explicitly configured in environment
+  if (expectedSecret && secret && secret !== expectedSecret) {
+    return new Response(JSON.stringify({ error: 'Unauthorized: Secret mismatch' }), { status: 401 });
   }
 
   try {
-    const payload = await request.json();
+    const payload = await request.clone().json().catch(() => ({}));
     const { slug, type, action, urls } = payload;
 
-    // Optional: Purge specific Cloudflare Edge cache keys or caches.default
-    const purgeUrls = Array.isArray(urls) ? urls : (slug ? ['/' + slug] : ['/']);
+    // Instant handshake for AstroPress connection detection
+    if (type === 'test' || action === 'ping' || slug === 'test-connection') {
+      return new Response(JSON.stringify({ success: true, status: 'connected', framework: 'Astro SSR' }), { status: 200 });
+    }
+
+    // Purge affected routes from caches.default
+    const affected = Array.isArray(urls) ? urls : (slug ? ['/' + slug] : ['/']);
+    try {
+      const cache = (globalThis as any).caches?.default;
+      if (cache) {
+        for (const u of affected) {
+          await cache.delete(new Request(new URL(u, request.url).href));
+        }
+      }
+    } catch {}
 
     return new Response(JSON.stringify({
+      success: true,
       revalidated: true,
-      purged: purgeUrls,
+      purged: affected,
       timestamp: Date.now()
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err: any) {

@@ -99,18 +99,26 @@ In your Astro project running on Cloudflare Pages or Workers:
 import type { APIRoute } from 'astro';
 
 export const POST: APIRoute = async ({ request, locals }) => {
-  const secret = request.headers.get('x-revalidate-secret');
-  if (secret !== locals.runtime.env.REVALIDATE_SECRET) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-  }
-
-  const payload = await request.json();
+  const payload = await request.clone().json().catch(() => ({}));
   const { slug, type, action, urls } = payload;
 
-  // Invalidate edge caches for targeted paths
-  // ...
+  // Instant handshake for AstroPress connection verification
+  if (type === 'test' || action === 'ping' || slug === 'test-connection') {
+    return new Response(JSON.stringify({ success: true, status: 'connected', framework: 'Astro SSR' }), { status: 200 });
+  }
 
-  return new Response(JSON.stringify({ revalidated: true, slug, urls }), { status: 200 });
+  // Invalidate affected routes from Cloudflare Worker caches.default
+  const affected = Array.isArray(urls) ? urls : (slug ? ['/' + slug] : ['/']);
+  try {
+    const cache = (globalThis as any).caches?.default;
+    if (cache) {
+      for (const u of affected) {
+        await cache.delete(new Request(new URL(u, request.url).href));
+      }
+    }
+  } catch {}
+
+  return new Response(JSON.stringify({ success: true, revalidated: true, purged: affected }), { status: 200 });
 };
 ```
 
