@@ -4361,26 +4361,36 @@ export function getWordPressApiUrl(request?: Request): string {
                         <tbody>
                             <?php foreach ($logs as $log): ?>
                                 <?php
-                                $is_ok = !empty($log['success']);
+                                $log_status = strtolower((string) ($log['status'] ?? ''));
+                                $is_ok = array_key_exists('success', $log)
+                                    ? (bool) $log['success']
+                                    : in_array($log_status, array('success', 'sent', 'delivered'), true);
                                 $status_class = $is_ok ? 'astropress-badge-online' : 'astropress-badge-offline';
-                                $status_text  = $is_ok ? __('Dispatched', 'astropress') : __('Failed', 'astropress');
+                                $status_text  = $is_ok ? __('Succeeded', 'astropress') : __('Failed', 'astropress');
+                                $timestamp    = $log['timestamp'] ?? $log['time'] ?? '';
+                                $event         = $log['event'] ?? $log['trigger'] ?? 'post_updated';
+                                $paths         = (array) ($log['paths'] ?? $log['urls'] ?? array());
+                                $details       = $log['details'] ?? $log['message'] ?? '';
+                                $http_code     = isset($log['http_code']) ? (int) $log['http_code'] : 0;
+                                if ($http_code > 0 && strpos((string) $details, (string) $http_code) === false) {
+                                    $details = trim((string) $details . ' (HTTP ' . $http_code . ')');
+                                }
                                 ?>
                                 <tr>
-                                    <td><small><code><?php echo esc_html($log['timestamp'] ?? ''); ?></code></small></td>
-                                    <td><span class="astropress-pill"><?php echo esc_html($log['event'] ?? 'post_updated'); ?></span></td>
+                                    <td><small><code><?php echo esc_html($timestamp); ?></code></small></td>
+                                    <td><span class="astropress-pill"><?php echo esc_html($event); ?></span></td>
                                     <td><span class="astropress-badge <?php echo esc_attr($status_class); ?>"><span class="astropress-dot"></span> <?php echo esc_html($status_text); ?></span></td>
                                     <td>
                                         <?php
-                                        $paths = (array) ($log['paths'] ?? array());
                                         if (empty($paths)) {
-                                            echo '<em>' . esc_html__('Global Purge (All)', 'astropress') . '</em>';
+                                            echo '<em>' . esc_html($log['target'] ?? __('No URL details recorded', 'astropress')) . '</em>';
                                         } else {
                                             echo '<code>' . esc_html(implode(', ', array_slice($paths, 0, 5))) . (count($paths) > 5 ? ' ... (+' . (count($paths) - 5) . ' more)' : '') . '</code>';
                                         }
                                         ?>
                                     </td>
                                     <td>
-                                        <small><?php echo esc_html($log['details'] ?? ($is_ok ? 'HTTP 200 OK' : 'Connection timeout/error')); ?></small>
+                                        <small><?php echo esc_html($details ?: ($is_ok ? 'Request succeeded' : 'No error details recorded')); ?></small>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
