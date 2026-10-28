@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.01
+Stable tag: 2.0.02
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,14 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.02 =
+* Setup Wizard Polish: Added masked token connected card with Check Connection and Change Token drawers, preventing raw token exposure.
+* Fixed Scope Blueprint Collapse: Eliminated duplicate click listener that caused the blueprint accordion to collapse immediately.
+* Enhanced Cloudflare Scope Pre-fill: Corrected permissionGroupKeys template mapping for workers_r2_storage, pages, and page_rules.
+* High-Throughput Warmer: Implemented time-budgeted batch loop and ping_cron keepalive, enabling fast warming for 300+ URLs.
+* Cache Status Clarity: Added WORKER-HIT and CF-HIT status detection and 1-click Astro SSR Cache Rule deployment.
+* Removed Legacy Webhook Test: Replaced obsolete webhook handshake button with direct Cloudflare Zone Cache purge.
 
 = 2.0.01 =
 * Core Update Release: Incremented version to ensure seamless one-click WordPress update detection and migration from initial 2.0.0.
