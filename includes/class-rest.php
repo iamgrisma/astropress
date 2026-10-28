@@ -435,12 +435,18 @@ class AstroPress_REST {
             }
         }
 
-        $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}{$where}");
+        $escaped_table   = '`' . str_replace('`', '``', $table_name) . '`';
+        $escaped_orderby = '`' . str_replace('`', '``', $orderby) . '`';
+        $order           = ($order === 'ASC') ? 'ASC' : 'DESC';
 
-        $rows = $wpdb->get_results(
-            "SELECT * FROM {$table_name}{$where} ORDER BY {$orderby} {$order} LIMIT {$per_page} OFFSET {$offset}",
-            ARRAY_A
+        $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$escaped_table}{$where}");
+
+        $query = $wpdb->prepare(
+            "SELECT * FROM {$escaped_table}{$where} ORDER BY {$escaped_orderby} {$order} LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
         );
+        $rows = $wpdb->get_results($query, ARRAY_A);
 
         return rest_ensure_response(array(
             'table'    => $table_name,

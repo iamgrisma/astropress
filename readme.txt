@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.4
+Stable tag: 1.2.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.5 =
+* Security Audit & Hardening: Patched CSRF vulnerabilities across administrative AJAX endpoints with mandatory multi-nonce verification. Added strict path traversal containment checks in delete_local_files to prevent arbitrary file deletion outside wp-content/uploads.
+* SSRF Guard: Introduced AstroPress_Security::is_safe_external_url to block outbound requests to internal loopback and reserved private IP ranges.
+* Handshake Testing in Setup Wizard: Added instant 1-click webhook handshake testing in Step 1 of the Setup Wizard.
+* Backend Protection: Disallowed XML-RPC pingback attacks, blocked author query string enumeration, and enforced baseline X-Content-Type-Options: nosniff and X-Frame-Options: SAMEORIGIN headers.
+* Frontend Security: Removed hardcoded Cloudflare Zone IDs and default secret fallbacks from Grisma-AstroPress /api/revalidate.
 
 = 1.2.4 =
 * Automatic Activation Redirect: New installations immediately redirect to the Setup Wizard on plugin activation for seamless zero-friction onboarding.

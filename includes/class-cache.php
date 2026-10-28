@@ -200,7 +200,11 @@ class AstroPress_Cache {
 
         // 1. Dispatch Webhook to Astro Frontend
         if (!empty($frontend_url) && !empty($secret)) {
-            $endpoint   = rtrim($frontend_url, '/') . '/api/revalidate';
+            $endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
+            if (!AstroPress_Security::is_safe_external_url($endpoint)) {
+                $results['astro_webhook'] = false;
+                return $results;
+            }
             $start_time = microtime(true);
 
             $response = wp_remote_post($endpoint, array(
@@ -410,7 +414,7 @@ class AstroPress_Cache {
      */
     public function trigger_deploy_hook($reason = 'Manual Deploy') {
         $deploy_hook = $this->core->get_cf_deploy_hook();
-        if (empty($deploy_hook)) {
+        if (empty($deploy_hook) || !AstroPress_Security::is_safe_external_url($deploy_hook)) {
             return false;
         }
 
@@ -1114,14 +1118,29 @@ class AstroPress_Cache {
 
         $url = rtrim($url, '/');
 
+        if (!AstroPress_Security::is_safe_external_url($url)) {
+            return array(
+                'url'               => $url,
+                'reachable'         => false,
+                'root_status'       => 0,
+                'latency_ms'        => 0,
+                'is_astro'          => false,
+                'is_cloudflare'     => false,
+                'webhook_reachable' => false,
+                'webhook_status'    => 0,
+                'message'           => esc_html__('Target URL blocked: local loopback and reserved private IP ranges are not permitted.', 'astropress'),
+            );
+        }
+
         // 1. Ping root URL with latency measurement
         $start_time = microtime(true);
         $root_res = wp_remote_get($url, array(
-            'timeout'     => 10,
-            'redirection' => 3,
-            'sslverify'   => false,
-            'headers'     => array(
-                'User-Agent' => 'AstroPress-Bridge-Detector/1.2.4 (WordPress/' . get_bloginfo('version') . ')',
+            'timeout'            => 10,
+            'redirection'        => 3,
+            'sslverify'          => false,
+            'reject_unsafe_urls' => true,
+            'headers'            => array(
+                'User-Agent' => 'AstroPress-Bridge-Detector/1.2.5 (WordPress/' . get_bloginfo('version') . ')',
             ),
         ));
         $latency_ms = round((microtime(true) - $start_time) * 1000);
@@ -1164,11 +1183,12 @@ class AstroPress_Cache {
         // 2. Ping /api/revalidate bridge endpoint
         $webhook_url = $url . '/api/revalidate';
         $wh_res = wp_remote_post($webhook_url, array(
-            'timeout'   => 8,
-            'sslverify' => false,
-            'headers'   => array(
+            'timeout'            => 8,
+            'sslverify'          => false,
+            'reject_unsafe_urls' => true,
+            'headers'            => array(
                 'Content-Type' => 'application/json',
-                'User-Agent'   => 'AstroPress-Bridge-Detector/1.2.4',
+                'User-Agent'   => 'AstroPress-Bridge-Detector/1.2.5',
             ),
             'body'      => wp_json_encode(array('action' => 'ping', 'timestamp' => time())),
         ));

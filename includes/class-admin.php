@@ -1014,22 +1014,22 @@ class AstroPress_Admin {
      * AJAX: Test existing stored Revalidation Secret Key against Cloudflare Pages/Workers
      */
     public function ajax_test_key() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'topnepali_admin_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
-        }
+        $this->verify_admin_ajax();
 
-        $frontend_url = sanitize_text_field($_POST['frontend_url'] ?? '') ?: $this->core->get_frontend_url();
-        $secret       = sanitize_text_field($_POST['secret'] ?? '') ?: $this->core->get_secret();
+        $frontend_url = esc_url_raw(trim(wp_unslash($_POST['frontend_url'] ?? ''))) ?: $this->core->get_frontend_url();
+        $secret       = sanitize_text_field(wp_unslash($_POST['secret'] ?? '')) ?: $this->core->get_secret();
 
         if (empty($frontend_url) || empty($secret)) {
             wp_send_json_error(array(
                 'message' => 'Please provide both the Frontend URL and Revalidation Secret token.',
                 'code'    => 404,
+            ));
+        }
+
+        if (!AstroPress_Security::is_safe_external_url($frontend_url)) {
+            wp_send_json_error(array(
+                'message' => esc_html__('Invalid or forbidden frontend URL. Local loopback and reserved private IP ranges are blocked.', 'astropress'),
+                'code'    => 400,
             ));
         }
 
@@ -1085,14 +1085,18 @@ class AstroPress_Admin {
     }
 
     /**
-     * Resilient AJAX Security Verification (supports current and legacy nonces)
+     * Resilient & Strictly Validated AJAX Security Verification
+     * Supports current, onboarding, and legacy compatibility nonces with mandatory capability checks.
      */
-    private function verify_admin_ajax() {
-        $nonce = $_POST['nonce'] ?? $_REQUEST['nonce'] ?? '';
-        if (!wp_verify_nonce($nonce, 'astropress_admin_nonce') &&
+    public function verify_admin_ajax() {
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
+        if (empty($nonce) || (
+            !wp_verify_nonce($nonce, 'astropress_admin_nonce') &&
+            !wp_verify_nonce($nonce, 'astropress_onboarding_nonce') &&
             !wp_verify_nonce($nonce, 'topnepali_admin_nonce') &&
-            !wp_verify_nonce($nonce, 'r2g_admin_nonce')) {
-            wp_send_json_error(array('message' => esc_html__('Invalid security token (nonce).', 'astropress')), 403);
+            !wp_verify_nonce($nonce, 'r2g_admin_nonce')
+        )) {
+            wp_send_json_error(array('message' => esc_html__('Invalid or missing security token (nonce).', 'astropress')), 403);
         }
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
@@ -1219,10 +1223,7 @@ class AstroPress_Admin {
      * Supports both Single-Token Bearer REST Mode and S3 SigV4 Mode.
      */
     public function ajax_test_connection() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: get_option('r2g_account_id', '');
         $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: get_option('r2g_access_key', '');
@@ -1266,14 +1267,7 @@ class AstroPress_Admin {
      * AJAX: Create a new Cloudflare R2 Bucket
      */
     public function ajax_create_bucket() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $bucket_name = sanitize_key(trim($_POST['bucket_name'] ?? ''));
         if (empty($bucket_name)) {
@@ -1314,14 +1308,7 @@ class AstroPress_Admin {
      * AJAX: Deploy Cloudflare "Cache Everything" Page Rule / Cache Rule for Custom CDN Domain
      */
     public function ajax_deploy_cache_rule() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $token   = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
         if (empty($token) || strpos($token, '••••') !== false) {
@@ -1463,14 +1450,7 @@ class AstroPress_Admin {
      * AJAX: Discover R2 Buckets
      */
     public function ajax_fetch_buckets() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
+        $this->verify_admin_ajax();
 
         $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: get_option('r2g_account_id', '');
         $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: get_option('r2g_access_key', '');
@@ -1505,9 +1485,12 @@ class AstroPress_Admin {
      * AJAX: Compression Preview Tester
      */
     public function ajax_preview_compression() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? ''));
+        if (empty($nonce) || (!wp_verify_nonce($nonce, 'astropress_admin_nonce') && !wp_verify_nonce($nonce, 'r2g_admin_nonce'))) {
+            wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
+        }
         if (!current_user_can('upload_files')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized.', 'astropress')));
+            wp_send_json_error(array('message' => esc_html__('Unauthorized.', 'astropress')), 403);
         }
 
         if (empty($_FILES['image']) || empty($_FILES['image']['tmp_name'])) {
@@ -1557,10 +1540,7 @@ class AstroPress_Admin {
      * AJAX: Resend a logged webhook
      */
     public function ajax_resend_webhook() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $log_id = sanitize_text_field($_POST['log_id'] ?? '');
         if (empty($log_id)) {
@@ -1579,10 +1559,7 @@ class AstroPress_Admin {
      * AJAX: Clear Webhook Logs
      */
     public function ajax_clear_webhook_logs() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $this->core->cache->clear_webhook_logs();
         wp_send_json_success(array('message' => esc_html__('Webhook logs cleared successfully.', 'astropress')));
@@ -1592,10 +1569,7 @@ class AstroPress_Admin {
      * AJAX: Purge Cloudflare Zone Cache
      */
     public function ajax_purge_cf_zone() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $purge_everything = !empty($_POST['purge_everything']);
         $urls_raw         = $_POST['urls'] ?? array();
@@ -1613,10 +1587,7 @@ class AstroPress_Admin {
      * AJAX: Trigger Deploy Hook
      */
     public function ajax_trigger_deploy_hook() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $success = $this->core->cache->trigger_deploy_hook('Manual Trigger from AstroPress Admin');
         if ($success) {
@@ -1630,14 +1601,7 @@ class AstroPress_Admin {
      * AJAX: Live Auto-Detect Astro Frontend & Revalidation Bridge
      */
     public function ajax_detect_frontend() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'astropress_onboarding_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $url = trim(sanitize_text_field($_POST['url'] ?? ''));
         if (empty($url)) {
@@ -1648,6 +1612,10 @@ class AstroPress_Admin {
             wp_send_json_error(array('message' => esc_html__('Frontend URL is required.', 'astropress')));
         }
 
+        if (!AstroPress_Security::is_safe_external_url($url)) {
+            wp_send_json_error(array('message' => esc_html__('Invalid or forbidden frontend URL. Local loopback and reserved private IP ranges are blocked.', 'astropress')));
+        }
+
         $result = $this->core->cache->detect_frontend($url);
         wp_send_json_success($result);
     }
@@ -1656,14 +1624,7 @@ class AstroPress_Admin {
      * AJAX: Zero-Touch Sync Environment Variables to Cloudflare Pages
      */
     public function ajax_sync_pages_env() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'astropress_onboarding_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $project_name = trim(sanitize_text_field($_POST['project_name'] ?? ''));
         $account_id   = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: get_option('r2g_account_id', '');
@@ -1699,14 +1660,7 @@ class AstroPress_Admin {
      * AJAX: Audit Custom CDN Domain for DNS, R2 Bucket Attachment & Edge Rules
      */
     public function ajax_audit_cdn_domain() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'astropress_onboarding_nonce') && !wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
         $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
@@ -1734,14 +1688,7 @@ class AstroPress_Admin {
      * AJAX: 1-Click Attach Custom Domain to Cloudflare R2 Bucket
      */
     public function ajax_attach_r2_custom_domain() {
-        if (isset($_POST['nonce'])) {
-            if (!wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') && !wp_verify_nonce($_POST['nonce'], 'astropress_onboarding_nonce') && !wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                wp_send_json_error(array('message' => esc_html__('Invalid security token.', 'astropress')), 403);
-            }
-        }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
         $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: get_option('r2g_bucket', '');
@@ -1770,10 +1717,7 @@ class AstroPress_Admin {
      * AJAX: Cloudflare 1-Click Quick Connect Auto-Discovery
      */
     public function ajax_cf_quick_connect() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
-        }
+        $this->verify_admin_ajax();
 
         $token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
         if (empty($token) || strpos($token, '••••') !== false) {
@@ -2311,12 +2255,16 @@ class AstroPress_Admin {
                                                     <button type="button" class="button button-secondary onboard-copy-secret-btn" data-secret="<?php echo esc_attr($secret); ?>">
                                                         <span class="dashicons dashicons-admin-page" style="vertical-align:-2px;"></span> <?php esc_html_e('Copy Secret', 'astropress'); ?>
                                                     </button>
+                                                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn" data-secret="<?php echo esc_attr($secret); ?>">
+                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
+                                                    </button>
                                                     <button type="button" class="button button-secondary" id="onboard-change-secret-btn">
                                                         <span class="dashicons dashicons-edit" style="vertical-align:-2px;"></span> <?php esc_html_e('Change Secret', 'astropress'); ?>
                                                     </button>
                                                 </div>
                                             </div>
                                             <div id="onboard-secret-copy-feedback" style="display:none; margin-bottom:8px; font-size:12px; color:#057a55; font-weight:600;"></div>
+                                            <div id="onboard-handshake-status" style="margin-bottom:8px; font-size:12px;"></div>
 
                                             <div id="onboard-secret-input-wrap" style="display:none; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; margin-top:8px; max-width:650px;">
                                                 <label for="onboard_secret" style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">
@@ -2349,8 +2297,12 @@ class AstroPress_Admin {
                                                     <button type="button" class="button button-secondary onboard-copy-secret-btn" data-target="#onboard_secret">
                                                         <span class="dashicons dashicons-admin-page" style="vertical-align:-2px;"></span> <?php esc_html_e('Copy Secret', 'astropress'); ?>
                                                     </button>
+                                                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
+                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
+                                                    </button>
                                                 </div>
                                                 <div id="onboard-secret-copy-feedback" style="display:none; margin-top:4px; font-size:12px; color:#057a55; font-weight:600;"></div>
+                                                <div id="onboard-handshake-status" style="margin-top:6px; font-size:12px;"></div>
                                                 <p class="description" style="color:#b45309; margin-top:4px;">
                                                     <?php esc_html_e('Set REVALIDATE_SECRET in Cloudflare Pages Environment Variables to this exact value.', 'astropress'); ?>
                                                 </p>

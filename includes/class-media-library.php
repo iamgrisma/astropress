@@ -388,10 +388,13 @@ class AstroPress_Media_Library {
     }
 
     private function check_permission($id, $action = 'edit') {
-        if (isset($_POST['nonce'])) {
-            if (wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') || wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                return $action === 'delete' ? current_user_can('delete_post', $id) : current_user_can('edit_post', $id);
-            }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
+        if (!empty($nonce) && (
+            wp_verify_nonce($nonce, 'astropress_admin_nonce') ||
+            wp_verify_nonce($nonce, 'astropress_onboarding_nonce') ||
+            wp_verify_nonce($nonce, 'r2g_admin_nonce')
+        )) {
+            return $action === 'delete' ? current_user_can('delete_post', $id) : current_user_can('edit_post', $id);
         }
         return false;
     }

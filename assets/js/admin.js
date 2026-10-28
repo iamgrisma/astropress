@@ -1976,6 +1976,48 @@
       }
     });
 
+    // 8b. Test Webhook Handshake Button
+    $(document).on('click', '#onboard-test-handshake-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#onboard-handshake-status');
+      const frontendUrl = $('#onboard_frontend_url').val()?.trim();
+      const secret = $('#onboard_secret').val()?.trim() || $btn.data('secret');
+
+      if (!frontendUrl) {
+        $status.html('<span style="color:#dc2626; font-weight:600;">Please enter Frontend Site URL above first.</span>');
+        return;
+      }
+
+      $btn.prop('disabled', true).text('Testing...');
+      $status.html('<span style="color:#64748b;">Sending test webhook handshake to ' + frontendUrl + '/api/revalidate...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_test_key',
+          frontend_url: frontendUrl,
+          secret: secret,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669; font-weight:600;">✓ Handshake Verified! Cloudflare Edge & Astro communicated successfully.</span>');
+          } else {
+            $status.html('<span style="color:#dc2626; font-weight:600;">✗ Handshake Failed: ' + (res.data?.message || 'Unauthorized secret or unreachable route') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626; font-weight:600;">✗ Network request failed: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Handshake');
+        }
+      });
+    });
+
     // 9. Zero-Touch Cloudflare Pages Secret Sync
     $(document).on('change', '#onboard_cf_pages_project_select', function() {
       const val = $(this).val();

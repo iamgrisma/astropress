@@ -674,8 +674,16 @@ class AstroPress_Media_Handler {
             }
         }
 
+        $uploads  = wp_upload_dir(null, false);
+        $base_dir = wp_normalize_path(untrailingslashit($uploads['basedir']));
+
         foreach ($paths as $path) {
-            if (file_exists($path) && !@unlink($path)) {
+            $norm_path = wp_normalize_path($path);
+            // Security Containment: Strictly prevent arbitrary file deletion outside wp-content/uploads/
+            if (empty($norm_path) || preg_match('#(^|/)\.\.(/|$)#', $norm_path) || strpos($norm_path . '/', $base_dir . '/') !== 0) {
+                return false;
+            }
+            if (file_exists($norm_path) && !@unlink($norm_path)) {
                 return false;
             }
         }

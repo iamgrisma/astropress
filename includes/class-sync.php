@@ -44,10 +44,13 @@ class AstroPress_Sync {
     }
 
     private function verify_request() {
-        if (isset($_POST['nonce'])) {
-            if (wp_verify_nonce($_POST['nonce'], 'astropress_admin_nonce') || wp_verify_nonce($_POST['nonce'], 'r2g_admin_nonce')) {
-                return current_user_can('manage_options');
-            }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
+        if (!empty($nonce) && (
+            wp_verify_nonce($nonce, 'astropress_admin_nonce') ||
+            wp_verify_nonce($nonce, 'astropress_onboarding_nonce') ||
+            wp_verify_nonce($nonce, 'r2g_admin_nonce')
+        )) {
+            return current_user_can('manage_options');
         }
         return false;
     }
@@ -297,13 +300,15 @@ class AstroPress_Sync {
 
             if (!empty($row->r2_key) && !empty($cdn_base)) {
                 $check_url = $cdn_base . '/' . ltrim($row->r2_key, '/');
-                $head_res = wp_remote_head($check_url, array('timeout' => 4, 'sslverify' => false));
-                $code = wp_remote_retrieve_response_code($head_res);
-                if ($code === 200 || $code === 304) {
-                    $verified_ok++;
-                } elseif ($code === 404) {
-                    $missing_r2++;
-                    $wpdb->update($table, array('status' => 'failed'), array('id' => $row->id));
+                if (AstroPress_Security::is_safe_external_url($check_url)) {
+                    $head_res = wp_remote_head($check_url, array('timeout' => 4, 'sslverify' => false, 'reject_unsafe_urls' => true));
+                    $code = wp_remote_retrieve_response_code($head_res);
+                    if ($code === 200 || $code === 304) {
+                        $verified_ok++;
+                    } elseif ($code === 404) {
+                        $missing_r2++;
+                        $wpdb->update($table, array('status' => 'failed'), array('id' => $row->id));
+                    }
                 }
             }
 
