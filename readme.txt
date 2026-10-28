@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.0
+Stable tag: 2.0.01
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.01 =
+* Core Update Release: Incremented version to ensure seamless one-click WordPress update detection and migration from initial 2.0.0.
+* Dynamic Cloudflare Scope Remediation: Pre-selects only missing token permissionGroupKeys in 1-click Cloudflare link when token audit reveals incomplete permissions.
+* Warmer Engine & Contract Hardening: Unified response signatures (status/ok and code/success) for background worker and instant UI reporting.
+* Dual Invalidation Engine: Synchronized direct Cloudflare Edge POP purge with non-blocking /api/revalidate ping to purge worker isolate RAM and caches.default.
+* Responsive & Overflow Fixes: Mobile horizontal scrolling for settings tabs, responsive audit log tables, and zero raw Unicode emojis.
 
 = 2.0.0 =
 * Complete Architectural Rehaul to AstroPress v2.0: Clean-slate fresh installation architecture without legacy baggage.
