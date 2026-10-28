@@ -464,6 +464,46 @@ class AstroPress_Admin {
     }
 
     /**
+     * Get Cloudflare API Token Template URL with pre-filled scopes & permissions
+     *
+     * Pre-configures:
+     * - Cache Purge (Zone): Purge
+     * - Workers R2 (Account): Edit
+     * - Cloudflare Pages (Account): Edit
+     * - Page Rules / Cache Rules (Zone): Edit
+     * - Zone (Zone): Read
+     * - Account Settings (Account): Read
+     *
+     * @return string
+     */
+    public function get_cf_token_template_url() {
+        $permissions = array(
+            array('key' => 'cache_purge', 'type' => 'edit'),
+            array('key' => 'workers_r2', 'type' => 'edit'),
+            array('key' => 'page', 'type' => 'edit'),
+            array('key' => 'page_rules', 'type' => 'edit'),
+            array('key' => 'zone', 'type' => 'read'),
+            array('key' => 'account_settings', 'type' => 'read'),
+        );
+
+        return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' . rawurlencode(wp_json_encode($permissions)) . '&accountId=*&zoneId=all&name=' . rawurlencode('AstroPress Universal Bridge');
+    }
+
+    /**
+     * Get Cloudflare R2 S3-Compatible API Tokens Dashboard URL
+     *
+     * @param string $account_id Optional specific account ID
+     * @return string
+     */
+    public function get_cf_r2_tokens_url($account_id = '') {
+        $account_id = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
+        if (!empty($account_id)) {
+            return 'https://dash.cloudflare.com/' . rawurlencode($account_id) . '/r2/api-tokens';
+        }
+        return 'https://dash.cloudflare.com/?to=/:account/r2/api-tokens';
+    }
+
+    /**
      * Pre-Flight System Capabilities & Health Diagnostics
      *
      * @return array
@@ -1789,7 +1829,12 @@ class AstroPress_Admin {
                         <div class="astropress-step-num">2</div>
                         <div class="astropress-step-body">
                             <h3><?php esc_html_e('Cloudflare R2 Object Storage Credentials', 'astropress'); ?></h3>
-                            <p class="description"><?php esc_html_e('Zero-egress object storage for media attachments. Generated from Cloudflare Dashboard -> R2 -> Manage R2 API Tokens.', 'astropress'); ?></p>
+                            <p class="description">
+                                <?php printf(
+                                    esc_html__('Zero-egress object storage for media attachments. Generated from %s with Object Read & Write permissions.', 'astropress'),
+                                    '<a href="' . esc_url($this->get_cf_r2_tokens_url($account_id)) . '" target="_blank" rel="noopener noreferrer"><strong>Cloudflare Dashboard &gt; R2 &gt; Manage R2 API Tokens</strong> <span class="dashicons dashicons-external" style="vertical-align:-2px; font-size:13px;"></span></a>'
+                                ); ?>
+                            </p>
 
                             <table class="form-table">
                                 <tr>
@@ -2014,8 +2059,8 @@ class AstroPress_Admin {
                 <button type="button" class="button button-primary" id="astropress-quick-connect-btn">
                     <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Discover Resources', 'astropress'); ?>
                 </button>
-                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="button button-secondary">
-                    <?php esc_html_e('Create Scoped Token', 'astropress'); ?> &rarr;
+                <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
+                    <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('1-Click Pre-Configured Token', 'astropress'); ?> &rarr;
                 </a>
             </div>
             <div id="astropress-quick-connect-results" style="margin-top:15px; display:none;"></div>
@@ -2205,8 +2250,8 @@ class AstroPress_Admin {
                                     <li><code>Zone &gt; Page Rules / Cache Rules: Edit</code> (For CDN "Cache Everything" rules)</li>
                                     <li><code>Zone &gt; Zone: Read</code> (For automatic Zone ID detection)</li>
                                 </ul>
-                                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="button button-small button-secondary">
-                                    <?php esc_html_e('Open Cloudflare Token Creator', 'astropress'); ?> &rarr;
+                                <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-small button-secondary">
+                                    <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('Generate Pre-Configured Token on Cloudflare', 'astropress'); ?> &rarr;
                                 </a>
                             </div>
                         </td>
@@ -2274,8 +2319,8 @@ class AstroPress_Admin {
                 <button type="button" class="button button-primary" id="astropress-quick-connect-btn-r2">
                     <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Discover Resources', 'astropress'); ?>
                 </button>
-                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="button button-secondary">
-                    <?php esc_html_e('Create Token', 'astropress'); ?> &rarr;
+                <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
+                    <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('1-Click Pre-Configured Token', 'astropress'); ?> &rarr;
                 </a>
             </div>
             <div id="astropress-quick-connect-results-r2" style="margin-top:12px; display:none;"></div>
@@ -2299,7 +2344,12 @@ class AstroPress_Admin {
                         <th scope="row"><label for="r2_access_key"><?php esc_html_e('R2 Access Key ID', 'astropress'); ?></label></th>
                         <td>
                             <input type="text" id="r2_access_key" name="r2_access_key" value="<?php echo esc_attr($access_key); ?>" class="regular-text" required />
-                            <p class="description"><?php esc_html_e('Created under Cloudflare Dashboard -> R2 -> Manage R2 API Tokens.', 'astropress'); ?></p>
+                            <p class="description">
+                                <?php printf(
+                                    esc_html__('Created under %s with Object Read & Write permissions.', 'astropress'),
+                                    '<a href="' . esc_url($this->get_cf_r2_tokens_url()) . '" target="_blank" rel="noopener noreferrer"><strong>Cloudflare Dashboard &gt; R2 &gt; Manage R2 API Tokens</strong> <span class="dashicons dashicons-external" style="vertical-align:-2px; font-size:13px;"></span></a>'
+                                ); ?>
+                            </p>
                         </td>
                     </tr>
                     <tr>
