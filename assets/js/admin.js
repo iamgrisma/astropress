@@ -2333,5 +2333,411 @@
       });
     });
 
+    // ========================================================
+    // ASTROPRESS v2.0 JAVASCRIPT PIPELINE
+    // ========================================================
+
+    // 1. Setup Wizard: Media Mode Toggle
+    $('#onboard_media_mode').on('change', function() {
+      if ($(this).val() === 'r2') {
+        $('#onboard-r2-fields-wrap').slideDown(200);
+      } else {
+        $('#onboard-r2-fields-wrap').slideUp(200);
+      }
+    });
+
+    // 2. Setup Wizard: Frontend URL Backend Collision Validator
+    function validateFrontendUrl() {
+      const val = ($('#onboard_frontend_url').val() || '').trim();
+      const $warn = $('#onboard-frontend-collision-warning');
+      const $submit = $('#onboard-submit-btn');
+
+      if (!val) {
+        $warn.hide();
+        $submit.prop('disabled', false);
+        return;
+      }
+
+      try {
+        const parsed = new URL(val);
+        if (parsed.hostname.toLowerCase() === window.location.hostname.toLowerCase()) {
+          $warn.show();
+          $submit.prop('disabled', true);
+        } else {
+          $warn.hide();
+          $submit.prop('disabled', false);
+        }
+      } catch (e) {
+        $warn.hide();
+        $submit.prop('disabled', false);
+      }
+    }
+
+    $('#onboard_frontend_url').on('input blur change', validateFrontendUrl);
+    validateFrontendUrl();
+
+    // 3. Setup Wizard: Quick Audit & Auto-Discover
+    $('#onboard-quick-audit-btn').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const token = $('#onboard_cf_api_token').val().trim();
+      const $results = $('#onboard-audit-results');
+
+      $btn.prop('disabled', true).html('<span class="spinner is-active" style="float:none; margin:0 4px 0 0;"></span> Auditing...');
+      $results.show().html('<div style="color:#64748b; font-size:12px;"><span class="spinner is-active" style="float:none; margin:0 4px 0 0;"></span> Contacting Cloudflare API to audit token and discover resources...</div>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_cf_quick_connect',
+          cf_api_token: token,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            const d = res.data;
+            if (d.matched_account && d.matched_account.id) {
+              $('#onboard_r2_account_id').val(d.matched_account.id);
+            }
+            if (d.matched_zone && d.matched_zone.id) {
+              $('#onboard_cf_zone_id').val(d.matched_zone.id);
+            }
+
+            // Populate discovered buckets
+            if (d.buckets && d.buckets.length > 0) {
+              const $sel = $('#onboard_r2_bucket_select');
+              $sel.empty().append('<option value="">-- Discovered Buckets --</option>');
+              d.buckets.forEach(function(b) {
+                $sel.append('<option value="' + b + '">' + b + '</option>');
+              });
+              $sel.val(d.buckets[0]).show();
+              $('#onboard_r2_bucket').val(d.buckets[0]);
+            }
+
+            let auditHtml = '<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:12px; margin-top:10px;">';
+            auditHtml += '<div style="font-weight:700; color:#166534; font-size:13px; margin-bottom:6px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Cloudflare Scoped Token Verified!</div>';
+            auditHtml += '<div style="font-size:12px; color:#15803d; line-height:1.5;">';
+            auditHtml += '<strong>Zone:</strong> ' + ((d.matched_zone && d.matched_zone.name) ? d.matched_zone.name : 'Detected') + ' (<code>' + ((d.matched_zone && d.matched_zone.id) ? d.matched_zone.id.substring(0, 10) + '••••' : 'Found') + '</code>)<br />';
+            auditHtml += '<strong>Account:</strong> ' + ((d.matched_account && d.matched_account.name) ? d.matched_account.name : 'Detected') + '<br />';
+            auditHtml += '<strong>R2 Buckets:</strong> ' + (d.buckets ? d.buckets.length : 0) + ' bucket(s) discovered.<br />';
+            auditHtml += '<strong>Direct Cache Purge:</strong> ' + (d.can_purge ? '<span style="color:#059669; font-weight:600;">Authorized</span>' : '<span style="color:#dc2626;">Missing Scope</span>') + '<br />';
+            auditHtml += '<strong>Modern Cache Rules:</strong> ' + (d.can_cache_rules ? '<span style="color:#059669; font-weight:600;">Authorized</span>' : '<span style="color:#dc2626;">Missing Scope</span>');
+            auditHtml += '</div></div>';
+            $results.html(auditHtml);
+          } else {
+            $results.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; color:#991b1b; font-size:12px;"><strong>Verification Failed:</strong> ' + (res.data ? res.data.message : 'Invalid API Token') + '</div>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $results.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; color:#991b1b; font-size:12px;">Network error: ' + err + '</div>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Auto-Discover & Verify Token');
+        }
+      });
+    });
+
+    // 4. Setup Wizard: Blueprint Toggle
+    $('#onboard-toggle-blueprint-btn').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard-blueprint-wrap').slideToggle(200);
+    });
+
+    // 5. Cloudflare Ruleset Engine: Load Active Cache Rules Table
+    function loadRulesetCacheRules() {
+      const $container = $('#astropress-rules-table-container');
+      if (!$container.length) return;
+
+      $container.html('<p style="color:#64748b; font-size:13px;"><span class="spinner is-active" style="float:none; margin:0 6px 0 0;"></span> Fetching active cache rules from Cloudflare Ruleset API...</p>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_get_cache_rules',
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            const rules = res.data.rules || [];
+            if (!rules.length) {
+              $container.html('<div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:6px; padding:16px; text-align:center; color:#64748b; font-size:13px;">No cache rules deployed in Ruleset Engine yet. Deploy one of the 1-Click presets above to activate edge caching.</div>');
+              return;
+            }
+
+            let tbl = '<table class="widefat striped" style="margin-top:6px;">';
+            tbl += '<thead><tr>';
+            tbl += '<th style="width:70px;">Active</th>';
+            tbl += '<th>Description</th>';
+            tbl += '<th>Expression</th>';
+            tbl += '<th style="width:120px;">Edge TTL</th>';
+            tbl += '<th style="width:120px;">Browser TTL</th>';
+            tbl += '<th style="width:80px; text-align:right;">Actions</th>';
+            tbl += '</tr></thead><tbody>';
+
+            rules.forEach(function(r) {
+              const isEnabled = r.enabled !== false;
+              let edgeTtl = 'Default';
+              if (r.action_parameters && r.action_parameters.edge_ttl) {
+                edgeTtl = r.action_parameters.edge_ttl.default ? (r.action_parameters.edge_ttl.default + 's') : (r.action_parameters.edge_ttl.mode || 'Default');
+              }
+              let browserTtl = 'Default';
+              if (r.action_parameters && r.action_parameters.browser_ttl) {
+                browserTtl = r.action_parameters.browser_ttl.default ? (r.action_parameters.browser_ttl.default + 's') : (r.action_parameters.browser_ttl.mode || 'Default');
+              }
+
+              tbl += '<tr>';
+              tbl += '<td><input type="checkbox" class="astropress-toggle-rule-switch" data-rule-id="' + r.id + '" ' + (isEnabled ? 'checked' : '') + ' /></td>';
+              tbl += '<td><strong>' + (r.description || 'Custom Rule') + '</strong></td>';
+              tbl += '<td><code>' + (r.expression || '') + '</code></td>';
+              tbl += '<td><span class="astropress-badge" style="background:#eff6ff; color:#1d4ed8;">' + edgeTtl + '</span></td>';
+              tbl += '<td><span class="astropress-badge" style="background:#f0fdf4; color:#166534;">' + browserTtl + '</span></td>';
+              tbl += '<td style="text-align:right;"><button type="button" class="button button-link-delete astropress-delete-rule-btn" data-rule-id="' + r.id + '"><span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span></button></td>';
+              tbl += '</tr>';
+            });
+
+            tbl += '</tbody></table>';
+            $container.html(tbl);
+          } else {
+            $container.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:12px; color:#991b1b; font-size:13px;"><strong>Failed to load rules:</strong> ' + (res.data ? res.data.message : 'Error') + '</div>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $container.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:12px; color:#991b1b; font-size:13px;">Error contacting server: ' + err + '</div>');
+        }
+      });
+    }
+
+    if ($('#astropress-rules-table-container').length) {
+      loadRulesetCacheRules();
+    }
+
+    $('#astropress-refresh-cache-rules-btn').on('click', function(e) {
+      e.preventDefault();
+      loadRulesetCacheRules();
+    });
+
+    // 6. Deploy Preset Cache Rule
+    $(document).on('click', '.astropress-deploy-preset-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const preset = $btn.data('preset');
+      const $status = $('#astropress-preset-deploy-status');
+
+      $btn.prop('disabled', true).text('Deploying...');
+      $status.html('<span style="color:#64748b;"><span class="spinner is-active" style="float:none; margin:0 4px 0 0;"></span> Deploying preset "' + preset + '" to Cloudflare Ruleset API...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_deploy_cache_rule_preset',
+          preset: preset,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669; font-weight:600;"><span class="dashicons dashicons-yes"></span> ' + res.data.message + '</span>');
+            loadRulesetCacheRules();
+          } else {
+            $status.html('<span style="color:#dc2626; font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data ? res.data.message : 'Deployment failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626; font-weight:600;">Request error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-plus" style="vertical-align:-2px;"></span> Deploy Preset');
+        }
+      });
+    });
+
+    // 7. Toggle Cache Rule Switch
+    $(document).on('change', '.astropress-toggle-rule-switch', function() {
+      const $switch = $(this);
+      const ruleId = $switch.data('rule-id');
+      const isEnabled = $switch.is(':checked') ? 1 : 0;
+
+      $switch.prop('disabled', true);
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_toggle_cache_rule',
+          rule_id: ruleId,
+          enabled: isEnabled,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (!res.success) {
+            alert(res.data ? res.data.message : 'Failed to toggle rule.');
+            $switch.prop('checked', !isEnabled);
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Error toggling rule: ' + err);
+          $switch.prop('checked', !isEnabled);
+        },
+        complete: function() {
+          $switch.prop('disabled', false);
+        }
+      });
+    });
+
+    // 8. Delete Cache Rule
+    $(document).on('click', '.astropress-delete-rule-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const ruleId = $btn.data('rule-id');
+
+      if (!confirm('Are you sure you want to delete this cache rule from Cloudflare Ruleset Engine?')) {
+        return;
+      }
+
+      $btn.prop('disabled', true);
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_delete_cache_rule',
+          rule_id: ruleId,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            loadRulesetCacheRules();
+          } else {
+            alert(res.data ? res.data.message : 'Failed to delete rule.');
+            $btn.prop('disabled', false);
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Error deleting rule: ' + err);
+          $btn.prop('disabled', false);
+        }
+      });
+    });
+
+    // 9. Direct Purge All Zone Cache
+    $('#astropress-purge-all-zone-btn').on('click', function(e) {
+      e.preventDefault();
+      if (!confirm('Are you sure you want to purge the ENTIRE Cloudflare Zone edge cache? This will clear all cached HTML, assets, and images globally.')) {
+        return;
+      }
+
+      const $btn = $(this);
+      $btn.prop('disabled', true).text('Purging All...');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_purge_cf_zone',
+          purge_everything: 1,
+          nonce: nonce,
+        },
+        success: function(res) {
+          alert(res.data ? res.data.message : 'Zone cache purged successfully.');
+        },
+        error: function(xhr, status, err) {
+          alert('Purge error: ' + err);
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge All Zone Cache');
+        }
+      });
+    });
+
+    // 10. Direct Purge Specific URLs
+    $('#astropress-purge-urls-btn').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const raw = ($('#astropress-purge-urls-input').val() || '').trim();
+      const $status = $('#astropress-direct-purge-status');
+
+      if (!raw) {
+        alert('Please enter at least one URL or path to purge.');
+        return;
+      }
+
+      const urls = raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      $btn.prop('disabled', true).text('Purging...');
+      $status.html('<span style="color:#64748b;">Sending purge request to Cloudflare API...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_purge_cf_zone',
+          urls: urls,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669; font-weight:600;"><span class="dashicons dashicons-yes"></span> ' + res.data.message + '</span>');
+            $('#astropress-purge-urls-input').val('');
+          } else {
+            $status.html('<span style="color:#dc2626; font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data ? res.data.message : 'Purge failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626; font-weight:600;">Request error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge URLs');
+        }
+      });
+    });
+
+    // 11. Danger Zone: Reset Connection
+    $('#astropress-reset-connection-btn').on('click', function(e) {
+      e.preventDefault();
+      if (!confirm('DANGER: Are you sure you want to disconnect AstroPress and clear all stored credentials? This will lock all dashboard tabs and return to the Setup Wizard.')) {
+        return;
+      }
+
+      const $btn = $(this);
+      const $status = $('#astropress-reset-status');
+
+      $btn.prop('disabled', true).text('Resetting Connection...');
+      $status.html('<span style="color:#dc2626;"><span class="spinner is-active" style="float:none; margin:0 4px 0 0;"></span> Purging credentials and resetting connection...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_reset_connection',
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669; font-weight:600;"><span class="dashicons dashicons-yes"></span> ' + res.data.message + '</span>');
+            setTimeout(function() {
+              window.location.href = (res.data && res.data.redirect) ? res.data.redirect : (window.location.pathname + '?page=astropress&tab=onboarding');
+            }, 1000);
+          } else {
+            $status.html('<span style="color:#dc2626; font-weight:600;">Reset failed: ' + (res.data ? res.data.message : '') + '</span>');
+            $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Disconnect & Reset AstroPress');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626; font-weight:600;">Network error: ' + err + '</span>');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Disconnect & Reset AstroPress');
+        }
+      });
+    });
+
   });
 })(jQuery);
+

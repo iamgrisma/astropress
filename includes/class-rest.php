@@ -344,7 +344,7 @@ class AstroPress_REST {
 
     /**
      * Permission Callback for /wp-json/{namespace}/404-log
-     * Enforces administrator capability or valid x-revalidate-secret / secret parameter
+     * Enforces administrator capability or valid Cloudflare API Bearer token
      *
      * @param WP_REST_Request $request
      * @return bool|WP_Error
@@ -354,20 +354,18 @@ class AstroPress_REST {
             return true;
         }
 
-        $secret = $this->core->get_secret();
-        $header_secret = $request->get_header('x-revalidate-secret');
-        $query_secret  = $request->get_param('secret');
-
-        if (!empty($secret) && (
-            ($header_secret && hash_equals($secret, (string)$header_secret)) ||
-            ($query_secret && hash_equals($secret, (string)$query_secret))
-        )) {
-            return true;
+        $token = $this->core->get_cf_api_token();
+        $auth_header = $request->get_header('authorization');
+        if (!empty($token) && !empty($auth_header) && stripos($auth_header, 'Bearer ') === 0) {
+            $provided = trim(substr($auth_header, 7));
+            if (hash_equals($token, $provided)) {
+                return true;
+            }
         }
 
         return new WP_Error(
             'rest_forbidden',
-            'Unauthorized: Administrator login or valid x-revalidate-secret authentication required.',
+            'Unauthorized: Administrator login or valid Cloudflare Bearer token required.',
             array('status' => 403)
         );
     }

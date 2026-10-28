@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,14 +16,15 @@ Universal WordPress Headless Bridge & Native Cloudflare R2 Offloader for Astro o
 **AstroPress** is the ultimate unified companion plugin for WordPress sites paired with an Astro frontend hosted on Cloudflare Pages or Cloudflare Workers, featuring native Cloudflare R2 media offloading.
 
 It seamlessly combines:
-1. **Headless Invalidation & Edge Cache Warmer**: Real-time non-blocking webhooks to `/api/revalidate` on post/page save, menu edits, site identity changes, and taxonomy updates. Pre-warms edge POP caches in the background.
-2. **Direct Cloudflare Edge Purging & Deploy Hooks**: Purge Cloudflare Edge POP caches directly via Cloudflare API v4 and trigger Cloudflare Pages deployment webhooks on full site rebuilds.
-3. **Webhook Audit Logging & Automated Retries**: Detailed delivery history table with latency, HTTP response status, URL targets, and 1-click resend, backed by an automated cron retry queue.
-4. **Cloudflare 1-Click Quick Connect Assistant**: Auto-discover your Account ID, matching Zone ID, and R2 Buckets in one click using a scoped Cloudflare API Token.
+1. **Direct Cloudflare Edge POP Purge**: Eliminates middleman webhooks and shared secrets. Purges Cloudflare Zone POP Edge caches directly via Cloudflare API v4 on content changes.
+2. **Cloudflare Ruleset Cache Rules Manager**: Direct management of modern Cloudflare Ruleset Engine Zone Cache Rules (`http_request_cache_settings`), with 1-click presets for Astro SSR, Static Assets, and R2 Media CDN.
+3. **Gated Setup Wizard Lifecycle**: 3-step setup with pre-filled scoped token creator, auto-derived root domain frontend URL, and media mode selection.
+4. **Cloudflare 1-Click Quick Connect & Auto-Discovery**: Auto-discovers Account ID, matching Zone ID, and R2 Buckets with 24-hour persistent transient caching.
 5. **Pure PHP Cloudflare R2 Offloader**: Lightweight, pure PHP AWS SigV4 implementation with zero heavy AWS SDKs or third-party bloat (< 35KB footprint).
 6. **Dual-Stage Image Optimizer**: Dual-engine image compression (reSmush.it cloud API + local GD/Imagick fallback), on-the-fly WebP and AVIF conversion, responsive srcset rewriting, and EXIF stripping.
 7. **Rank Math & Yoast SEO Bridge**: Complete headless SEO delivery exposing fully-rendered `<head>`, structured JSON-LD schema, estimated reading times, and dynamic redirects via REST API.
-8. **Native GitHub Updates & Instant Rollback**: Built-in update pipeline powered by GitHub Releases (`iamgrisma/astropress`) that hooks into WordPress Core's native `Plugin_Upgrader` sandbox with 1-click upgrades and rollbacks.
+8. **Danger Zone Disconnect & Reset**: 1-click credential wipe and clean reset to fresh installation state.
+9. **Native GitHub Updates & Instant Rollback**: Built-in update pipeline powered by GitHub Releases (`iamgrisma/astropress`).
 
 == Installation ==
 
@@ -33,6 +34,17 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.0 =
+* Complete Architectural Rehaul to AstroPress v2.0: Clean-slate fresh installation architecture without legacy baggage.
+* Single Scoped API Token: One token powers Zone detection, Direct POP Cache Purge, Ruleset Cache Rules, DNS, and R2 Media Offloading. Zero AWS S3 credentials needed.
+* Complete Elimination of REVALIDATE_SECRET: Webhook middleman to `/api/revalidate` is permanently removed. WordPress invalidates Cloudflare Edge POP caches directly via Cloudflare API v4 (`POST /zones/{zone_id}/purge_cache`).
+* Complete Elimination of Legacy Page Rules: Upgraded exclusively to modern Cloudflare Ruleset Engine Zone Cache Rules (`http_request_cache_settings` phase).
+* Gated Setup Wizard Lifecycle: Unconfigured or disconnected installations lock all navigation tabs to the guided 3-step Setup Wizard until setup is completed.
+* Cloudflare Ruleset Cache Rules Manager: New dedicated tab for viewing, deploying 1-click presets (Astro Static Assets, Astro SSR Origin Headers, R2 Media CDN), toggling on/off, and deleting cache rules.
+* Direct Zone Cache Purge Controls: 1-click Purge All Zone Cache and targeted Purge URLs tools directly inside WordPress.
+* Danger Zone (Disconnect & Reset): Safe 1-click reset button in Settings tab to clear all stored credentials, reset setup status, and return to fresh installation state.
+* Frontend URL Auto-Derivation & Collision Shield: Automatically extracts root domain (e.g. `wp.example.com` -> `https://example.com`) and strictly blocks configuration where frontend equals WordPress backend.
 
 = 1.3.0 =
 * Cloudflare Scoped Token Blueprint Fix: Fixed permissionGroupKeys URL template mapping for Cache Purge (type: "purge") and Cloudflare Pages (key: "page"), preventing Cloudflare dashboard from excluding them during token creation.

@@ -188,103 +188,18 @@ class AstroPress_Cache {
      */
     public function dispatch_revalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $blocking = false, $extra_data = array()) {
         $frontend_url = $this->core->get_frontend_url();
-        $secret       = $this->core->get_secret();
         $cf_token     = $this->core->get_cf_api_token();
         $cf_zone      = $this->core->get_cf_zone_id();
 
         $clean_urls = array_values(array_unique(array_filter((array)$extra_urls)));
 
-        $payload = array_merge(array(
-            'slug'          => $slug,
-            'type'          => $type,
-            'action'        => $action,
-            'urls'          => $clean_urls,
-            'time'          => current_time('mysql'),
-            'warm'          => true,
-            'cf_api_token'  => $cf_token,
-            'cf_zone_id'    => $cf_zone,
-        ), is_array($extra_data) ? $extra_data : array());
-
         $results = array(
-            'astro_webhook'  => null,
             'cloudflare_api' => null,
             'deploy_hook'    => null,
         );
 
-        // 1. Dispatch Webhook to Astro Frontend
-        if (!empty($frontend_url) && !empty($secret)) {
-            $endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
-            if (!AstroPress_Security::is_safe_external_url($endpoint)) {
-                $results['astro_webhook'] = false;
-                return $results;
-            }
-            $start_time = microtime(true);
-
-            $headers = array(
-                'Content-Type'        => 'application/json',
-                'Origin'              => $frontend_url,
-                'Referer'             => $frontend_url,
-                'x-revalidate-secret' => $secret,
-            );
-            if (!empty($cf_token)) {
-                $headers['x-cf-api-token'] = $cf_token;
-            }
-
-            $response = wp_remote_post($endpoint, array(
-                'method'      => 'POST',
-                'timeout'     => $blocking ? 10 : 5,
-                'blocking'    => $blocking,
-                'sslverify'   => true,
-                'headers'     => $headers,
-                'body'        => wp_json_encode($payload),
-                'data_format' => 'body',
-            ));
-
-            $latency = round((microtime(true) - $start_time) * 1000);
-
-            if (is_wp_error($response)) {
-                $error_msg = $response->get_error_message();
-                $this->log_webhook_event(array(
-                    'trigger'     => "{$type}:{$action}",
-                    'target'      => $endpoint,
-                    'type'        => 'astro_webhook',
-                    'urls_count'  => count($clean_urls) + ($slug ? 1 : 0),
-                    'urls'        => array_slice($clean_urls, 0, 10),
-                    'status'      => 'failed',
-                    'http_code'   => 0,
-                    'duration_ms' => $latency,
-                    'message'     => 'Request Error: ' . $error_msg,
-                    'payload'     => $payload,
-                ));
-                $this->enqueue_failed_webhook($payload, $endpoint, $error_msg);
-                $results['astro_webhook'] = false;
-            } else {
-                $code = $blocking ? wp_remote_retrieve_response_code($response) : 202;
-                $body = $blocking ? wp_remote_retrieve_body($response) : 'Dispatched asynchronously';
-                $is_ok = ($code >= 200 && $code < 300);
-
-                $this->log_webhook_event(array(
-                    'trigger'     => "{$type}:{$action}",
-                    'target'      => $endpoint,
-                    'type'        => 'astro_webhook',
-                    'urls_count'  => count($clean_urls) + ($slug ? 1 : 0),
-                    'urls'        => array_slice($clean_urls, 0, 10),
-                    'status'      => $is_ok ? ($blocking ? 'success' : 'dispatched') : 'failed',
-                    'http_code'   => $code,
-                    'duration_ms' => $latency,
-                    'message'     => is_string($body) ? substr($body, 0, 200) : 'OK',
-                    'payload'     => $payload,
-                ));
-
-                if (!$is_ok && $blocking) {
-                    $this->enqueue_failed_webhook($payload, $endpoint, "HTTP {$code}");
-                }
-                $results['astro_webhook'] = $is_ok;
-            }
-        }
-
-        // 2. Direct Cloudflare Zone Cache API Purge (if enabled and configured)
-        if ($this->core->should_direct_purge_cloudflare()) {
+        // 1. Direct Cloudflare Zone Cache API Purge (Primary Invalidation)
+        if (!empty($cf_token) && !empty($cf_zone)) {
             $is_purge_all = ($type === 'all' || in_array('/*', $clean_urls, true));
             if ($is_purge_all) {
                 $results['cloudflare_api'] = $this->purge_cloudflare_zone(array(), true);
@@ -310,7 +225,7 @@ class AstroPress_Cache {
             }
         }
 
-        // 3. Trigger Cloudflare Deploy Hook on full site cache purge
+        // 2. Trigger Cloudflare Deploy Hook on full site cache purge
         if ($type === 'all' && $action === 'purge') {
             $deploy_hook = $this->core->get_cf_deploy_hook();
             if (!empty($deploy_hook)) {
@@ -318,7 +233,7 @@ class AstroPress_Cache {
             }
         }
 
-        // 4. LiteSpeed Cache synchronization
+        // 3. LiteSpeed Cache synchronization
         if ($this->core->should_sync_litespeed() && defined('LSCWP_V')) {
             do_action('litespeed_purge_all');
         }
@@ -1333,52 +1248,24 @@ class AstroPress_Cache {
             $confidence = 'probable';
         }
 
-        // 2. Ping /api/revalidate bridge endpoint
-        $webhook_url = $url . '/api/revalidate';
-        $wh_res = wp_remote_post($webhook_url, array(
-            'timeout'            => 8,
-            'sslverify'          => false,
-            'reject_unsafe_urls' => true,
-            'headers'            => array(
-                'Content-Type' => 'application/json',
-                'User-Agent'   => 'AstroPress-Bridge-Detector/1.2.5',
-            ),
-            'body'      => wp_json_encode(array('action' => 'ping', 'timestamp' => time())),
-        ));
-
-        $webhook_reachable = false;
-        $webhook_code      = 0;
-
-        if (!is_wp_error($wh_res)) {
-            $webhook_code = (int) wp_remote_retrieve_response_code($wh_res);
-            // Any response other than 404 indicates the route exists and is mounted (200, 400, 401, 405)
-            if ($webhook_code !== 404 && $webhook_code > 0) {
-                $webhook_reachable = true;
-            }
-        }
-
         $summary = sprintf(
-            esc_html__('Status %d in %dms. %s. Webhook route %s (HTTP %d).', 'astropress'),
+            esc_html__('Status %d in %dms. %s%s.', 'astropress'),
             $root_code,
             $latency_ms,
             $is_astro ? esc_html__('Astro frontend detected', 'astropress') : esc_html__('Frontend responding', 'astropress'),
-            $webhook_reachable ? esc_html__('active', 'astropress') : esc_html__('not found (404)', 'astropress'),
-            $webhook_code
+            $is_cloudflare ? esc_html__(' (Cloudflare Edge active)', 'astropress') : ''
         );
 
         return array(
-            'url'               => $url,
-            'reachable'         => ($root_code >= 200 && $root_code < 400),
-            'root_status'       => $root_code,
-            'latency_ms'        => $latency_ms,
-            'is_astro'          => $is_astro,
-            'confidence'        => $confidence,
-            'is_cloudflare'     => $is_cloudflare,
-            'cf_ray'            => !empty($cf_ray),
-            'webhook_url'       => $webhook_url,
-            'webhook_reachable' => $webhook_reachable,
-            'webhook_status'    => $webhook_code,
-            'message'           => $summary,
+            'url'           => $url,
+            'reachable'     => ($root_code >= 200 && $root_code < 400),
+            'root_status'   => $root_code,
+            'latency_ms'    => $latency_ms,
+            'is_astro'      => $is_astro,
+            'confidence'    => $confidence,
+            'is_cloudflare' => $is_cloudflare,
+            'cf_ray'        => !empty($cf_ray),
+            'message'       => $summary,
         );
     }
 

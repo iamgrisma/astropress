@@ -23,8 +23,9 @@ class AstroPress {
     private static $instance = null;
 
     // Headless Bridge Option Keys
+    const OPTION_SETUP_COMPLETED   = 'astropress_setup_completed';
     const OPTION_FRONTEND_URL      = 'astropress_frontend_url';
-    const OPTION_SECRET            = 'astropress_secret';
+    const OPTION_MEDIA_MODE        = 'astropress_media_mode';
     const OPTION_CONNECTED         = 'astropress_connected';
     const OPTION_REWRITE_LINKS     = 'astropress_rewrite_links';
     const OPTION_AUTO_UPDATE       = 'astropress_auto_update';
@@ -201,41 +202,56 @@ class AstroPress {
      *
      * @return bool
      */
-    public function is_connected() {
-        return (bool) $this->get_compat_option(self::OPTION_CONNECTED, 'astropress_headless_connected', 'topnepali_headless_connected', false);
+    public function is_setup_completed() {
+        return get_option(self::OPTION_SETUP_COMPLETED, '0') === '1';
     }
 
     /**
-     * Get configured frontend Astro URL with in-memory memoization
-     * Falls back to site_url() if unconfigured.
+     * Derive recommended Astro frontend URL from WordPress host.
+     * E.g. https://wp.topnepali.com -> https://topnepali.com
+     * E.g. https://backend.news.org.np -> https://news.org.np
+     *
+     * @return string
+     */
+    public function derive_frontend_url() {
+        $wp_host = wp_parse_url(home_url(), PHP_URL_HOST);
+        if (empty($wp_host)) {
+            return '';
+        }
+
+        $parts = explode('.', $wp_host);
+        $multi_tlds = array('com.np', 'org.np', 'edu.np', 'net.np', 'gov.np', 'co.uk', 'com.au', 'co.in');
+        $suffix = implode('.', array_slice($parts, -2));
+
+        if (in_array(strtolower($suffix), $multi_tlds, true) && count($parts) >= 3) {
+            $root = implode('.', array_slice($parts, -3));
+        } elseif (count($parts) >= 2) {
+            $root = implode('.', array_slice($parts, -2));
+        } else {
+            $root = $wp_host;
+        }
+
+        return 'https://' . $root;
+    }
+
+    /**
+     * Get configured frontend Astro URL with in-memory memoization.
+     * Automatically derives root domain if unconfigured. Never falls back to home_url().
      *
      * @return string
      */
     public function get_frontend_url() {
         if ($this->cached_frontend_url === null) {
-            $url = $this->get_compat_option(self::OPTION_FRONTEND_URL, 'astropress_headless_frontend_url', 'topnepali_headless_frontend_url', home_url());
+            $url = get_option(self::OPTION_FRONTEND_URL, '');
             if (empty($url)) {
-                $url = home_url();
+                $url = get_option('astropress_headless_frontend_url', '');
+            }
+            if (empty($url)) {
+                $url = $this->derive_frontend_url();
             }
             $this->cached_frontend_url = rtrim(trim($url), '/');
         }
         return $this->cached_frontend_url;
-    }
-
-    /**
-     * Get configured secret token with in-memory memoization
-     *
-     * @return string
-     */
-    public function get_secret() {
-        if ($this->cached_secret === null) {
-            $val = $this->get_compat_option(self::OPTION_SECRET, 'astropress_headless_secret', 'topnepali_headless_secret', '');
-            if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
-                $val = AstroPress_Encryption::decrypt($val);
-            }
-            $this->cached_secret = (string) $val;
-        }
-        return $this->cached_secret;
     }
 
     /**
@@ -302,12 +318,8 @@ class AstroPress {
     public function get_cf_api_token() {
         $val = get_option(self::OPTION_CF_API_TOKEN, '');
         if (!empty($val)) {
-            return AstroPress_Encryption::decrypt($val);
-        }
-        $val2 = get_option('topnepali_headless_cf_api_token', '');
-        if (!empty($val2)) {
-            $dec = AstroPress_Encryption::decrypt($val2);
-            return !empty($dec) ? $dec : $val2;
+            $dec = AstroPress_Encryption::decrypt($val);
+            return !empty($dec) ? $dec : $val;
         }
         return '';
     }

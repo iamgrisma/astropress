@@ -372,17 +372,16 @@ class AstroPress_Warmer {
                 $cf_cache = wp_remote_retrieve_header($response, 'cf-cache-status') ?: (wp_remote_retrieve_header($response, 'x-cache') ?: 'UNKNOWN');
 
                 // If Cloudflare returned 404 or server error, retry once with bypass headers to bust stale edge micro-cache
-                if (($code === 404 || $code >= 500) && !empty($this->core->get_secret())) {
+                if ($code === 404 || $code >= 500) {
                     $bypass_res = wp_remote_get($full_url, array(
                         'timeout'   => 12,
                         'blocking'  => true,
                         'sslverify' => true,
                         'headers'   => array(
-                            'User-Agent'          => 'AstroPress-WP-Cache-Warmer/' . ASTROPRESS_VERSION,
-                            'Accept'              => 'text/html,application/xhtml+xml,application/xml',
-                            'x-revalidate-secret' => $this->core->get_secret(),
-                            'Pragma'              => 'no-cache',
-                            'Cache-Control'       => 'no-cache',
+                            'User-Agent'    => 'AstroPress-WP-Cache-Warmer/' . ASTROPRESS_VERSION,
+                            'Accept'        => 'text/html,application/xhtml+xml,application/xml',
+                            'Pragma'        => 'no-cache',
+                            'Cache-Control' => 'no-cache',
                         ),
                     ));
                     if (!is_wp_error($bypass_res)) {

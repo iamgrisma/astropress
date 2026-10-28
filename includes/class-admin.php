@@ -89,6 +89,13 @@ class AstroPress_Admin {
             add_action('wp_ajax_astropress_audit_cdn_domain', array($this, 'ajax_audit_cdn_domain'));
             add_action('wp_ajax_astropress_attach_r2_custom_domain', array($this, 'ajax_attach_r2_custom_domain'));
 
+            // AJAX Handlers for Cloudflare Ruleset Engine & Danger Zone Reset
+            add_action('wp_ajax_astropress_get_cache_rules', array($this, 'ajax_get_cf_cache_rules'));
+            add_action('wp_ajax_astropress_deploy_cache_rule_preset', array($this, 'ajax_deploy_cf_cache_rule'));
+            add_action('wp_ajax_astropress_toggle_cache_rule', array($this, 'ajax_toggle_cf_cache_rule'));
+            add_action('wp_ajax_astropress_delete_cache_rule', array($this, 'ajax_delete_cf_cache_rule'));
+            add_action('wp_ajax_astropress_reset_connection', array($this, 'ajax_reset_connection'));
+
             // Security Notices
             add_action('admin_notices', array($this, 'render_security_notices'));
         }
@@ -485,13 +492,12 @@ class AstroPress_Admin {
      */
     public function get_cf_token_template_url() {
         $permissions = array(
-            array('key' => 'cache_purge', 'type' => 'purge'),
-            array('key' => 'cache_rules', 'type' => 'edit'),
-            array('key' => 'page_rules', 'type' => 'edit'),
-            array('key' => 'dns', 'type' => 'edit'),
-            array('key' => 'zone', 'type' => 'read'),
-            array('key' => 'workers_r2', 'type' => 'edit'),
-            array('key' => 'page', 'type' => 'edit'),
+            array('key' => 'cache_purge',      'type' => 'purge'),
+            array('key' => 'cache_rules',      'type' => 'edit'),
+            array('key' => 'dns',              'type' => 'edit'),
+            array('key' => 'zone',             'type' => 'read'),
+            array('key' => 'workers_r2',       'type' => 'edit'),
+            array('key' => 'page',             'type' => 'edit'),
             array('key' => 'account_settings', 'type' => 'read'),
         );
 
@@ -515,13 +521,7 @@ class AstroPress_Admin {
                 'category' => 'Zone',
                 'name'     => 'Cache Rules',
                 'access'   => 'Edit',
-                'desc'     => 'Modern Cloudflare Cache Rules deployment (1-year Edge & Browser TTL)',
-            ),
-            array(
-                'category' => 'Zone',
-                'name'     => 'Page Rules',
-                'access'   => 'Edit',
-                'desc'     => 'Fallback deployment of 1-year Cache Everything page rules',
+                'desc'     => 'Modern Cloudflare Cache Rules deployment (1-year Edge & Browser TTL via Ruleset API)',
             ),
             array(
                 'category' => 'Zone',
@@ -953,57 +953,48 @@ class AstroPress_Admin {
             exit;
         }
 
-        // 5. Save Quick Onboarding Form
+        // 5. Save Quick Onboarding Form (v2.0 Gated Wizard)
         if (isset($_POST['astropress_save_onboarding']) && check_admin_referer('astropress_onboarding_action', 'astropress_onboarding_nonce')) {
-            $setup_mode = sanitize_key($_POST['onboard_setup_mode'] ?? 'full');
-            update_option('astropress_setup_mode', $setup_mode);
-
-            $enable_bridge     = ($setup_mode === 'full') || !empty($_POST['onboard_module_bridge']);
-            $enable_edge_purge = ($setup_mode === 'full') || !empty($_POST['onboard_module_edge_purge']);
-            $enable_warmer     = ($setup_mode === 'full') || !empty($_POST['onboard_module_warmer']);
-            $enable_r2         = ($setup_mode === 'full') || !empty($_POST['onboard_enable_r2']);
-            $enable_shield     = ($setup_mode === 'full') || !empty($_POST['onboard_module_shield']);
-
-            // Frontend & Webhook Secret
             $frontend_url = esc_url_raw(rtrim(trim(wp_unslash($_POST['onboard_frontend_url'] ?? '')), '/'));
-            $secret       = sanitize_text_field(trim(wp_unslash($_POST['onboard_secret'] ?? '')));
+            $cf_token     = trim(wp_unslash($_POST['onboard_cf_api_token'] ?? ''));
+            $cf_zone_id   = sanitize_text_field(wp_unslash($_POST['onboard_cf_zone_id'] ?? ''));
+            $media_mode   = sanitize_key(wp_unslash($_POST['onboard_media_mode'] ?? 'wp'));
+
+            // Collision check: Frontend URL cannot match WordPress backend
+            $site_host     = wp_parse_url(home_url(), PHP_URL_HOST);
+            $frontend_host = wp_parse_url($frontend_url, PHP_URL_HOST);
+
+            if (!empty($frontend_url) && $site_host && $frontend_host && strtolower($site_host) === strtolower($frontend_host)) {
+                set_transient('astropress_notice', array(
+                    'type'    => 'error',
+                    'message' => esc_html__('Error: Frontend URL cannot be identical to your WordPress backend URL. Headless architecture requires an independent domain or root domain (e.g., WordPress on wp.example.com and Astro on https://example.com).', 'astropress'),
+                ), 30);
+                wp_safe_redirect(admin_url('admin.php?page=astropress&tab=onboarding'));
+                exit;
+            }
+
             if (!empty($frontend_url)) {
                 update_option(AstroPress::OPTION_FRONTEND_URL, $frontend_url);
                 update_option('topnepali_headless_frontend_url', $frontend_url);
             }
-            if (!empty($secret) && strpos($secret, '••••') === false) {
-                $enc_sec = AstroPress_Encryption::encrypt($secret);
-                update_option(AstroPress::OPTION_SECRET, $enc_sec);
-                update_option('topnepali_headless_secret', $enc_sec);
-            }
-
-            // Cloudflare API Token & Zone ID (Single Token Architecture)
-            $cf_token   = trim(wp_unslash($_POST['onboard_cf_api_token'] ?? ''));
-            $cf_zone_id = sanitize_text_field(wp_unslash($_POST['onboard_cf_zone_id'] ?? ''));
 
             if (!empty($cf_token) && strpos($cf_token, '••••') === false) {
                 $enc_cf = AstroPress_Encryption::encrypt($cf_token);
                 update_option(AstroPress::OPTION_CF_API_TOKEN, $enc_cf);
                 update_option('topnepali_headless_cf_api_token', $enc_cf);
-                if ($enable_edge_purge) {
-                    update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
-                }
+                update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
             }
+
             if (!empty($cf_zone_id)) {
                 update_option(AstroPress::OPTION_CF_ZONE_ID, $cf_zone_id);
                 update_option('topnepali_headless_cf_zone_id', $cf_zone_id);
             }
 
-            // Pages Project
-            if (!empty($_POST['onboard_cf_pages_project'])) {
-                update_option('astropress_cf_pages_project', sanitize_text_field(wp_unslash($_POST['onboard_cf_pages_project'])));
-            }
+            update_option(AstroPress::OPTION_MEDIA_MODE, $media_mode);
 
             // R2 Object Storage
-            if ($enable_r2) {
+            if ($media_mode === 'r2') {
                 $account_id    = sanitize_text_field(wp_unslash($_POST['onboard_r2_account_id'] ?? ''));
-                $access_key    = sanitize_text_field(wp_unslash($_POST['onboard_r2_access_key'] ?? ''));
-                $posted_secret = trim(wp_unslash($_POST['onboard_r2_secret_key'] ?? ''));
                 $bucket        = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket'] ?? ''));
                 if (!empty($_POST['onboard_r2_bucket_select'])) {
                     $bucket = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket_select']));
@@ -1013,15 +1004,6 @@ class AstroPress_Admin {
                 if (!empty($account_id)) {
                     update_option('r2g_account_id', $account_id);
                     update_option('astropress_r2_account_id', $account_id);
-                }
-                if (!empty($access_key)) {
-                    update_option('r2g_access_key', $access_key);
-                    update_option('astropress_r2_access_key', $access_key);
-                }
-                if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
-                    $encrypted_secret = AstroPress_Encryption::encrypt($posted_secret);
-                    update_option('r2g_secret_key', $encrypted_secret);
-                    update_option('astropress_r2_secret_key', $encrypted_secret);
                 }
                 if (!empty($bucket)) {
                     update_option('r2g_bucket', $bucket);
@@ -1044,15 +1026,16 @@ class AstroPress_Admin {
             }
 
             // Defaults & Core Integrations
-            update_option(AstroPress::OPTION_CONNECTED, $enable_bridge ? '1' : '0');
-            update_option(AstroPress::OPTION_REWRITE_LINKS, $enable_bridge ? '1' : '0');
-            update_option(AstroPress::OPTION_PURGE_ON_SAVE, $enable_bridge ? '1' : '0');
-            update_option(AstroPress::OPTION_SUBDOMAIN_SHIELD, $enable_shield ? '1' : '0');
-            update_option(AstroPress::OPTION_SUBDOMAIN_NOINDEX, $enable_shield ? '1' : '0');
+            update_option(AstroPress::OPTION_SETUP_COMPLETED, '1');
+            update_option(AstroPress::OPTION_CONNECTED, '1');
+            update_option(AstroPress::OPTION_REWRITE_LINKS, '1');
+            update_option(AstroPress::OPTION_PURGE_ON_SAVE, '1');
+            update_option(AstroPress::OPTION_SUBDOMAIN_SHIELD, '1');
+            update_option(AstroPress::OPTION_SUBDOMAIN_NOINDEX, '1');
 
             set_transient('astropress_notice', array(
                 'type'    => 'success',
-                'message' => esc_html__('AstroPress Setup Complete! Your architecture is now connected and protected.', 'astropress'),
+                'message' => esc_html__('AstroPress v2.0 Setup Complete! Dashboard unlocked, Cloudflare Edge connected, and cache management ready.', 'astropress'),
             ), 30);
 
             wp_safe_redirect(admin_url('admin.php?page=astropress'));
@@ -2161,6 +2144,15 @@ class AstroPress_Admin {
             $applied = true;
         }
 
+        // Cache discovery in transient
+        $discovery_data = array(
+            'account_id' => $matched_account['id'] ?? '',
+            'zone_id'    => $matched_zone['id'] ?? '',
+            'zone_name'  => $matched_zone['name'] ?? '',
+            'buckets'    => $buckets,
+        );
+        set_transient('astropress_cf_discovery_cache', $discovery_data, 86400);
+
         wp_send_json_success(array(
             'message'         => esc_html__('Cloudflare resources discovered & token abilities audited successfully.', 'astropress'),
             'accounts'        => $accounts,
@@ -2179,10 +2171,383 @@ class AstroPress_Admin {
     }
 
     /**
+     * AJAX: Fetch Cloudflare Ruleset Cache Rules (Phase: http_request_cache_settings)
+     */
+    public function ajax_get_cf_cache_rules() {
+        $this->verify_admin_ajax();
+
+        $token   = $this->core->get_cf_api_token();
+        $zone_id = $this->core->get_cf_zone_id();
+
+        if (empty($token) || empty($zone_id)) {
+            wp_send_json_error(array(
+                'message' => esc_html__('Cloudflare API Token and Zone ID must be configured first.', 'astropress')
+            ));
+        }
+
+        $url = "https://api.cloudflare.com/client/v4/zones/" . rawurlencode($zone_id) . "/rulesets/phases/http_request_cache_settings/entrypoint";
+        $response = wp_remote_get($url, array(
+            'timeout' => 12,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => $response->get_error_message()));
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($code === 404) {
+            wp_send_json_success(array(
+                'rules'      => array(),
+                'ruleset_id' => '',
+                'message'    => esc_html__('No cache rules configured in Ruleset Engine.', 'astropress'),
+            ));
+        }
+
+        if ($code === 200 && !empty($body['success'])) {
+            $rules = $body['result']['rules'] ?? array();
+            $ruleset_id = $body['result']['id'] ?? '';
+            wp_send_json_success(array(
+                'rules'      => $rules,
+                'ruleset_id' => $ruleset_id,
+            ));
+        }
+
+        $err_msg = $body['errors'][0]['message'] ?? sprintf(esc_html__('HTTP %d returned by Cloudflare Ruleset API.', 'astropress'), $code);
+        wp_send_json_error(array('message' => $err_msg));
+    }
+
+    /**
+     * AJAX: Deploy Ruleset Cache Rule Preset (or Custom Rule)
+     */
+    public function ajax_deploy_cf_cache_rule() {
+        $this->verify_admin_ajax();
+
+        $token   = $this->core->get_cf_api_token();
+        $zone_id = $this->core->get_cf_zone_id();
+
+        if (empty($token) || empty($zone_id)) {
+            wp_send_json_error(array(
+                'message' => esc_html__('Cloudflare API Token and Zone ID must be configured first.', 'astropress')
+            ));
+        }
+
+        $preset      = sanitize_key($_POST['preset'] ?? '');
+        $custom_desc = sanitize_text_field(wp_unslash($_POST['description'] ?? ''));
+        $custom_expr = sanitize_text_field(wp_unslash($_POST['expression'] ?? ''));
+
+        $rule_to_add = null;
+
+        if ($preset === 'astro_assets') {
+            $rule_to_add = array(
+                'expression'        => '(starts_with(http.request.uri.path, "/_astro/") or starts_with(http.request.uri.path, "/assets/"))',
+                'description'       => 'AstroPress: 1-Year Static Assets Edge Cache',
+                'action'            => 'set_cache_settings',
+                'action_parameters' => array(
+                    'cache'       => true,
+                    'edge_ttl'    => array('mode' => 'override_origin', 'default' => 31536000),
+                    'browser_ttl' => array('mode' => 'override_origin', 'default' => 31536000),
+                ),
+                'enabled'           => true,
+            );
+        } elseif ($preset === 'r2_cdn') {
+            $cdn_domain = sanitize_text_field(wp_unslash($_POST['cdn_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
+            $parsed = wp_parse_url($cdn_domain);
+            $host = !empty($parsed['host']) ? $parsed['host'] : trim($cdn_domain, '/');
+            if (empty($host)) {
+                wp_send_json_error(array('message' => esc_html__('Please provide a valid CDN domain for R2.', 'astropress')));
+            }
+            $rule_to_add = array(
+                'expression'        => '(http.host eq "' . addslashes($host) . '")',
+                'description'       => 'AstroPress: R2 Media CDN 1-Year Edge & Browser Cache (' . $host . ')',
+                'action'            => 'set_cache_settings',
+                'action_parameters' => array(
+                    'cache'       => true,
+                    'edge_ttl'    => array('mode' => 'override_origin', 'default' => 31536000),
+                    'browser_ttl' => array('mode' => 'override_origin', 'default' => 31536000),
+                ),
+                'enabled'           => true,
+            );
+        } elseif ($preset === 'astro_ssr') {
+            $frontend_url = $this->core->get_frontend_url();
+            $host = wp_parse_url($frontend_url, PHP_URL_HOST) ?: $frontend_url;
+            $rule_to_add = array(
+                'expression'        => '(http.host eq "' . addslashes($host) . '")',
+                'description'       => 'AstroPress: Global Edge Cache (Respect Origin Headers)',
+                'action'            => 'set_cache_settings',
+                'action_parameters' => array(
+                    'cache'    => true,
+                    'edge_ttl' => array('mode' => 'respect_origin'),
+                ),
+                'enabled'           => true,
+            );
+        } elseif (!empty($custom_expr)) {
+            $edge_ttl_mode = sanitize_text_field($_POST['edge_ttl_mode'] ?? 'override_origin');
+            $edge_ttl_val  = absint($_POST['edge_ttl_default'] ?? 31536000);
+            $action_params = array('cache' => true);
+            if ($edge_ttl_mode === 'override_origin') {
+                $action_params['edge_ttl']    = array('mode' => 'override_origin', 'default' => $edge_ttl_val);
+                $action_params['browser_ttl'] = array('mode' => 'override_origin', 'default' => $edge_ttl_val);
+            } else {
+                $action_params['edge_ttl'] = array('mode' => 'respect_origin');
+            }
+
+            $rule_to_add = array(
+                'expression'        => $custom_expr,
+                'description'       => !empty($custom_desc) ? $custom_desc : 'AstroPress Custom Cache Rule',
+                'action'            => 'set_cache_settings',
+                'action_parameters' => $action_params,
+                'enabled'           => true,
+            );
+        } else {
+            wp_send_json_error(array('message' => esc_html__('Invalid rule preset or expression.', 'astropress')));
+        }
+
+        // Read current ruleset
+        $entry_url = "https://api.cloudflare.com/client/v4/zones/" . rawurlencode($zone_id) . "/rulesets/phases/http_request_cache_settings/entrypoint";
+        $get_res = wp_remote_get($entry_url, array(
+            'timeout' => 12,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+        ));
+
+        $existing_rules = array();
+        if (!is_wp_error($get_res) && wp_remote_retrieve_response_code($get_res) === 200) {
+            $body = json_decode(wp_remote_retrieve_body($get_res), true);
+            $existing_rules = $body['result']['rules'] ?? array();
+        }
+
+        $updated = false;
+        foreach ($existing_rules as $idx => $r) {
+            if (($r['expression'] ?? '') === $rule_to_add['expression']) {
+                $existing_rules[$idx]['enabled']           = true;
+                $existing_rules[$idx]['description']       = $rule_to_add['description'];
+                $existing_rules[$idx]['action_parameters'] = $rule_to_add['action_parameters'];
+                $updated = true;
+                break;
+            }
+        }
+
+        if (!$updated) {
+            $existing_rules[] = $rule_to_add;
+        }
+
+        foreach ($existing_rules as &$r) {
+            unset($r['last_updated'], $r['version']);
+        }
+        unset($r);
+
+        $put_res = wp_remote_request($entry_url, array(
+            'method'  => 'PUT',
+            'timeout' => 15,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'    => wp_json_encode(array('rules' => $existing_rules)),
+        ));
+
+        if (is_wp_error($put_res)) {
+            wp_send_json_error(array('message' => $put_res->get_error_message()));
+        }
+
+        $put_code = wp_remote_retrieve_response_code($put_res);
+        $put_body = json_decode(wp_remote_retrieve_body($put_res), true);
+
+        if (in_array($put_code, array(200, 201), true) && !empty($put_body['success'])) {
+            wp_send_json_success(array(
+                'message' => esc_html__('Cache rule deployed successfully to Cloudflare Ruleset Engine!', 'astropress'),
+                'rules'   => $put_body['result']['rules'] ?? array(),
+            ));
+        }
+
+        $err_msg = $put_body['errors'][0]['message'] ?? sprintf(esc_html__('Cloudflare returned status code %d', 'astropress'), $put_code);
+        wp_send_json_error(array('message' => $err_msg));
+    }
+
+    /**
+     * AJAX: Toggle Cache Rule Enabled State
+     */
+    public function ajax_toggle_cf_cache_rule() {
+        $this->verify_admin_ajax();
+
+        $token   = $this->core->get_cf_api_token();
+        $zone_id = $this->core->get_cf_zone_id();
+        $rule_id = sanitize_text_field(wp_unslash($_POST['rule_id'] ?? ''));
+        $enabled = !empty($_POST['enabled']);
+
+        if (empty($token) || empty($zone_id) || empty($rule_id)) {
+            wp_send_json_error(array('message' => esc_html__('Missing required parameters.', 'astropress')));
+        }
+
+        $entry_url = "https://api.cloudflare.com/client/v4/zones/" . rawurlencode($zone_id) . "/rulesets/phases/http_request_cache_settings/entrypoint";
+        $get_res = wp_remote_get($entry_url, array(
+            'timeout' => 12,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+
+        if (is_wp_error($get_res) || wp_remote_retrieve_response_code($get_res) !== 200) {
+            wp_send_json_error(array('message' => esc_html__('Could not retrieve current cache ruleset.', 'astropress')));
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($get_res), true);
+        $rules = $body['result']['rules'] ?? array();
+        $found = false;
+
+        foreach ($rules as &$r) {
+            if (($r['id'] ?? '') === $rule_id) {
+                $r['enabled'] = $enabled;
+                $found = true;
+            }
+            unset($r['last_updated'], $r['version']);
+        }
+        unset($r);
+
+        if (!$found) {
+            wp_send_json_error(array('message' => esc_html__('Rule ID not found in current ruleset.', 'astropress')));
+        }
+
+        $put_res = wp_remote_request($entry_url, array(
+            'method'  => 'PUT',
+            'timeout' => 15,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'    => wp_json_encode(array('rules' => $rules)),
+        ));
+
+        if (!is_wp_error($put_res) && in_array(wp_remote_retrieve_response_code($put_res), array(200, 201), true)) {
+            wp_send_json_success(array(
+                'message' => $enabled
+                    ? esc_html__('Cache rule enabled.', 'astropress')
+                    : esc_html__('Cache rule disabled.', 'astropress'),
+            ));
+        }
+
+        wp_send_json_error(array('message' => esc_html__('Failed to update cache rule state on Cloudflare.', 'astropress')));
+    }
+
+    /**
+     * AJAX: Delete Cache Rule from Ruleset
+     */
+    public function ajax_delete_cf_cache_rule() {
+        $this->verify_admin_ajax();
+
+        $token   = $this->core->get_cf_api_token();
+        $zone_id = $this->core->get_cf_zone_id();
+        $rule_id = sanitize_text_field(wp_unslash($_POST['rule_id'] ?? ''));
+
+        if (empty($token) || empty($zone_id) || empty($rule_id)) {
+            wp_send_json_error(array('message' => esc_html__('Missing required parameters.', 'astropress')));
+        }
+
+        $entry_url = "https://api.cloudflare.com/client/v4/zones/" . rawurlencode($zone_id) . "/rulesets/phases/http_request_cache_settings/entrypoint";
+        $get_res = wp_remote_get($entry_url, array(
+            'timeout' => 12,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+
+        if (is_wp_error($get_res) || wp_remote_retrieve_response_code($get_res) !== 200) {
+            wp_send_json_error(array('message' => esc_html__('Could not retrieve current cache ruleset.', 'astropress')));
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($get_res), true);
+        $rules = $body['result']['rules'] ?? array();
+        $new_rules = array();
+
+        foreach ($rules as $r) {
+            if (($r['id'] ?? '') !== $rule_id) {
+                unset($r['last_updated'], $r['version']);
+                $new_rules[] = $r;
+            }
+        }
+
+        $put_res = wp_remote_request($entry_url, array(
+            'method'  => 'PUT',
+            'timeout' => 15,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'    => wp_json_encode(array('rules' => $new_rules)),
+        ));
+
+        if (!is_wp_error($put_res) && in_array(wp_remote_retrieve_response_code($put_res), array(200, 201), true)) {
+            wp_send_json_success(array('message' => esc_html__('Cache rule deleted from Cloudflare Ruleset Engine.', 'astropress')));
+        }
+
+        wp_send_json_error(array('message' => esc_html__('Failed to delete cache rule on Cloudflare.', 'astropress')));
+    }
+
+    /**
+     * AJAX: Danger Zone Disconnect & Reset Connection
+     */
+    public function ajax_reset_connection() {
+        $this->verify_admin_ajax();
+
+        $options_to_delete = array(
+            AstroPress::OPTION_SETUP_COMPLETED,
+            AstroPress::OPTION_MEDIA_MODE,
+            AstroPress::OPTION_CONNECTED,
+            AstroPress::OPTION_FRONTEND_URL,
+            AstroPress::OPTION_SECRET,
+            AstroPress::OPTION_CF_API_TOKEN,
+            AstroPress::OPTION_CF_ZONE_ID,
+            AstroPress::OPTION_CF_DIRECT_PURGE,
+            'astropress_setup_mode',
+            'astropress_cf_pages_project',
+            'astropress_r2_account_id',
+            'astropress_r2_access_key',
+            'astropress_r2_secret_key',
+            'astropress_r2_bucket',
+            'astropress_r2_custom_domain',
+            'topnepali_headless_frontend_url',
+            'topnepali_headless_secret',
+            'topnepali_headless_connected',
+            'topnepali_headless_cf_api_token',
+            'topnepali_headless_cf_zone_id',
+            'r2g_account_id',
+            'r2g_access_key',
+            'r2g_secret_key',
+            'r2g_bucket',
+            'r2g_custom_domain',
+        );
+
+        foreach ($options_to_delete as $opt) {
+            delete_option($opt);
+        }
+
+        delete_transient('astropress_cf_discovery_cache');
+
+        update_option(AstroPress::OPTION_SETUP_COMPLETED, '0');
+        update_option(AstroPress::OPTION_CONNECTED, '0');
+
+        wp_send_json_success(array(
+            'message'  => esc_html__('AstroPress connection and credentials have been reset. Redirecting to Setup Wizard...', 'astropress'),
+            'redirect' => admin_url('admin.php?page=astropress&tab=onboarding'),
+        ));
+    }
+
+    /**
      * Render Master Settings Page
      */
     public function render_settings_page() {
-        $active_tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'dashboard';
+        $is_setup_done = $this->core->is_setup_completed();
+        $active_tab    = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : ($is_setup_done ? 'dashboard' : 'onboarding');
+
+        // Force Setup Wizard if setup is incomplete
+        if (!$is_setup_done) {
+            $active_tab = 'onboarding';
+        }
+
         $notice = get_transient('astropress_notice');
         if ($notice) {
             delete_transient('astropress_notice');
@@ -2220,58 +2585,49 @@ class AstroPress_Admin {
                 </div>
             <?php endif; ?>
 
-            <?php if ((!$is_connected || empty($r2_bucket)) && $active_tab !== 'onboarding'): ?>
-                <div class="astropress-onboarding-banner">
-                    <div class="astropress-onboarding-banner-icon">
-                        <span class="dashicons dashicons-superhero-alt"></span>
-                    </div>
-                    <div class="astropress-onboarding-banner-content">
-                        <h3><?php esc_html_e('Welcome to AstroPress! Setup is incomplete.', 'astropress'); ?></h3>
-                        <p><?php esc_html_e('Follow the guided 5-minute setup wizard to connect your Astro site on Cloudflare Pages/Workers and configure native Cloudflare R2 media storage.', 'astropress'); ?></p>
-                    </div>
-                    <div class="astropress-onboarding-banner-action">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-primary">
-                            <?php esc_html_e('Launch Setup Wizard', 'astropress'); ?>
-                        </a>
-                    </div>
-                </div>
+            <?php if (!$is_setup_done): ?>
+                <nav class="nav-tab-wrapper astropress-nav-tabs">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="nav-tab nav-tab-active">
+                        <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
+                    </a>
+                </nav>
+            <?php else: ?>
+                <nav class="nav-tab-wrapper astropress-nav-tabs">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress')); ?>" class="nav-tab <?php echo ($active_tab === 'dashboard') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-dashboard"></span> <?php esc_html_e('Overview', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=cache_rules')); ?>" class="nav-tab <?php echo ($active_tab === 'cache_rules') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-cloud"></span> <?php esc_html_e('Edge & Cache Rules', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2')); ?>" class="nav-tab <?php echo ($active_tab === 'r2') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-database"></span> <?php esc_html_e('Cloudflare R2', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=sync')); ?>" class="nav-tab <?php echo ($active_tab === 'sync') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-update"></span> <?php esc_html_e('Media Sync', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=optimizer')); ?>" class="nav-tab <?php echo ($active_tab === 'optimizer') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-format-image"></span> <?php esc_html_e('Image Optimizer', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=warmer')); ?>" class="nav-tab <?php echo ($active_tab === 'warmer') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-performance"></span> <?php esc_html_e('Cache Warmer', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=seo')); ?>" class="nav-tab <?php echo ($active_tab === 'seo') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-shield"></span> <?php esc_html_e('SEO & Security', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="nav-tab <?php echo ($active_tab === 'logs') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-list-view"></span> <?php esc_html_e('Purge Logs', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=integration')); ?>" class="nav-tab <?php echo ($active_tab === 'integration') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-editor-code"></span> <?php esc_html_e('Astro Snippets', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=settings')); ?>" class="nav-tab <?php echo ($active_tab === 'settings') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-admin-generic"></span> <?php esc_html_e('Settings & Reset', 'astropress'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=updates')); ?>" class="nav-tab <?php echo ($active_tab === 'updates') ? 'nav-tab-active' : ''; ?>">
+                        <span class="dashicons dashicons-cloud-saved"></span> <?php esc_html_e('Updates', 'astropress'); ?>
+                    </a>
+                </nav>
             <?php endif; ?>
-
-            <nav class="nav-tab-wrapper astropress-nav-tabs">
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress')); ?>" class="nav-tab <?php echo ($active_tab === 'dashboard') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-dashboard"></span> <?php esc_html_e('Overview', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="nav-tab <?php echo ($active_tab === 'onboarding') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=bridge')); ?>" class="nav-tab <?php echo ($active_tab === 'bridge') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-rest-api"></span> <?php esc_html_e('Headless Bridge', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2')); ?>" class="nav-tab <?php echo ($active_tab === 'r2') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-database"></span> <?php esc_html_e('Cloudflare R2', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=sync')); ?>" class="nav-tab <?php echo ($active_tab === 'sync') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-update"></span> <?php esc_html_e('Media Sync', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=optimizer')); ?>" class="nav-tab <?php echo ($active_tab === 'optimizer') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-format-image"></span> <?php esc_html_e('Image Optimizer', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=warmer')); ?>" class="nav-tab <?php echo ($active_tab === 'warmer') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-performance"></span> <?php esc_html_e('Cache Warmer', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=seo')); ?>" class="nav-tab <?php echo ($active_tab === 'seo') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-shield"></span> <?php esc_html_e('SEO & Security', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="nav-tab <?php echo ($active_tab === 'logs') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-list-view"></span> <?php esc_html_e('Webhook Logs', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=integration')); ?>" class="nav-tab <?php echo ($active_tab === 'integration') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-editor-code"></span> <?php esc_html_e('Astro Snippets', 'astropress'); ?>
-                </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=updates')); ?>" class="nav-tab <?php echo ($active_tab === 'updates') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-cloud-saved"></span> <?php esc_html_e('Updates & Rollback', 'astropress'); ?>
-                </a>
-            </nav>
 
             <div class="astropress-content">
                 <?php
@@ -2280,8 +2636,8 @@ class AstroPress_Admin {
                         case 'onboarding':
                             $this->render_tab_onboarding($frontend_url, $is_connected);
                             break;
-                        case 'bridge':
-                            $this->render_tab_bridge($frontend_url, $is_connected);
+                        case 'cache_rules':
+                            $this->render_tab_cache_rules();
                             break;
                         case 'r2':
                             $this->render_tab_r2();
@@ -2304,8 +2660,14 @@ class AstroPress_Admin {
                         case 'integration':
                             $this->render_tab_integration($frontend_url);
                             break;
+                        case 'settings':
+                            $this->render_tab_settings();
+                            break;
                         case 'updates':
                             $this->render_tab_updates();
+                            break;
+                        case 'bridge':
+                            $this->render_tab_cache_rules();
                             break;
                         case 'dashboard':
                         default:
@@ -2327,30 +2689,40 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: Guided Onboarding Wizard
+     * Tab: Gated Setup Wizard (v2.0)
      */
     private function render_tab_onboarding($frontend_url, $is_connected) {
         $checks        = $this->get_preflight_checks();
-        $secret        = $this->core->get_secret();
         $cf_token      = $this->core->get_cf_api_token();
         $cf_zone_id    = $this->core->get_cf_zone_id();
         $account_id    = get_option('r2g_account_id', '');
-        $access_key    = get_option('r2g_access_key', '');
         $bucket        = get_option('r2g_bucket', '');
         $custom_domain = get_option('r2g_custom_domain', '');
-        $pages_proj    = get_option('astropress_cf_pages_project', '');
+        $media_mode    = get_option(AstroPress::OPTION_MEDIA_MODE, 'wp');
         $allowed_roots = $this->get_allowed_domain_roots();
         $allowed_roots_str = !empty($allowed_roots) ? implode(', ', $allowed_roots) : 'your site domain';
+
+        // Auto-derive root frontend URL if empty or identical to WP backend
+        if (empty($frontend_url) || $frontend_url === home_url()) {
+            $frontend_url = $this->core->derive_frontend_url();
+        }
+
+        // Check cached discovery
+        $cached_discovery = get_transient('astropress_cf_discovery_cache');
+        $cached_buckets   = !empty($cached_discovery['buckets']) ? $cached_discovery['buckets'] : array();
         ?>
-        <div class="astropress-wizard-wrap">
-            <div class="astropress-card">
-                <div class="astropress-wizard-header">
-                    <h2><?php esc_html_e('AstroPress Setup & Architecture Wizard', 'astropress'); ?></h2>
-                    <p><?php esc_html_e('Connect WordPress, Cloudflare Edge, and zero-egress R2 object storage in seamless automated steps.', 'astropress'); ?></p>
+        <div class="astropress-wizard-wrap" style="max-width:880px; margin:20px auto;">
+            <div class="astropress-card" style="padding:28px;">
+                <div class="astropress-wizard-header" style="margin-bottom:24px; text-align:center;">
+                    <span class="dashicons dashicons-cloud" style="font-size:42px; width:42px; height:42px; color:#2563eb; margin-bottom:8px;"></span>
+                    <h2 style="font-size:22px; margin:0 0 6px 0;"><?php esc_html_e('Welcome to AstroPress v2.0 Setup Wizard', 'astropress'); ?></h2>
+                    <p style="color:#64748b; font-size:14px; margin:0;">
+                        <?php esc_html_e('Connect WordPress to Cloudflare Edge in 3 effortless steps. A single Scoped API Token powers direct cache purges, modern Cache Rules, and R2 media storage.', 'astropress'); ?>
+                    </p>
                 </div>
 
-                <!-- Pre-flight diagnostics -->
-                <div class="astropress-preflight-card">
+                <!-- Pre-flight server check -->
+                <div class="astropress-preflight-card" style="margin-bottom:24px;">
                     <h3><span class="dashicons dashicons-yes-alt"></span> <?php esc_html_e('Pre-Flight Server Readiness Check', 'astropress'); ?></h3>
                     <div class="astropress-preflight-grid">
                         <?php foreach ($checks as $k => $c): ?>
@@ -2367,407 +2739,209 @@ class AstroPress_Admin {
                     </div>
                 </div>
 
-                <form method="post" action="">
+                <form method="post" action="" id="astropress-onboarding-form">
                     <?php wp_nonce_field('astropress_onboarding_action', 'astropress_onboarding_nonce'); ?>
 
-                    <!-- Architecture Setup Mode Selector -->
-                    <div class="astropress-mode-selector-wrap" style="margin-bottom:24px;">
-                        <div style="font-weight:600; font-size:14px; color:#0f172a; margin-bottom:10px;">
-                            <?php esc_html_e('Select Architecture Mode:', 'astropress'); ?>
-                        </div>
-                        <div class="astropress-mode-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
-                            <!-- Mode A: Full Architecture -->
-                            <label class="astropress-mode-card is-active" id="mode-card-full" style="cursor:pointer; border:2px solid #2563eb; background:#eff6ff; border-radius:8px; padding:16px; position:relative; display:block;">
-                                <input type="radio" name="onboard_setup_mode" value="full" checked style="position:absolute; top:16px; right:16px;" />
-                                <div style="font-weight:700; font-size:15px; color:#1e3a8a; display:flex; align-items:center; gap:8px;">
-                                    <span class="dashicons dashicons-superhero-alt" style="color:#2563eb;"></span>
-                                    <?php esc_html_e('1-Click Full Architecture', 'astropress'); ?>
-                                </div>
-                                <span class="astropress-badge" style="background:#dbeafe; color:#1e40af; font-size:11px; margin-top:4px; display:inline-block;"><?php esc_html_e('Recommended for Astro Sites', 'astropress'); ?></span>
-                                <p style="font-size:12px; color:#3b82f6; margin:8px 0 0 0; line-height:1.4;">
-                                    <?php esc_html_e('End-to-end setup: Cloudflare Edge, Webhook Bridge, Cache Warmer, R2 Media Storage, 1-Year Cache Rules, and Subdomain Protection.', 'astropress'); ?>
+                    <!-- STEP 1: Cloudflare Scoped Token -->
+                    <div class="astropress-wizard-step" style="border:1px solid #e2e8f0; border-radius:8px; padding:20px; margin-bottom:20px; background:#ffffff;">
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                            <span style="background:#2563eb; color:#fff; font-weight:700; width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:14px;">1</span>
+                            <div>
+                                <h3 style="margin:0; font-size:16px; color:#0f172a;"><?php esc_html_e('Cloudflare Scoped API Token', 'astropress'); ?></h3>
+                                <p style="margin:2px 0 0 0; font-size:13px; color:#64748b;">
+                                    <?php esc_html_e('One token to power your entire architecture (Edge Cache Purge, Ruleset Engine, DNS, and R2 Storage).', 'astropress'); ?>
                                 </p>
-                            </label>
-
-                            <!-- Mode B: Modular / Selective Setup -->
-                            <label class="astropress-mode-card" id="mode-card-modular" style="cursor:pointer; border:2px solid #e2e8f0; background:#ffffff; border-radius:8px; padding:16px; position:relative; display:block;">
-                                <input type="radio" name="onboard_setup_mode" value="modular" style="position:absolute; top:16px; right:16px;" />
-                                <div style="font-weight:700; font-size:15px; color:#334155; display:flex; align-items:center; gap:8px;">
-                                    <span class="dashicons dashicons-admin-settings" style="color:#64748b;"></span>
-                                    <?php esc_html_e('Modular / Custom Setup', 'astropress'); ?>
-                                </div>
-                                <span class="astropress-badge" style="background:#f1f5f9; color:#475569; font-size:11px; margin-top:4px; display:inline-block;"><?php esc_html_e('Cherry-Pick Modules', 'astropress'); ?></span>
-                                <p style="font-size:12px; color:#64748b; margin:8px 0 0 0; line-height:1.4;">
-                                    <?php esc_html_e('Selectively enable only the modules you need (e.g. only R2 media storage, only cache invalidation, or custom combination).', 'astropress'); ?>
-                                </p>
-                            </label>
-                        </div>
-
-                        <!-- Modular Checklist Drawer (revealed when Modular mode is chosen) -->
-                        <div id="onboard-modular-checklist" style="display:none; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:14px; margin-top:14px;">
-                            <strong style="font-size:13px; color:#1e293b; display:block; margin-bottom:8px;"><?php esc_html_e('Active Architecture Modules:', 'astropress'); ?></strong>
-                            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
-                                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;">
-                                    <input type="checkbox" name="onboard_module_bridge" value="1" checked />
-                                    <?php esc_html_e('Webhook Invalidation Bridge', 'astropress'); ?>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;">
-                                    <input type="checkbox" name="onboard_module_edge_purge" value="1" checked />
-                                    <?php esc_html_e('Direct Zone Cache Purge', 'astropress'); ?>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;">
-                                    <input type="checkbox" name="onboard_module_warmer" value="1" checked />
-                                    <?php esc_html_e('Astro Cache Warmer', 'astropress'); ?>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;">
-                                    <input type="checkbox" name="onboard_enable_r2" id="onboard_enable_r2_toggle" value="1" checked />
-                                    <?php esc_html_e('Cloudflare R2 Media Storage', 'astropress'); ?>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;">
-                                    <input type="checkbox" name="onboard_module_shield" value="1" checked />
-                                    <?php esc_html_e('Subdomain Shield & Anti-Index', 'astropress'); ?>
-                                </label>
                             </div>
+                        </div>
+
+                        <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:14px; margin-bottom:14px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                                <div>
+                                    <strong style="color:#0f172a; font-size:13px;"><?php esc_html_e('Need an API Token?', 'astropress'); ?></strong>
+                                    <p style="margin:2px 0 0 0; font-size:12px; color:#64748b;">
+                                        <?php esc_html_e('Click below to create a pre-configured scoped token with all 7 exact permissions on Cloudflare.', 'astropress'); ?>
+                                    </p>
+                                </div>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
+                                        <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('Create Scoped Token on Cloudflare', 'astropress'); ?> &rarr;
+                                    </a>
+                                    <button type="button" class="button button-link" id="onboard-toggle-blueprint-btn" style="text-decoration:none; font-size:12px;">
+                                        <span class="dashicons dashicons-editor-help" style="vertical-align:-2px;"></span> <?php esc_html_e('View Scopes Blueprint', 'astropress'); ?>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Blueprint Table (Collapsible) -->
+                            <div id="onboard-blueprint-wrap" style="display:none; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-top:12px;">
+                                <strong style="font-size:12px; color:#1e293b; display:block; margin-bottom:6px;"><?php esc_html_e('Required Token Scopes & Permissions:', 'astropress'); ?></strong>
+                                <table class="widefat striped" style="font-size:12px; margin-bottom:8px;">
+                                    <thead>
+                                        <tr>
+                                            <th><?php esc_html_e('Category', 'astropress'); ?></th>
+                                            <th><?php esc_html_e('Scope', 'astropress'); ?></th>
+                                            <th><?php esc_html_e('Access', 'astropress'); ?></th>
+                                            <th><?php esc_html_e('Purpose in AstroPress', 'astropress'); ?></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($this->get_cf_permissions_blueprint() as $p): ?>
+                                            <tr>
+                                                <td><strong><?php echo esc_html($p['category']); ?></strong></td>
+                                                <td><code><?php echo esc_html($p['name']); ?></code></td>
+                                                <td><span class="astropress-badge" style="background:#eff6ff; color:#1d4ed8;"><?php echo esc_html($p['access']); ?></span></td>
+                                                <td><?php echo esc_html($p['desc']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Token Input Box -->
+                            <div style="display:flex; gap:8px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+                                <div style="flex:1; min-width:280px;">
+                                    <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" placeholder="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : 'Paste Cloudflare API Token here...'; ?>" class="regular-text" style="width:100%;" autocomplete="new-password" />
+                                </div>
+                                <button type="button" class="button button-primary" id="onboard-quick-audit-btn">
+                                    <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Auto-Discover & Verify Token', 'astropress'); ?>
+                                </button>
+                            </div>
+                            <input type="hidden" id="onboard_cf_zone_id" name="onboard_cf_zone_id" value="<?php echo esc_attr($cf_zone_id); ?>" />
+                            <input type="hidden" id="onboard_r2_account_id" name="onboard_r2_account_id" value="<?php echo esc_attr($account_id); ?>" />
+                        </div>
+
+                        <!-- Live Audit Results Container -->
+                        <div id="onboard-audit-results" style="<?php echo (!empty($cf_token) && !empty($cf_zone_id)) ? '' : 'display:none;'; ?> margin-top:12px;">
+                            <?php if (!empty($cf_token) && !empty($cf_zone_id)): ?>
+                                <div class="astropress-detect-pill is-cf" style="padding:10px 14px;">
+                                    <span class="dashicons dashicons-yes-alt" style="color:#059669; font-size:18px;"></span>
+                                    <span>Cloudflare Scoped Token verified and Zone ID active (<code><?php echo esc_html(substr($cf_zone_id, 0, 10)); ?>••••</code>).</span>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
 
-                    <div class="astropress-wizard-step">
-                        <div class="astropress-step-num">1</div>
-                        <div class="astropress-step-body">
-                            <h3><?php esc_html_e('Headless Astro Frontend & Zero-Touch Sync', 'astropress'); ?></h3>
-                            <p class="description"><?php esc_html_e('Enter your production Astro site URL. AstroPress automatically pings and verifies your deployment, Cloudflare edge, and revalidation route in real time.', 'astropress'); ?></p>
+                    <!-- STEP 2: Headless Astro Frontend URL -->
+                    <div class="astropress-wizard-step" style="border:1px solid #e2e8f0; border-radius:8px; padding:20px; margin-bottom:20px; background:#ffffff;">
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                            <span style="background:#2563eb; color:#fff; font-weight:700; width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:14px;">2</span>
+                            <div>
+                                <h3 style="margin:0; font-size:16px; color:#0f172a;"><?php esc_html_e('Headless Astro Frontend URL', 'astropress'); ?></h3>
+                                <p style="margin:2px 0 0 0; font-size:13px; color:#64748b;">
+                                    <?php esc_html_e('The public URL where your Astro website is hosted (e.g., https://example.com). Auto-derived from your root domain.', 'astropress'); ?>
+                                </p>
+                            </div>
+                        </div>
 
-                            <table class="form-table">
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:650px;">
+                            <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" style="flex:1; min-width:240px;" required />
+                            <button type="button" class="button button-secondary" id="onboard-detect-frontend-btn">
+                                <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Ping & Verify Reachability', 'astropress'); ?>
+                            </button>
+                        </div>
+                        <div id="onboard-frontend-collision-warning" style="display:none; margin-top:8px; padding:10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#991b1b; font-size:13px;">
+                            <strong><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> <?php esc_html_e('URL Collision Error:', 'astropress'); ?></strong>
+                            <?php esc_html_e('Frontend URL cannot match your WordPress backend installation. WordPress should be on a subdomain (e.g. wp.example.com) and Astro on your canonical root domain (https://example.com).', 'astropress'); ?>
+                        </div>
+                        <div id="onboard-frontend-detect-badge" style="display:none; margin-top:8px; max-width:650px;"></div>
+                    </div>
+
+                    <!-- STEP 3: Media Storage Mode -->
+                    <div class="astropress-wizard-step" style="border:1px solid #e2e8f0; border-radius:8px; padding:20px; margin-bottom:24px; background:#ffffff;">
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                            <span style="background:#2563eb; color:#fff; font-weight:700; width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:14px;">3</span>
+                            <div>
+                                <h3 style="margin:0; font-size:16px; color:#0f172a;"><?php esc_html_e('Media Storage & CDN Offloading', 'astropress'); ?></h3>
+                                <p style="margin:2px 0 0 0; font-size:13px; color:#64748b;">
+                                    <?php esc_html_e('Choose how media library uploads should be handled.', 'astropress'); ?>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style="max-width:650px; margin-bottom:16px;">
+                            <label for="onboard_media_mode" style="display:block; font-weight:600; font-size:13px; margin-bottom:6px;">
+                                <?php esc_html_e('Select Media Offloading Method:', 'astropress'); ?>
+                            </label>
+                            <select id="onboard_media_mode" name="onboard_media_mode" style="width:100%; max-width:400px; font-size:14px; padding:6px 10px;">
+                                <option value="wp" <?php selected($media_mode, 'wp'); ?>><?php esc_html_e('WordPress Local Storage (Default - Store on Hosting Server)', 'astropress'); ?></option>
+                                <option value="r2" <?php selected($media_mode, 'r2'); ?>><?php esc_html_e('Cloudflare R2 Object Storage (Zero Egress + Global CDN)', 'astropress'); ?></option>
+                            </select>
+                        </div>
+
+                        <!-- R2 Config Fields (revealed when R2 is chosen) -->
+                        <div id="onboard-r2-fields-wrap" style="<?php echo ($media_mode === 'r2') ? '' : 'display:none;'; ?> background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:16px;">
+                            <h4 style="margin:0 0 12px 0; font-size:14px; color:#1e293b;">
+                                <?php esc_html_e('Cloudflare R2 Storage Configuration', 'astropress'); ?>
+                            </h4>
+
+                            <table class="form-table" style="margin:0;">
                                 <tr>
-                                    <th scope="row"><label for="onboard_frontend_url"><?php esc_html_e('Astro Frontend URL', 'astropress'); ?></label></th>
-                                    <td>
-                                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:650px;">
-                                            <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" style="flex:1; min-width:240px;" placeholder="https://example.com" required />
-                                            <button type="button" class="button button-secondary" id="onboard-detect-frontend-btn">
-                                                <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Ping & Detect Frontend', 'astropress'); ?>
+                                    <th scope="row" style="padding:10px 10px 10px 0;"><label for="onboard_r2_bucket"><?php esc_html_e('R2 Bucket Name', 'astropress'); ?></label></th>
+                                    <td style="padding:10px 0;">
+                                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                            <input type="text" id="onboard_r2_bucket" name="onboard_r2_bucket" value="<?php echo esc_attr($bucket); ?>" class="regular-text" placeholder="e.g. topnepali" style="flex:1; min-width:200px;" />
+                                            <select id="onboard_r2_bucket_select" name="onboard_r2_bucket_select" class="regular-text" style="<?php echo !empty($cached_buckets) ? '' : 'display:none;'; ?> flex:1; min-width:200px;">
+                                                <option value=""><?php esc_html_e('-- Discovered Buckets --', 'astropress'); ?></option>
+                                                <?php foreach ($cached_buckets as $cb): ?>
+                                                    <option value="<?php echo esc_attr($cb); ?>" <?php selected($bucket, $cb); ?>><?php echo esc_html($cb); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <button type="button" class="button button-secondary" id="onboard-fetch-buckets">
+                                                <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Discover Buckets', 'astropress'); ?>
+                                            </button>
+                                            <button type="button" class="button button-secondary" id="onboard-btn-show-create-bucket">
+                                                <span class="dashicons dashicons-plus-alt2" style="vertical-align:-2px;"></span> <?php esc_html_e('+ Create Bucket', 'astropress'); ?>
                                             </button>
                                         </div>
-                                        <p class="description"><?php esc_html_e('Your canonical production Astro website URL (e.g., https://example.com).', 'astropress'); ?></p>
 
-                                        <!-- Live Frontend Auto-Detection Result Badge -->
-                                        <div id="onboard-frontend-detect-badge" style="display:none; margin-top:8px; max-width:650px;"></div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th scope="row"><label for="onboard_secret"><?php esc_html_e('Revalidation Secret', 'astropress'); ?></label></th>
-                                    <td>
-                                        <?php if (!empty($secret)): ?>
-                                            <div id="onboard-secret-status-card" class="astropress-key-card" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; max-width:650px;">
-                                                <div style="display:flex; align-items:center; gap:10px;">
-                                                    <span id="onboard-secret-status-icon" class="dashicons dashicons-shield-alt" style="color:#059669; font-size:24px; width:24px; height:24px;"></span>
-                                                    <div>
-                                                        <div style="font-weight:600; font-size:13px; color:#0f172a; display:flex; align-items:center; gap:8px;">
-                                                            <?php esc_html_e('Revalidation Secret Configured', 'astropress'); ?>
-                                                            <span id="onboard-secret-badge" class="astropress-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-size:11px;"><?php esc_html_e('Concealed & Encrypted', 'astropress'); ?></span>
-                                                        </div>
-                                                        <div style="font-size:12px; color:#64748b; margin-top:2px;">
-                                                            <?php esc_html_e('Stored securely on server. Value is concealed to prevent exposure.', 'astropress'); ?>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div style="display:flex; gap:8px; align-items:center;">
-                                                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
-                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Connection', 'astropress'); ?>
-                                                    </button>
-                                                    <button type="button" class="button button-secondary" id="onboard-rotate-secret-btn">
-                                                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Rotate Secret', 'astropress'); ?>
-                                                    </button>
-                                                </div>
+                                        <!-- Inline Create Bucket Box -->
+                                        <div id="onboard-create-bucket-wrap" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:12px; margin-top:10px; max-width:650px;">
+                                            <label for="onboard_new_bucket_name" style="display:block; font-size:12px; font-weight:600; color:#166534; margin-bottom:4px;">
+                                                <?php esc_html_e('New Bucket Name:', 'astropress'); ?>
+                                            </label>
+                                            <div style="display:flex; gap:8px; align-items:center;">
+                                                <input type="text" id="onboard_new_bucket_name" placeholder="lowercase letters, numbers, hyphens" class="regular-text" style="flex:1;" />
+                                                <button type="button" id="onboard-btn-confirm-create-bucket" class="button button-primary button-small">
+                                                    <?php esc_html_e('Create & Select', 'astropress'); ?>
+                                                </button>
+                                                <button type="button" id="onboard-btn-cancel-create-bucket" class="button button-secondary button-small">
+                                                    <?php esc_html_e('Cancel', 'astropress'); ?>
+                                                </button>
                                             </div>
-                                            <div id="onboard-handshake-status" style="margin-bottom:8px; font-size:12px; display:none;"></div>
-
-                                            <div id="onboard-secret-input-wrap" style="display:none; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; margin-top:8px; max-width:650px;">
-                                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                                    <label for="onboard_secret" style="font-size:12px; font-weight:600; color:#92400e;">
-                                                        <?php esc_html_e('Rotate Revalidation Secret Key:', 'astropress'); ?>
-                                                    </label>
-                                                    <button type="button" class="button button-link" id="onboard-cancel-rotate-btn" style="color:#b45309; text-decoration:none; font-size:12px; padding:0;">
-                                                        <span class="dashicons dashicons-no-alt" style="vertical-align:-2px;"></span> <?php esc_html_e('Cancel (Keep Current Secret)', 'astropress'); ?>
-                                                    </button>
-                                                </div>
-                                                <div style="display:flex; gap:8px; align-items:center;">
-                                                    <input type="password" id="onboard_secret" name="onboard_secret" placeholder="Enter new secret or generate random..." class="regular-text" style="flex:1;" autocomplete="new-password" />
-                                                    <button type="button" class="button button-secondary" id="onboard-gen-secret"><?php esc_html_e('Generate Random', 'astropress'); ?></button>
-                                                </div>
-                                                <p class="description" style="color:#b45309; margin-top:6px;">
-                                                    <?php esc_html_e('Leave blank to continue using existing secret untouched. If changed, update REVALIDATE_SECRET in Cloudflare Pages.', 'astropress'); ?>
-                                                </p>
-                                            </div>
-                                        <?php else: ?>
-                                            <div id="onboard-secret-input-wrap" style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; max-width:650px;">
-                                                <label for="onboard_secret" style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">
-                                                    <?php esc_html_e('Create Initial Revalidation Secret Key:', 'astropress'); ?>
-                                                </label>
-                                                <div style="display:flex; gap:8px; align-items:center;">
-                                                    <input type="password" id="onboard_secret" name="onboard_secret" placeholder="Enter or generate a 32-character secure secret" class="regular-text" style="flex:1;" autocomplete="new-password" required />
-                                                    <button type="button" class="button button-secondary" id="onboard-gen-secret"><?php esc_html_e('Generate Random', 'astropress'); ?></button>
-                                                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
-                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Connection', 'astropress'); ?>
-                                                    </button>
-                                                </div>
-                                                <div id="onboard-handshake-status" style="margin-top:6px; font-size:12px; display:none;"></div>
-                                                <p class="description" style="color:#b45309; margin-top:6px;">
-                                                    <?php esc_html_e('Set REVALIDATE_SECRET in Cloudflare Pages Environment Variables to this exact value.', 'astropress'); ?>
-                                                </p>
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <!-- Zero-Touch Cloudflare Pages Sync Card -->
-                                        <div id="onboard-pages-sync-card" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:12px; margin-top:10px; max-width:650px;">
-                                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                                                <div>
-                                                    <strong style="color:#166534; font-size:13px; display:flex; align-items:center; gap:6px;">
-                                                        <span class="dashicons dashicons-cloud-saved"></span>
-                                                        <?php esc_html_e('Zero-Touch Cloudflare Pages Secret Sync', 'astropress'); ?>
-                                                    </strong>
-                                                    <p style="margin:2px 0 0 0; font-size:12px; color:#15803d;">
-                                                        <?php esc_html_e('Auto-inject REVALIDATE_SECRET & WP_API_URL directly into your Cloudflare Pages project (Production & Preview).', 'astropress'); ?>
-                                                    </p>
-                                                </div>
-                                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                                    <select id="onboard_cf_pages_project_select" style="max-width:180px; font-size:12px; display:none;">
-                                                        <option value=""><?php esc_html_e('-- Choose Pages Project --', 'astropress'); ?></option>
-                                                    </select>
-                                                    <input type="text" id="onboard_cf_pages_project" name="onboard_cf_pages_project" value="<?php echo esc_attr($pages_proj); ?>" placeholder="Pages Project Name" style="font-size:12px; padding:3px 8px; max-width:160px;" />
-                                                    <button type="button" class="button button-primary button-small" id="onboard-sync-pages-env-btn">
-                                                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Push Secrets (1-Click)', 'astropress'); ?>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div id="onboard-pages-sync-status" style="margin-top:6px; font-size:12px;"></div>
+                                            <div id="onboard-create-bucket-status" style="margin-top:6px; font-size:12px;"></div>
                                         </div>
                                     </td>
                                 </tr>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="astropress-wizard-step">
-                        <div class="astropress-step-num">2</div>
-                        <div class="astropress-step-body">
-                            <h3><?php esc_html_e('Cloudflare Unified Connection & R2 Media Storage', 'astropress'); ?></h3>
-                            <p class="description">
-                                <?php esc_html_e('A single Cloudflare Scoped API Token powers your entire pipeline: Zone auto-detection, Cache Purge, 1-Year Cache Everything Rules, and R2 Media Offloading (Zero S3 keys needed!).', 'astropress'); ?>
-                            </p>
-
-                            <div class="astropress-token-preset-box" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:14px; margin-bottom:14px; max-width:850px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                                    <div>
-                                        <strong style="color:#0f172a; font-size:13px;"><?php esc_html_e('Cloudflare Scoped API Token', 'astropress'); ?></strong>
-                                        <p style="margin:2px 0 0 0; font-size:12px; color:#64748b;">
-                                            <?php esc_html_e('Recommended: Paste one token to automatically audit abilities and connect everything.', 'astropress'); ?>
+                                <tr>
+                                    <th scope="row" style="padding:10px 10px 10px 0;"><label for="onboard_r2_custom_domain"><?php esc_html_e('Public CDN Domain', 'astropress'); ?></label></th>
+                                    <td style="padding:10px 0;">
+                                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:650px;">
+                                            <input type="text" id="onboard_r2_custom_domain" name="onboard_r2_custom_domain" value="<?php echo esc_attr($custom_domain); ?>" class="regular-text" style="flex:1; min-width:240px;" placeholder="media.example.com" />
+                                            <button type="button" class="button button-secondary" id="onboard-audit-cdn-btn">
+                                                <span class="dashicons dashicons-admin-tools" style="vertical-align:-2px;"></span> <?php esc_html_e('Audit CDN & Rules', 'astropress'); ?>
+                                            </button>
+                                            <button type="button" class="button button-secondary" id="onboard-deploy-cache-rule-btn">
+                                                <span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Cache Rule', 'astropress'); ?>
+                                            </button>
+                                        </div>
+                                        <p class="description">
+                                            <?php printf(
+                                                esc_html__('Custom CDN subdomain hooked to your R2 bucket. Must be a subdomain of %s (e.g. media.%s).', 'astropress'),
+                                                '<code>' . esc_html($allowed_roots_str) . '</code>',
+                                                esc_html($allowed_roots[0] ?? 'example.com')
+                                            ); ?>
                                         </p>
-                                    </div>
-                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                        <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
-                                            <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('Create Scoped Token on Cloudflare', 'astropress'); ?> &rarr;
-                                        </a>
-                                        <button type="button" class="button button-link" id="onboard-toggle-blueprint-btn" style="text-decoration:none; font-size:12px;">
-                                            <span class="dashicons dashicons-editor-help" style="vertical-align:-2px;"></span> <?php esc_html_e('View Permission Blueprint', 'astropress'); ?>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <!-- Permission Blueprint Recipe Box (Collapsible) -->
-                                <div id="onboard-blueprint-wrap" style="display:none; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-top:12px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-                                        <strong style="font-size:12px; color:#1e293b;"><?php esc_html_e('Required Token Scopes & Permissions:', 'astropress'); ?></strong>
-                                        <button type="button" class="button button-small" id="onboard-copy-blueprint-btn" data-recipe="<?php echo esc_attr($this->get_cf_permissions_recipe_text()); ?>">
-                                            <span class="dashicons dashicons-clipboard" style="vertical-align:-2px;"></span> <?php esc_html_e('Copy Blueprint', 'astropress'); ?>
-                                        </button>
-                                    </div>
-                                    <table class="widefat striped" style="font-size:12px; margin-bottom:8px;">
-                                        <thead>
-                                            <tr>
-                                                <th><?php esc_html_e('Category', 'astropress'); ?></th>
-                                                <th><?php esc_html_e('Permission Group', 'astropress'); ?></th>
-                                                <th><?php esc_html_e('Access Level', 'astropress'); ?></th>
-                                                <th><?php esc_html_e('Purpose in AstroPress', 'astropress'); ?></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($this->get_cf_permissions_blueprint() as $p): ?>
-                                                <tr>
-                                                    <td><strong><?php echo esc_html($p['category']); ?></strong></td>
-                                                    <td><code><?php echo esc_html($p['name']); ?></code></td>
-                                                    <td><span class="astropress-badge" style="background:#eff6ff; color:#1d4ed8;"><?php echo esc_html($p['access']); ?></span></td>
-                                                    <td><?php echo esc_html($p['desc']); ?></td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                    <div id="onboard-blueprint-copy-status" style="font-size:12px; color:#057a55; display:none;"></div>
-                                </div>
-
-                                <!-- Cloudflare Token Input & Quick Audit -->
-                                <div style="display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap;">
-                                    <div style="flex:1; min-width:280px;">
-                                        <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" placeholder="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : 'Paste Cloudflare API Token...'; ?>" class="regular-text" style="width:100%;" autocomplete="new-password" />
-                                    </div>
-                                    <button type="button" class="button button-primary" id="onboard-quick-audit-btn">
-                                        <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Auto-Discover & Audit Abilities', 'astropress'); ?>
-                                    </button>
-                                </div>
-
-                                <input type="hidden" id="onboard_cf_zone_id" name="onboard_cf_zone_id" value="<?php echo esc_attr($cf_zone_id); ?>" />
-                            </div>
-
-                            <!-- Token Abilities & Health Audit Grid -->
-                            <div id="onboard-audit-results" style="display:none; margin-bottom:14px; max-width:850px;"></div>
-
-                            <table class="form-table">
-                                <tr>
-                                    <th scope="row"><label for="onboard_r2_account_id"><?php esc_html_e('Cloudflare Account ID', 'astropress'); ?></label></th>
-                                    <td>
-                                        <input type="text" id="onboard_r2_account_id" name="onboard_r2_account_id" value="<?php echo esc_attr($account_id); ?>" class="regular-text" placeholder="Auto-populated by token or paste manually" />
-                                        <p class="description"><?php esc_html_e('Your 32-character hexadecimal Account ID from Cloudflare Overview.', 'astropress'); ?></p>
+                                        <div id="onboard-cdn-audit-box" style="display:none; margin-top:10px; max-width:650px;"></div>
+                                        <div id="onboard-cache-rule-status" style="margin-top:6px; font-size:12px;"></div>
                                     </td>
                                 </tr>
                             </table>
-
-                            <!-- Modular R2 Offload Section Wrap -->
-                            <div id="onboard-r2-section-wrap">
-                                <h4 style="margin:16px 0 10px 0; color:#1e293b; font-size:13px; text-transform:uppercase; letter-spacing:0.5px; border-top:1px solid #e2e8f0; padding-top:14px;">
-                                    <?php esc_html_e('Cloudflare R2 Zero-Egress Media Offloading', 'astropress'); ?>
-                                </h4>
-
-                                <table class="form-table">
-                                    <tr>
-                                        <th scope="row"><label for="onboard_r2_bucket"><?php esc_html_e('R2 Bucket Name', 'astropress'); ?></label></th>
-                                        <td>
-                                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                                <input type="text" id="onboard_r2_bucket" name="onboard_r2_bucket" value="<?php echo esc_attr($bucket); ?>" class="regular-text" style="flex:1; min-width:200px;" placeholder="e.g. topnepali" />
-                                                <select id="onboard_r2_bucket_select" name="onboard_r2_bucket_select" class="regular-text" style="display:none; flex:1; min-width:200px;">
-                                                    <option value=""><?php esc_html_e('-- Choose Discovered Bucket --', 'astropress'); ?></option>
-                                                    <?php if (!empty($bucket)): ?>
-                                                        <option value="<?php echo esc_attr($bucket); ?>" selected><?php echo esc_html($bucket); ?></option>
-                                                    <?php endif; ?>
-                                                </select>
-                                                <button type="button" class="button button-secondary" id="onboard-fetch-buckets">
-                                                    <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Discover Buckets', 'astropress'); ?>
-                                                </button>
-                                                <button type="button" class="button button-secondary" id="onboard-btn-show-create-bucket">
-                                                    <span class="dashicons dashicons-plus-alt2" style="vertical-align:-2px;"></span> <?php esc_html_e('+ Create Bucket', 'astropress'); ?>
-                                                </button>
-                                                <button type="button" class="button button-link" id="onboard-btn-toggle-bucket-input" style="display:none; text-decoration:none; font-size:12px;">
-                                                    <?php esc_html_e('Type Manually', 'astropress'); ?>
-                                                </button>
-                                            </div>
-
-                                            <!-- Onboarding Inline Create Bucket Box -->
-                                            <div id="onboard-create-bucket-wrap" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:12px; margin-top:10px; max-width:650px;">
-                                                <label for="onboard_new_bucket_name" style="display:block; font-size:12px; font-weight:600; color:#166534; margin-bottom:4px;">
-                                                    <?php esc_html_e('New Bucket Name:', 'astropress'); ?>
-                                                </label>
-                                                <div style="display:flex; gap:8px; align-items:center;">
-                                                    <input type="text" id="onboard_new_bucket_name" placeholder="lowercase letters, numbers, hyphens" class="regular-text" style="flex:1;" />
-                                                    <button type="button" id="onboard-btn-confirm-create-bucket" class="button button-primary button-small">
-                                                        <?php esc_html_e('Create & Select', 'astropress'); ?>
-                                                    </button>
-                                                    <button type="button" id="onboard-btn-cancel-create-bucket" class="button button-secondary button-small">
-                                                        <?php esc_html_e('Cancel', 'astropress'); ?>
-                                                    </button>
-                                                </div>
-                                                <div id="onboard-create-bucket-status" style="margin-top:6px; font-size:12px;"></div>
-                                            </div>
-
-                                            <div id="onboard-r2-status" style="margin-top:6px; font-size:12px;"></div>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <th scope="row"><label for="onboard_r2_custom_domain"><?php esc_html_e('Public CDN Domain', 'astropress'); ?></label></th>
-                                        <td>
-                                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:650px;">
-                                                <input type="text" id="onboard_r2_custom_domain" name="onboard_r2_custom_domain" value="<?php echo esc_attr($custom_domain); ?>" class="regular-text" style="flex:1; min-width:240px;" placeholder="media.example.com" />
-                                                <button type="button" class="button button-secondary" id="onboard-audit-cdn-btn">
-                                                    <span class="dashicons dashicons-admin-tools" style="vertical-align:-2px;"></span> <?php esc_html_e('Audit CDN & Rules', 'astropress'); ?>
-                                                </button>
-                                                <button type="button" class="button button-secondary" id="onboard-deploy-cache-rule-btn">
-                                                    <span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Cache Rule', 'astropress'); ?>
-                                                </button>
-                                                <button type="button" class="button button-secondary" id="onboard-purge-cdn-btn" title="<?php esc_attr_e('Purge Cloudflare Edge cache for this CDN domain / zone', 'astropress'); ?>">
-                                                    <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge CDN Cache', 'astropress'); ?>
-                                                </button>
-                                            </div>
-                                            <p class="description">
-                                                <?php printf(
-                                                    esc_html__('Custom CDN subdomain hooked to your R2 bucket. Must be a subdomain of %s (e.g. media.%s).', 'astropress'),
-                                                    '<code>' . esc_html($allowed_roots_str) . '</code>',
-                                                    esc_html($allowed_roots[0] ?? 'example.com')
-                                                ); ?>
-                                            </p>
-
-                                            <!-- Live CDN Domain Audit Card -->
-                                            <div id="onboard-cdn-audit-box" style="display:none; margin-top:10px; max-width:650px;"></div>
-                                            <div id="onboard-cache-rule-status" style="margin-top:6px; font-size:12px;"></div>
-                                        </td>
-                                    </tr>
-                                </table>
-
-                                <!-- Optional S3 Drawer for advanced users -->
-                                <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:12px; max-width:850px;">
-                                    <button type="button" class="button button-link" id="onboard-toggle-s3-drawer" style="text-decoration:none; font-size:12px; color:#475569; padding:0; font-weight:600;">
-                                        <span class="dashicons dashicons-arrow-right-alt2" id="onboard-s3-arrow" style="vertical-align:-2px;"></span>
-                                        <?php esc_html_e('Use S3-compatible Access Key & Secret Key instead (Optional / Advanced)', 'astropress'); ?>
-                                    </button>
-                                    <div id="onboard-s3-drawer-wrap" style="display:<?php echo (!empty($access_key)) ? 'block' : 'none'; ?>; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:14px; margin-top:10px;">
-                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                                            <div>
-                                                <strong style="font-size:12px; color:#1e293b;"><?php esc_html_e('S3-Compatible R2 Credentials Architecture', 'astropress'); ?></strong>
-                                                <p style="margin:2px 0 0 0; font-size:12px; color:#64748b;">
-                                                    <?php esc_html_e('If left empty, AstroPress uses your Cloudflare API Token for zero-config media offloading.', 'astropress'); ?>
-                                                </p>
-                                            </div>
-                                            <a href="<?php echo esc_url($this->get_cf_r2_tokens_url($account_id)); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary button-small">
-                                                <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('Create R2 S3 Token on Cloudflare', 'astropress'); ?> &rarr;
-                                            </a>
-                                        </div>
-                                        <table class="form-table" style="margin:0;">
-                                            <tr>
-                                                <th scope="row"><label for="onboard_r2_access_key"><?php esc_html_e('R2 Access Key ID', 'astropress'); ?></label></th>
-                                                <td>
-                                                    <input type="text" id="onboard_r2_access_key" name="onboard_r2_access_key" value="<?php echo esc_attr($access_key); ?>" class="regular-text" placeholder="24 or 32 character Access Key ID" />
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <th scope="row"><label for="onboard_r2_secret_key"><?php esc_html_e('R2 Secret Access Key', 'astropress'); ?></label></th>
-                                                <td>
-                                                    <div style="max-width:25em;">
-                                                        <input type="password" id="onboard_r2_secret_key" name="onboard_r2_secret_key" placeholder="<?php echo !empty(get_option('r2g_secret_key')) ? '••••••••••••••••••••••••••••••••' : '64-character Secret Key'; ?>" class="regular-text" autocomplete="new-password" style="width:100%;" />
-                                                    </div>
-                                                    <p class="description"><?php esc_html_e('Stored securely using hardware AES-256 encryption at rest. Value is concealed once saved.', 'astropress'); ?></p>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
-                    <div class="astropress-wizard-step">
-                        <div class="astropress-step-num">3</div>
-                        <div class="astropress-step-body">
-                            <h3><?php esc_html_e('Optimization & Shield Defaults', 'astropress'); ?></h3>
-                            <p class="description"><?php esc_html_e('The following industry-standard settings will be activated automatically:', 'astropress'); ?></p>
-
-                            <ul class="astropress-check-list">
-                                <li><span class="dashicons dashicons-yes"></span> <strong>WebP Balanced Compression</strong> (Quality 82%, reSmush.it Cloud API + local GD/Imagick fallback).</li>
-                                <li><span class="dashicons dashicons-yes"></span> <strong>Dual Storage Mode</strong> (Retains local media files alongside Cloudflare R2 backup).</li>
-                                <li><span class="dashicons dashicons-yes"></span> <strong>Subdomain Protection Shield</strong> (301-redirects public visitors away from backend to Astro, sends X-Robots-Tag: noindex).</li>
-                                <li><span class="dashicons dashicons-yes"></span> <strong>Instant Edge Invalidation</strong> (Automatically triggers `/api/revalidate` on post, page, taxonomy, and menu updates).</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div class="astropress-wizard-footer">
-                        <button type="submit" name="astropress_save_onboarding" class="button button-primary button-hero">
-                            <span class="dashicons dashicons-yes-alt"></span> <?php esc_html_e('Complete Setup & Activate AstroPress', 'astropress'); ?>
+                    <div style="text-align:center; margin-top:28px;">
+                        <button type="submit" name="astropress_save_onboarding" id="onboard-submit-btn" class="button button-primary button-hero" style="min-width:280px; font-size:16px;">
+                            <span class="dashicons dashicons-yes-alt" style="vertical-align:-3px;"></span> <?php esc_html_e('Complete Setup & Launch Dashboard', 'astropress'); ?> &rarr;
                         </button>
                     </div>
                 </form>
@@ -2937,79 +3111,148 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: Headless Bridge Settings
+     * Tab: Cloudflare Edge & Modern Ruleset Cache Rules Manager
      */
-    private function render_tab_bridge($frontend_url, $is_connected) {
-        $secret         = $this->core->get_secret();
+    private function render_tab_cache_rules() {
+        $token         = $this->core->get_cf_api_token();
+        $zone_id       = $this->core->get_cf_zone_id();
+        $frontend      = $this->core->get_frontend_url();
+        $frontend_host = wp_parse_url($frontend, PHP_URL_HOST) ?: $frontend;
+        $cdn_domain    = get_option('r2g_custom_domain', '');
+        ?>
+        <div class="astropress-card" style="max-width:960px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+                <div>
+                    <h2 style="margin:0 0 4px 0;"><?php esc_html_e('Cloudflare Edge & Cache Rules Manager', 'astropress'); ?></h2>
+                    <p style="margin:0; color:#64748b; font-size:13px;">
+                        <?php esc_html_e('Manage modern Cloudflare Ruleset Engine Cache Rules (http_request_cache_settings) directly from WordPress. No Page Rules required.', 'astropress'); ?>
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" class="button button-secondary" id="astropress-refresh-cache-rules-btn">
+                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Refresh Rules', 'astropress'); ?>
+                    </button>
+                    <button type="button" class="button button-primary" id="astropress-purge-all-zone-btn">
+                        <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge All Zone Cache', 'astropress'); ?>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 1-Click Presets -->
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:20px;">
+                <h3 style="margin:0 0 10px 0; font-size:14px; color:#1e293b; display:flex; align-items:center; gap:8px;">
+                    <span class="dashicons dashicons-superhero" style="color:#2563eb;"></span>
+                    <?php esc_html_e('1-Click Cache Rule Presets', 'astropress'); ?>
+                </h3>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
+                    <!-- Preset 1: Astro Static Assets -->
+                    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#0f172a; margin-bottom:4px;">
+                                <?php esc_html_e('Astro Static Assets (1-Year TTL)', 'astropress'); ?>
+                            </div>
+                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">
+                                <code>/_astro/*</code> &amp; <code>/assets/*</code> edge &amp; browser cache for 31,536,000s (1 year).
+                            </p>
+                        </div>
+                        <button type="button" class="button button-secondary button-small astropress-deploy-preset-btn" data-preset="astro_assets">
+                            <span class="dashicons dashicons-plus" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Preset', 'astropress'); ?>
+                        </button>
+                    </div>
+
+                    <!-- Preset 2: Astro SSR Origin Headers -->
+                    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#0f172a; margin-bottom:4px;">
+                                <?php esc_html_e('Astro SSR HTML Cache', 'astropress'); ?>
+                            </div>
+                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">
+                                Matches <code><?php echo esc_html($frontend_host); ?></code> and respects origin cache headers (s-maxage &amp; stale-while-revalidate).
+                            </p>
+                        </div>
+                        <button type="button" class="button button-secondary button-small astropress-deploy-preset-btn" data-preset="astro_ssr">
+                            <span class="dashicons dashicons-plus" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Preset', 'astropress'); ?>
+                        </button>
+                    </div>
+
+                    <!-- Preset 3: R2 Media CDN -->
+                    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#0f172a; margin-bottom:4px;">
+                                <?php esc_html_e('R2 Media CDN (1-Year TTL)', 'astropress'); ?>
+                            </div>
+                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">
+                                Matches <code><?php echo !empty($cdn_domain) ? esc_html($cdn_domain) : 'media.example.com'; ?></code> and forces 1-year Edge Cache Everything.
+                            </p>
+                        </div>
+                        <button type="button" class="button button-secondary button-small astropress-deploy-preset-btn" data-preset="r2_cdn">
+                            <span class="dashicons dashicons-plus" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Preset', 'astropress'); ?>
+                        </button>
+                    </div>
+                </div>
+                <div id="astropress-preset-deploy-status" style="margin-top:10px; font-size:12px;"></div>
+            </div>
+
+            <!-- Active Cache Rules Table -->
+            <div style="margin-bottom:24px;">
+                <h3 style="margin:0 0 10px 0; font-size:14px; color:#1e293b;">
+                    <?php esc_html_e('Active Cloudflare Ruleset Cache Rules:', 'astropress'); ?>
+                </h3>
+                <div id="astropress-rules-table-container">
+                    <p style="color:#64748b; font-size:13px;">
+                        <span class="spinner is-active" style="float:none; margin:0 6px 0 0;"></span>
+                        <?php esc_html_e('Loading active cache rules from Cloudflare Ruleset API...', 'astropress'); ?>
+                    </p>
+                </div>
+            </div>
+
+            <hr style="margin:24px 0; border:0; border-top:1px solid #e2e8f0;" />
+
+            <!-- Direct Zone Cache Purge Controls -->
+            <div>
+                <h3 style="margin:0 0 8px 0; font-size:14px; color:#1e293b;">
+                    <?php esc_html_e('Direct Cloudflare Zone Edge Purge', 'astropress'); ?>
+                </h3>
+                <p style="font-size:13px; color:#64748b; margin:0 0 14px 0;">
+                    <?php esc_html_e('Purge specific URLs or your entire Cloudflare Zone edge cache instantly via Cloudflare API v4.', 'astropress'); ?>
+                </p>
+
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; max-width:700px;">
+                    <input type="text" id="astropress-purge-urls-input" placeholder="e.g. /news, /district/kathmandu (comma-separated or full URLs)" class="regular-text" style="flex:1; min-width:280px;" />
+                    <button type="button" class="button button-secondary" id="astropress-purge-urls-btn">
+                        <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge URLs', 'astropress'); ?>
+                    </button>
+                </div>
+                <div id="astropress-direct-purge-status" style="margin-top:8px; font-size:12px;"></div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Tab: General Settings & Danger Zone
+     */
+    private function render_tab_settings() {
+        $cf_deploy_hook = $this->core->get_cf_deploy_hook();
         $cf_token       = $this->core->get_cf_api_token();
         $cf_zone_id     = $this->core->get_cf_zone_id();
-        $cf_deploy_hook = $this->core->get_cf_deploy_hook();
         ?>
         <div class="astropress-card" style="max-width:850px;">
-            <h2><?php esc_html_e('Headless Astro Connection', 'astropress'); ?></h2>
-            <p><?php esc_html_e('Connect WordPress to your Astro site running on Cloudflare Pages or Cloudflare Workers. Real-time cache invalidation webhooks are signed using this shared secret.', 'astropress'); ?></p>
+            <h2><?php esc_html_e('Automation & Cache Invalidation Policies', 'astropress'); ?></h2>
+            <p><?php esc_html_e('Configure automatic edge cache invalidation triggers and headless SEO headers.', 'astropress'); ?></p>
 
-            <form method="post" action="">
-                <?php wp_nonce_field('astropress_bridge_action', 'astropress_bridge_nonce'); ?>
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><label for="astropress_frontend_url"><?php esc_html_e('Astro Frontend URL', 'astropress'); ?></label></th>
-                        <td>
-                            <input type="url" id="astropress_frontend_url" name="astropress_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" required placeholder="https://example.com" />
-                            <p class="description"><?php esc_html_e('Your canonical production Astro website URL (e.g., https://example.com).', 'astropress'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="astropress_secret"><?php esc_html_e('Revalidation Secret Key', 'astropress'); ?></label></th>
-                        <td>
-                            <div style="display:flex; align-items:center; gap:12px; max-width:650px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px 16px;">
-                                <span class="dashicons dashicons-shield-alt" style="color:<?php echo !empty($secret) ? '#059669' : '#dc2626'; ?>; font-size:24px; width:24px; height:24px;"></span>
-                                <div style="flex:1;">
-                                    <div style="font-weight:600; font-size:13px; color:#0f172a; display:flex; align-items:center; gap:8px;">
-                                        <?php echo !empty($secret) ? esc_html__('Revalidation Secret Active', 'astropress') : esc_html__('Revalidation Secret Not Configured', 'astropress'); ?>
-                                        <span class="astropress-badge" id="astropress-key-badge" style="<?php echo !empty($secret) ? 'background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0;' : 'background:#fef2f2; color:#991b1b; border:1px solid #fecaca;'; ?> font-size:11px;">
-                                            <?php echo !empty($secret) ? esc_html__('AES-256 Encrypted', 'astropress') : esc_html__('Missing', 'astropress'); ?>
-                                        </span>
-                                    </div>
-                                    <div style="font-size:12px; color:#64748b; margin-top:2px;">
-                                        <?php esc_html_e('Credentials and scopes are managed centrally in the Setup Wizard.', 'astropress'); ?>
-                                    </div>
-                                </div>
-                                <?php if (!empty($secret)): ?>
-                                    <button type="button" id="astropress-test-key-btn" class="button button-secondary">
-                                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
-                                    </button>
-                                <?php else: ?>
-                                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-primary">
-                                        <?php esc_html_e('Configure in Wizard', 'astropress'); ?>
-                                    </a>
-                                <?php endif; ?>
-                            </div>
-                            <div id="astropress-key-test-feedback" style="display:none; margin-top:8px; max-width:650px;"></div>
-                        </td>
-                    </tr>
-                </table>
-
-                <p class="submit">
-                    <button type="submit" name="astropress_save_bridge" class="button button-primary"><?php esc_html_e('Save & Verify Connection', 'astropress'); ?></button>
-                </p>
-            </form>
-
-            <hr style="margin:30px 0; border:0; border-top:1px solid #e2e8f0;" />
-
-            <h2><?php esc_html_e('Cache Invalidation & Security Shield', 'astropress'); ?></h2>
             <form method="post" action="">
                 <?php wp_nonce_field('astropress_automation_action', 'astropress_automation_nonce'); ?>
                 <table class="form-table">
                     <tr>
-                        <th scope="row"><?php esc_html_e('Purge Triggers', 'astropress'); ?></th>
+                        <th scope="row"><?php esc_html_e('Automatic Purge Triggers', 'astropress'); ?></th>
                         <td>
                             <fieldset>
                                 <label><input type="checkbox" name="purge_on_save" value="1" <?php checked($this->core->should_purge_on_save()); ?> /> <?php esc_html_e('Purge post / page cache on publish, update or trash', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="purge_feeds" value="1" <?php checked($this->core->should_purge_feeds()); ?> /> <?php esc_html_e('Purge RSS and Atom feeds on new post publication', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="purge_taxonomy" value="1" <?php checked($this->core->should_purge_taxonomy()); ?> /> <?php esc_html_e('Purge category and tag archives when terms are edited', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="purge_menu" value="1" <?php checked($this->core->should_purge_menu()); ?> /> <?php esc_html_e('Purge global cache when navigation menus are updated', 'astropress'); ?></label><br />
-                                <label><input type="checkbox" name="debounce_enabled" value="1" <?php checked($this->core->should_debounce_webhooks()); ?> /> <?php esc_html_e('Debounce webhooks (batch multiple invalidations into a single payload on shutdown)', 'astropress'); ?></label><br />
+                                <label><input type="checkbox" name="debounce_enabled" value="1" <?php checked($this->core->should_debounce_webhooks()); ?> /> <?php esc_html_e('Debounce requests (batch multiple invalidations into a single payload)', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="lscwp_sync" value="1" <?php checked($this->core->should_sync_lscwp()); ?> /> <?php esc_html_e('Synchronize with LiteSpeed Cache purge events', 'astropress'); ?></label>
                             </fieldset>
                         </td>
@@ -3038,43 +3281,6 @@ class AstroPress_Admin {
                             <p class="description"><?php esc_html_e('URLs per concurrent warming request.', 'astropress'); ?></p>
                         </td>
                     </tr>
-                </table>
-
-                <hr style="margin:25px 0; border:0; border-top:1px solid #e2e8f0;" />
-
-                <h2><?php esc_html_e('Direct Cloudflare Zone Purge & Deploy Hook', 'astropress'); ?></h2>
-                <p><?php esc_html_e('Manage direct Cloudflare Edge cache invalidation and optional Pages build triggers.', 'astropress'); ?></p>
-
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><?php esc_html_e('Direct Zone Edge Purge', 'astropress'); ?></th>
-                        <td>
-                            <label><input type="checkbox" name="cf_direct_purge" value="1" <?php checked($this->core->should_direct_purge_cloudflare()); ?> /> <?php esc_html_e('Enable Direct Cloudflare Zone API Purge on content updates', 'astropress'); ?></label>
-                            <p class="description"><?php esc_html_e('Instructs Cloudflare edge nodes directly to invalidate cached HTML/JSON assets alongside the Astro webhook.', 'astropress'); ?></p>
-                            <?php if (!empty($cf_token) && !empty($cf_zone_id)): ?>
-                                <div style="margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                                    <span class="astropress-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; padding:4px 8px;">
-                                        <span class="dashicons dashicons-yes" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
-                                        <?php printf(esc_html__('Scoped Token Connected (Zone: %s)', 'astropress'), esc_html(substr($cf_zone_id, 0, 10) . '••••')); ?>
-                                    </span>
-                                    <button type="button" class="button button-secondary button-small" id="astropress-purge-cf-now">
-                                        <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge Zone Edge Now', 'astropress'); ?>
-                                    </button>
-                                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-link" style="font-size:12px; text-decoration:none;">
-                                        <?php esc_html_e('Manage Token in Setup Wizard &rarr;', 'astropress'); ?>
-                                    </a>
-                                </div>
-                                <div id="astropress-cf-purge-status" style="margin-top:6px; font-size:12px;"></div>
-                            <?php else: ?>
-                                <p style="margin-top:8px; color:#b45309; font-size:12px; background:#fffbeb; border:1px solid #fde68a; border-radius:4px; padding:8px 12px; max-width:650px;">
-                                    <?php printf(
-                                        esc_html__('Cloudflare Scoped Token is not configured. Connect your single scoped token in the %s to enable direct edge purging.', 'astropress'),
-                                        '<a href="' . esc_url(admin_url('admin.php?page=astropress&tab=onboarding')) . '"><strong>' . esc_html__('Setup Wizard &rarr;', 'astropress') . '</strong></a>'
-                                    ); ?>
-                                </p>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
                     <tr>
                         <th scope="row"><label for="astropress_cf_deploy_hook"><?php esc_html_e('Cloudflare Pages Deploy Hook', 'astropress'); ?></label></th>
                         <td>
@@ -3089,11 +3295,35 @@ class AstroPress_Admin {
                 </table>
 
                 <p class="submit">
-                    <button type="submit" name="astropress_save_automation" class="button button-primary"><?php esc_html_e('Save Cache Rules', 'astropress'); ?></button>
+                    <button type="submit" name="astropress_save_automation" class="button button-primary"><?php esc_html_e('Save Settings', 'astropress'); ?></button>
                 </p>
             </form>
+
+            <hr style="margin:35px 0 25px 0; border:0; border-top:1px solid #e2e8f0;" />
+
+            <!-- Danger Zone: Disconnect & Reset -->
+            <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:18px;">
+                <h3 style="margin:0 0 6px 0; color:#991b1b; font-size:15px; display:flex; align-items:center; gap:8px;">
+                    <span class="dashicons dashicons-warning" style="color:#dc2626;"></span>
+                    <?php esc_html_e('Danger Zone: Disconnect & Reset Connection', 'astropress'); ?>
+                </h3>
+                <p style="margin:0 0 14px 0; color:#7f1d1d; font-size:13px; line-height:1.5;">
+                    <?php esc_html_e('Disconnects WordPress from Cloudflare, purges encrypted tokens and stored zone configurations, and resets AstroPress to a fresh, unconfigured state. The dashboard will lock until the Setup Wizard is completed again.', 'astropress'); ?>
+                </p>
+                <button type="button" class="button button-secondary" id="astropress-reset-connection-btn" style="color:#b91c1c; border-color:#f87171; background:#ffffff;">
+                    <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Disconnect & Reset AstroPress', 'astropress'); ?>
+                </button>
+                <div id="astropress-reset-status" style="margin-top:10px; font-size:12px;"></div>
+            </div>
         </div>
         <?php
+    }
+
+    /**
+     * Tab: Headless Bridge (Redirects to Cache Rules in v2.0)
+     */
+    private function render_tab_bridge($frontend_url, $is_connected) {
+        $this->render_tab_cache_rules();
     }
 
     /**
