@@ -163,6 +163,19 @@ class AstroPress_REST {
                     ),
                 ),
             ));
+
+            // Endpoint: /wp-json/{namespace}/verify-ticket?ticket=...
+            register_rest_route($ns, '/verify-ticket', array(
+                'methods'             => 'GET',
+                'callback'            => array($this, 'rest_verify_revalidate_ticket'),
+                'permission_callback' => '__return_true',
+                'args'                => array(
+                    'ticket' => array(
+                        'required'          => true,
+                        'sanitize_callback' => 'sanitize_text_field',
+                    ),
+                ),
+            ));
         }
 
         // Block unauthenticated user enumeration
@@ -481,5 +494,49 @@ class AstroPress_REST {
             'columns'  => $cols,
             'logs'     => $rows ?: array(),
         ));
+    }
+
+    /**
+     * Verify single-use authentication ticket for Astro revalidation
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     */
+    public function rest_verify_revalidate_ticket($request) {
+        $ticket = trim($request->get_param('ticket') ?? '');
+        if (empty($ticket) || strlen($ticket) < 32) {
+            $res = new WP_REST_Response(array(
+                'valid'   => false,
+                'message' => 'Invalid or missing authentication ticket format',
+            ), 400);
+            $res->header('Cache-Control', 'no-store, no-cache, must-revalidate');
+            return $res;
+        }
+
+        $hash = hash('sha256', $ticket);
+        $transient_key = 'astropress_tkt_' . $hash;
+        $data = get_transient($transient_key);
+
+        if (!$data) {
+            $res = new WP_REST_Response(array(
+                'valid'   => false,
+                'message' => 'Ticket expired, already used, or unauthorized',
+            ), 401);
+            $res->header('Cache-Control', 'no-store, no-cache, must-revalidate');
+            return $res;
+        }
+
+        // Single-use guarantee: burn ticket immediately so it can never be replayed
+        delete_transient($transient_key);
+
+        $res = new WP_REST_Response(array(
+            'valid'     => true,
+            'user_id'   => $data['user_id'] ?? 0,
+            'action'    => $data['action'] ?? 'revalidate',
+            'timestamp' => $data['time'] ?? time(),
+            'message'   => 'Ticket verified and consumed successfully',
+        ), 200);
+        $res->header('Cache-Control', 'no-store, no-cache, must-revalidate');
+        return $res;
     }
 }

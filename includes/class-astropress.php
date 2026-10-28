@@ -221,22 +221,20 @@ class AstroPress {
      *
      * @return string
      */
-    public function get_secret() {
-        if ($this->cached_secret === null) {
-            $val = get_option(self::OPTION_SECRET, '');
-            if (empty($val)) {
-                $val = get_option('astropress_headless_secret', '');
-            }
-            if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
-                $val = AstroPress_Encryption::decrypt($val);
-            }
-            // Auto fallback: If no custom secret is set in database, use the standard zero-config token
-            if (empty($val)) {
-                $val = 'topnepali_revalidate_secure_token';
-            }
-            $this->cached_secret = (string) $val;
+    /**
+     * Get user-configured custom revalidate secret (if explicitly set in database)
+     *
+     * @return string
+     */
+    public function get_custom_secret() {
+        $val = get_option(self::OPTION_SECRET, '');
+        if (empty($val)) {
+            $val = get_option('astropress_headless_secret', '');
         }
-        return $this->cached_secret;
+        if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
+            $val = AstroPress_Encryption::decrypt($val);
+        }
+        return (string) $val;
     }
 
     /**
@@ -245,11 +243,16 @@ class AstroPress {
      * @return bool
      */
     public function has_custom_secret() {
-        $val = get_option(self::OPTION_SECRET, '');
-        if (empty($val)) {
-            $val = get_option('astropress_headless_secret', '');
-        }
-        return !empty($val);
+        return !empty($this->get_custom_secret());
+    }
+
+    /**
+     * Revalidation secret getter (returns custom secret or empty string, no hardcoded secrets)
+     *
+     * @return string
+     */
+    public function get_secret() {
+        return $this->get_custom_secret();
     }
 
     /**

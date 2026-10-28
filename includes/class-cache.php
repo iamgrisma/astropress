@@ -195,6 +195,17 @@ class AstroPress_Cache {
      * @param array $extra_data Dynamic post or page payload for in-memory snapshot updates
      * @return array Result summary with status and response info
      */
+    public function generate_auth_ticket($action = 'revalidate') {
+        $ticket = wp_generate_password(48, false);
+        $hash = hash('sha256', $ticket);
+        set_transient('astropress_tkt_' . $hash, array(
+            'user_id' => get_current_user_id(),
+            'action'  => $action,
+            'time'    => time(),
+        ), 60);
+        return $ticket;
+    }
+
     public function dispatch_revalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $blocking = false, $extra_data = array()) {
         $frontend_url = $this->core->get_frontend_url();
         $cf_token     = $this->core->get_cf_api_token();
@@ -248,10 +259,10 @@ class AstroPress_Cache {
                 }
 
                 // Dual Invalidation: Ping Astro Cloudflare Worker (/api/revalidate)
-                // to flush internal caches.default and worker isolate RAM micro-caches!
+                // Authenticates via single-use dynamic ticket or optional custom secret
                 if (!empty($frontend_url)) {
                     $revalidate_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
-                    $revalidate_secret   = $this->core->get_secret();
+                    $ticket = $this->generate_auth_ticket($action);
                     $payload = array(
                         'slug'      => $slug,
                         'type'      => $type,
@@ -260,7 +271,11 @@ class AstroPress_Cache {
                         'full_urls' => $full_urls,
                         'timestamp' => time(),
                     );
-                    $headers = array('Content-Type' => 'application/json');
+                    $headers = array(
+                        'Content-Type'        => 'application/json',
+                        'x-astropress-ticket' => $ticket,
+                    );
+                    $revalidate_secret = $this->core->get_custom_secret();
                     if (!empty($revalidate_secret)) {
                         $headers['x-revalidate-secret'] = $revalidate_secret;
                         $headers['Authorization']       = 'Bearer ' . $revalidate_secret;
@@ -766,15 +781,27 @@ class AstroPress_Cache {
 
         $remaining = array();
         $frontend_url = $this->core->get_frontend_url();
-        $secret       = $this->core->get_secret();
+        $custom_secret = $this->core->get_custom_secret();
 
         foreach ($queue as $item) {
             $attempts = (int) ($item['attempts'] ?? 0) + 1;
             $payload  = $item['payload'] ?? array();
             $endpoint = $item['endpoint'] ?? '';
 
-            if (empty($endpoint) || empty($secret)) {
+            if (empty($endpoint)) {
                 continue;
+            }
+
+            $ticket  = $this->generate_auth_ticket('retry');
+            $headers = array(
+                'Content-Type'        => 'application/json',
+                'Origin'              => $frontend_url,
+                'Referer'             => $frontend_url,
+                'x-astropress-ticket' => $ticket,
+            );
+            if (!empty($custom_secret)) {
+                $headers['x-revalidate-secret'] = $custom_secret;
+                $headers['Authorization']       = 'Bearer ' . $custom_secret;
             }
 
             $start_time = microtime(true);
@@ -783,12 +810,7 @@ class AstroPress_Cache {
                 'timeout'     => 10,
                 'blocking'    => true,
                 'sslverify'   => true,
-                'headers'     => array(
-                    'Content-Type'        => 'application/json',
-                    'Origin'              => $frontend_url,
-                    'Referer'             => $frontend_url,
-                    'x-revalidate-secret' => $secret,
-                ),
+                'headers'     => $headers,
                 'body'        => wp_json_encode($payload),
                 'data_format' => 'body',
             ));

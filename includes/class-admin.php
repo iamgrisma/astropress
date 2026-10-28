@@ -798,18 +798,24 @@ class AstroPress_Admin {
             }
 
             // Test Handshake automatically
-            $secret = !empty($new_secret) ? $new_secret : $this->core->get_secret();
+            $ticket = $this->core->cache->generate_auth_ticket('test-handshake');
+            $custom_secret = !empty($new_secret) ? $new_secret : $this->core->get_custom_secret();
             $connected = false;
 
-            if (!empty($frontend_url) && !empty($secret)) {
+            if (!empty($frontend_url)) {
+                $headers = array(
+                    'Content-Type'        => 'application/json',
+                    'Origin'              => $frontend_url,
+                    'x-astropress-ticket' => $ticket,
+                );
+                if (!empty($custom_secret)) {
+                    $headers['x-revalidate-secret'] = $custom_secret;
+                    $headers['Authorization']       = 'Bearer ' . $custom_secret;
+                }
                 $test_res = wp_remote_post($frontend_url . '/api/revalidate', array(
                     'timeout'   => 8,
                     'sslverify' => true,
-                    'headers'   => array(
-                        'Content-Type'        => 'application/json',
-                        'Origin'              => $frontend_url,
-                        'x-revalidate-secret' => $secret,
-                    ),
+                    'headers'   => $headers,
                     'body' => wp_json_encode(array('slug' => 'test-handshake', 'type' => 'test', 'action' => 'ping')),
                 ));
                 if (!is_wp_error($test_res) && wp_remote_retrieve_response_code($test_res) === 200) {
@@ -1130,13 +1136,13 @@ class AstroPress_Admin {
     public function ajax_test_key() {
         $this->verify_admin_ajax();
 
-        $frontend_url = esc_url_raw(trim(wp_unslash($_POST['frontend_url'] ?? ''))) ?: $this->core->get_frontend_url();
-        $secret       = sanitize_text_field(wp_unslash($_POST['secret'] ?? '')) ?: $this->core->get_secret();
+        $frontend_url  = esc_url_raw(trim(wp_unslash($_POST['frontend_url'] ?? ''))) ?: $this->core->get_frontend_url();
+        $custom_secret = sanitize_text_field(wp_unslash($_POST['secret'] ?? '')) ?: $this->core->get_custom_secret();
 
-        if (empty($frontend_url) || empty($secret)) {
+        if (empty($frontend_url)) {
             wp_send_json_error(array(
-                'message' => 'Please provide both the Frontend URL and Revalidation Secret token.',
-                'code'    => 404,
+                'message' => 'Please provide the Frontend URL.',
+                'code'    => 400,
             ));
         }
 
@@ -1147,17 +1153,24 @@ class AstroPress_Admin {
             ));
         }
 
+        $ticket        = $this->core->cache->generate_auth_ticket('test-connection');
         $test_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
         $start_time    = microtime(true);
+        $headers       = array(
+            'Content-Type'        => 'application/json',
+            'Origin'              => $frontend_url,
+            'Referer'             => $frontend_url,
+            'x-astropress-ticket' => $ticket,
+        );
+        if (!empty($custom_secret)) {
+            $headers['x-revalidate-secret'] = $custom_secret;
+            $headers['Authorization']       = 'Bearer ' . $custom_secret;
+        }
+
         $response      = wp_remote_post($test_endpoint, array(
             'timeout'   => 8,
             'sslverify' => true,
-            'headers'   => array(
-                'Content-Type'        => 'application/json',
-                'Origin'              => $frontend_url,
-                'Referer'             => $frontend_url,
-                'x-revalidate-secret' => $secret,
-            ),
+            'headers'   => $headers,
             'body'      => wp_json_encode(array(
                 'slug'   => 'test-connection',
                 'type'   => 'test',
