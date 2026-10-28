@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.1
+Stable tag: 1.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.2 =
+* Unified Single-Token Architecture: Support native Cloudflare Bearer REST API for R2 object storage, uploads, deletions, and bucket discovery—eliminating mandatory S3 credentials for normal users while maintaining full SigV4 compatibility.
+* Complete Revalidation Secret Concealment: Masked AES-256 encrypted status panel with 1-click Copy Secret button, Change Key toggle, and password input with eye visibility toggle across both Setup Wizard and Bridge settings.
+* Deep Token Abilities & Health Audit: Added comprehensive pre-execution permission auditing testing Account, Zone, Cache Purge, Page/Cache Rules, R2 Storage, and Pages permissions before attempting edge operations.
+* Resilient Edge Rule Deployment: Added permission check before rule deployment, duplicate rule detection, and automatic fallback from Page Rules to Modern Cache Rules (Rulesets API `http_request_cache_settings`) if plan limits are reached.
+* Cloudflare Scoped Token Blueprint: Added accurate `permissionGroupKeys` URL template parameters alongside an interactive 1-click "Copy Permission Blueprint" recipe table.
 
 = 1.2.1 =
 * Restored dedicated SEO & Security settings tab with full Rank Math schema bridge, permalink rewrites, and Subdomain 301 Protection Shield.

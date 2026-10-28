@@ -1584,19 +1584,60 @@
               }
 
               html += '</div>';
+
+              // Render Deep Abilities Audit
+              if (data.abilities) {
+                html += '<div style="margin-top:14px;">';
+                html += '<h4 style="margin:0 0 8px 0; color:#334155; font-size:12px; text-transform:uppercase; letter-spacing:0.5px;">Token Abilities & Permissions Health Audit:</h4>';
+                html += '<div class="astropress-abilities-grid">';
+                for (const key in data.abilities) {
+                  const ab = data.abilities[key];
+                  const isGranted = ab.granted;
+                  const cardClass = isGranted ? 'is-granted' : 'is-missing';
+                  const icon = isGranted ? 'dashicons-yes' : 'dashicons-warning';
+                  html += '<div class="astropress-ability-card ' + cardClass + '">';
+                  html += '<span class="dashicons ' + icon + ' astropress-ability-icon"></span>';
+                  html += '<div>';
+                  html += '<div class="astropress-ability-title">' + ab.label + ' <span class="astropress-badge" style="font-size:10px; padding:1px 6px;' + (isGranted ? 'background:#ecfdf5;color:#065f46;' : 'background:#fffbeb;color:#b45309;') + '">' + (isGranted ? 'Passed' : 'Missing Scope') + '</span></div>';
+                  html += '<div class="astropress-ability-scope">' + ab.scope + '</div>';
+                  html += '<div class="astropress-ability-desc">' + ab.description + '</div>';
+                  html += '</div>';
+                  html += '</div>';
+                }
+                html += '</div>';
+                html += '</div>';
+              }
+
               html += '<button type="button" class="button button-primary astropress-apply-cf-btn" data-token="' + encodeURIComponent(token) + '">Apply Discovered Settings to WordPress</button>';
               html += '</div>';
 
               $results.html(html);
 
-              if (data.matched_account && $('#r2_account_id').length) {
-                $('#r2_account_id').val(data.matched_account.id);
+              if (data.matched_account) {
+                if ($('#r2_account_id').length) $('#r2_account_id').val(data.matched_account.id);
+                if ($('#onboard_r2_account_id').length) $('#onboard_r2_account_id').val(data.matched_account.id);
               }
-              if (data.matched_zone && $('#astropress_cf_zone_id').length) {
-                $('#astropress_cf_zone_id').val(data.matched_zone.id);
+              if (data.matched_zone) {
+                if ($('#astropress_cf_zone_id').length) $('#astropress_cf_zone_id').val(data.matched_zone.id);
+                if ($('#onboard_cf_zone_id').length) $('#onboard_cf_zone_id').val(data.matched_zone.id);
+                if ($('#onboard_r2_custom_domain').length && !$('#onboard_r2_custom_domain').val()) {
+                  $('#onboard_r2_custom_domain').val('media.' + data.matched_zone.name);
+                }
               }
-              if (data.buckets && data.buckets.length > 0 && $('#r2_bucket').length && !$('#r2_bucket').val()) {
-                $('#r2_bucket').val(data.buckets[0]);
+              if (data.buckets && data.buckets.length > 0) {
+                if ($('#r2_bucket').length && !$('#r2_bucket').val()) {
+                  $('#r2_bucket').val(data.buckets[0]);
+                }
+                if ($('#onboard_r2_bucket_select').length) {
+                  const $sel = $('#onboard_r2_bucket_select');
+                  $sel.empty().append('<option value="">-- Choose Discovered Bucket --</option>');
+                  data.buckets.forEach(function(b) {
+                    $sel.append('<option value="' + b + '">' + b + '</option>');
+                  });
+                  $sel.val(data.buckets[0]).show();
+                  $('#onboard_r2_bucket').hide();
+                  $('#onboard-btn-toggle-bucket-input').show();
+                }
               }
             } else {
               $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Discovery failed') + '</span></div>');
@@ -1614,6 +1655,149 @@
 
     handleQuickConnect('#astropress_quick_cf_token', '#astropress-quick-connect-results', '#astropress-quick-connect-btn');
     handleQuickConnect('#astropress_quick_cf_token_r2', '#astropress-quick-connect-results-r2', '#astropress-quick-connect-btn-r2');
+    handleQuickConnect('#onboard_cf_api_token', '#onboard-audit-results', '#onboard-quick-audit-btn');
+
+    // ========================================================
+    // SETUP WIZARD & MASKED CREDENTIAL INTERACTION
+    // ========================================================
+
+    // 1. Copy Revalidation Secret
+    $(document).on('click', '.onboard-copy-secret-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      let val = $btn.data('secret');
+      if (!val && $btn.data('target')) {
+        val = $($btn.data('target')).val();
+      }
+      if (!val) {
+        alert('Please enter or generate a secret first.');
+        return;
+      }
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).then(function() {
+          const $fb = $('#onboard-secret-copy-feedback');
+          $fb.html('<span class="astropress-copy-feedback"><span class="dashicons dashicons-yes"></span> Copied to clipboard! Set as REVALIDATE_SECRET in Cloudflare Pages.</span>').slideDown(150);
+          setTimeout(function() { $fb.fadeOut(400); }, 5000);
+        });
+      } else {
+        const $temp = $('<textarea>');
+        $('body').append($temp);
+        $temp.val(val).select();
+        document.execCommand('copy');
+        $temp.remove();
+        const $fb = $('#onboard-secret-copy-feedback');
+        $fb.html('<span class="astropress-copy-feedback"><span class="dashicons dashicons-yes"></span> Copied to clipboard! Set as REVALIDATE_SECRET in Cloudflare Pages.</span>').slideDown(150);
+        setTimeout(function() { $fb.fadeOut(400); }, 5000);
+      }
+    });
+
+    // 2. Change Revalidation Secret Toggle
+    $('#onboard-change-secret-btn').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard-secret-status-card').slideUp(150);
+      $('#onboard-secret-input-wrap').slideDown(150);
+      $('#onboard_secret').focus();
+    });
+
+    $('#onboard-cancel-change-secret').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard-secret-input-wrap').slideUp(150);
+      $('#onboard-secret-status-card').slideDown(150);
+      $('#onboard_secret').val('');
+    });
+
+    // 3. Password Eye Visibility Toggle
+    $(document).on('click', '.astropress-toggle-eye', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const targetSelector = $btn.data('target');
+      const $input = $(targetSelector);
+      const currentType = $input.attr('type');
+      if (currentType === 'password') {
+        $input.attr('type', 'text');
+        $btn.find('.dashicons').removeClass('dashicons-visibility').addClass('dashicons-hidden');
+      } else {
+        $input.attr('type', 'password');
+        $btn.find('.dashicons').removeClass('dashicons-hidden').addClass('dashicons-visibility');
+      }
+    });
+
+    // 4. Permission Blueprint Recipe Box Toggle & Copy
+    $('#onboard-toggle-blueprint-btn').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard-blueprint-wrap').slideToggle(200);
+    });
+
+    $('#onboard-copy-blueprint-btn').on('click', function(e) {
+      e.preventDefault();
+      const recipe = $(this).data('recipe');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(recipe).then(function() {
+          const $status = $('#onboard-blueprint-copy-status');
+          $status.html('✓ Blueprint recipe copied to clipboard! Paste into your notes or token creation form.').fadeIn(150);
+          setTimeout(function() { $status.fadeOut(400); }, 5000);
+        });
+      }
+    });
+
+    // 5. S3 Advanced Drawer Toggle
+    $('#onboard-toggle-s3-drawer').on('click', function(e) {
+      e.preventDefault();
+      const $drawer = $('#onboard-s3-drawer-wrap');
+      const $arrow = $('#onboard-s3-arrow');
+      $drawer.slideToggle(200, function() {
+        if ($drawer.is(':visible')) {
+          $arrow.removeClass('dashicons-arrow-right-alt2').addClass('dashicons-arrow-down-alt2');
+        } else {
+          $arrow.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-right-alt2');
+        }
+      });
+    });
+
+    // 6. Deploy Cache Rule from Setup Wizard
+    $('#onboard-deploy-cache-rule-btn').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const cdnDomain = $('#onboard_r2_custom_domain').val().trim();
+      const token = $('#onboard_cf_api_token').val().trim();
+      const zoneId = $('#onboard_cf_zone_id').val().trim();
+      const $status = $('#onboard-cache-rule-status');
+
+      if (!cdnDomain) {
+        alert('Please enter a Public CDN Domain first (e.g. media.example.com).');
+        return;
+      }
+
+      $btn.prop('disabled', true).text('Deploying Rule...');
+      $status.html('<span style="color:#64748b;">Testing token permissions & deploying Edge rule...</span>').show();
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_deploy_cache_rule',
+          cdn_domain: cdnDomain,
+          cf_api_token: token,
+          zone_id: zoneId,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+          } else {
+            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Deployment failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Network error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> Deploy 1-Year Cache Rule');
+        }
+      });
+    });
 
     $(document).on('click', '.astropress-apply-cf-btn', function(e) {
       e.preventDefault();

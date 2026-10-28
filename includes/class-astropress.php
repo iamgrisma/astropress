@@ -152,8 +152,9 @@ class AstroPress {
             $secret_enc = $this->get_compat_option('astropress_r2_secret_key', 'astropress_r2_secret_key', 'r2g_secret_key', '');
             $secret_key = AstroPress_Encryption::decrypt($secret_enc);
             $bucket     = $this->get_compat_option('astropress_r2_bucket', 'astropress_r2_bucket', 'r2g_bucket', '');
+            $cf_token   = $this->get_cf_api_token();
 
-            $this->client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, $bucket);
+            $this->client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, $bucket, $cf_token);
         }
         return $this->client;
     }

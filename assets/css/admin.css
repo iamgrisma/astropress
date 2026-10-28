@@ -986,3 +986,93 @@
   animation: astropress-spin 1s linear infinite;
   display: inline-block;
 }
+
+/* Token Abilities & Health Audit Grid */
+.astropress-abilities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.astropress-ability-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.astropress-ability-card.is-granted {
+  border-left: 3px solid #10b981;
+}
+
+.astropress-ability-card.is-missing {
+  border-left: 3px solid #f59e0b;
+  background: #fffdfa;
+}
+
+.astropress-ability-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.astropress-ability-card.is-granted .astropress-ability-icon {
+  color: #10b981;
+}
+
+.astropress-ability-card.is-missing .astropress-ability-icon {
+  color: #f59e0b;
+}
+
+.astropress-ability-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.astropress-ability-scope {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+  font-family: monospace;
+}
+
+.astropress-ability-desc {
+  font-size: 11px;
+  color: #475569;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* Password Eye Visibility Toggle */
+.astropress-toggle-eye {
+  transition: color 0.15s ease;
+}
+
+.astropress-toggle-eye:hover {
+  color: #0284c7 !important;
+}
+
+/* Copy Feedback Animations */
+.astropress-copy-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #059669;
+  font-weight: 600;
+  animation: astropress-fade-in 0.2s ease-in-out;
+}
+
+@keyframes astropress-fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
