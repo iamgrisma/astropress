@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.8
+Stable tag: 1.2.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.9 =
+* Single Scoped Module Architecture: Centralized all credential input into the Setup Wizard. Completely removed redundant Cloudflare API Token and Zone ID input forms from Headless Bridge and Overview tabs.
+* Debloated R2 Pipeline: Eliminated mandatory S3 Access Key ID / Secret Key requirements. R2 operates 100% natively via the single Scoped API Token with bucket discovery, inline bucket creation, and connection testing.
+* Subdomain Governance: Strictly validated Custom CDN Domain inputs to ensure only subdomains of the hosted site domain or Astro frontend domain are permitted (both frontend and server-side).
+* R2 CDN Edge Tools: Added live CDN Domain Audit, 1-Click Cache Rule deployment, and 1-Click Purge CDN Edge Cache buttons directly inside the Cloudflare R2 tab.
 
 = 1.2.8 =
 * Modern Cloudflare Cache Rules: Integrated modern Cloudflare Ruleset Engine (`http_request_cache_settings`), creating and verifying 1-year Edge and Browser TTL rules with automatic fallback to Page Rules.
