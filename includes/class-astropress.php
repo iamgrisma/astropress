@@ -25,6 +25,7 @@ class AstroPress {
     // Headless Bridge Option Keys
     const OPTION_SETUP_COMPLETED   = 'astropress_setup_completed';
     const OPTION_FRONTEND_URL      = 'astropress_frontend_url';
+    const OPTION_SECRET            = 'astropress_secret';
     const OPTION_MEDIA_MODE        = 'astropress_media_mode';
     const OPTION_CONNECTED         = 'astropress_connected';
     const OPTION_REWRITE_LINKS     = 'astropress_rewrite_links';
@@ -204,6 +205,43 @@ class AstroPress {
      */
     public function is_setup_completed() {
         return get_option(self::OPTION_SETUP_COMPLETED, '0') === '1';
+    }
+
+    /**
+     * Compatibility alias: Check if bridge is connected
+     *
+     * @return bool
+     */
+    public function is_connected() {
+        return $this->is_setup_completed() || get_option(self::OPTION_CONNECTED, '0') === '1';
+    }
+
+    /**
+     * Legacy secret token getter (for backwards compatibility)
+     *
+     * @return string
+     */
+    public function get_secret() {
+        if ($this->cached_secret === null) {
+            $val = get_option(self::OPTION_SECRET, '');
+            if (empty($val)) {
+                $val = get_option('astropress_headless_secret', '');
+            }
+            if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
+                $val = AstroPress_Encryption::decrypt($val);
+            }
+            $this->cached_secret = (string) $val;
+        }
+        return $this->cached_secret;
+    }
+
+    /**
+     * Legacy revalidation secret getter (for backwards compatibility)
+     *
+     * @return string
+     */
+    public function get_revalidate_secret() {
+        return $this->get_secret();
     }
 
     /**
