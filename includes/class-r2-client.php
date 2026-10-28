@@ -274,6 +274,47 @@ class AstroPress_R2_Client {
     }
 
     /**
+     * Create a new R2 Bucket under this Cloudflare Account
+     *
+     * @param string $bucket_name
+     * @return array
+     */
+    public function create_bucket($bucket_name) {
+        $bucket_name = sanitize_key(trim((string)$bucket_name));
+        if (empty($bucket_name)) {
+            return array('success' => false, 'error' => __('Invalid bucket name. Use lowercase alphanumeric characters and dashes.', 'astropress'));
+        }
+
+        if (empty($this->account_id) || empty($this->access_key) || empty($this->secret_key)) {
+            return array('success' => false, 'error' => __('Account ID, Access Key ID, and Secret Access Key are required to create a bucket.', 'astropress'));
+        }
+
+        $res = $this->request('PUT', '/' . rawurlencode($bucket_name));
+
+        if ($res['code'] === 200 || $res['code'] === 204) {
+            $this->bucket = $bucket_name;
+            return array(
+                'success' => true,
+                'bucket'  => $bucket_name,
+                'message' => sprintf(esc_html__('Bucket "%s" created successfully on Cloudflare R2.', 'astropress'), $bucket_name),
+            );
+        }
+
+        $xml_msg = '';
+        if (!empty($res['body']) && strpos($res['body'], '<Message>') !== false) {
+            if (preg_match('/<Message>(.*?)<\/Message>/s', $res['body'], $m)) {
+                $xml_msg = trim($m[1]);
+            }
+        }
+
+        return array(
+            'success' => false,
+            'code'    => $res['code'],
+            'error'   => $xml_msg ?: sprintf(esc_html__('Failed to create bucket on Cloudflare R2 (HTTP %d).', 'astropress'), $res['code']),
+        );
+    }
+
+    /**
      * Upload a local file to Cloudflare R2
      */
     public function put_object($local_path, $r2_key, $mime_type = null) {

@@ -6,10 +6,18 @@
  */
 
 /* Container */
+.astropress-wrap,
+.astropress-wrap *,
+.astropress-wrap *::before,
+.astropress-wrap *::after {
+  box-sizing: border-box;
+}
+
 .astropress-wrap {
   max-width: 1100px;
   margin: 20px 20px 40px 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  overflow-x: hidden;
 }
 
 /* Header */
@@ -71,10 +79,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .astropress-badge-online {
@@ -158,8 +167,8 @@
 /* Layout Cards */
 .astropress-grid-2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 20px;
 }
 
 .astropress-card {
@@ -249,7 +258,7 @@
 .astropress-pill {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
   background: #e2e8f0;
@@ -679,4 +688,129 @@
   padding: 0 8px !important;
   height: 28px !important;
   line-height: 26px !important;
+}
+
+/* ========================================================
+   Media Sync & Storage Dashboard Styles (Full Parity)
+   ======================================================== */
+
+/* Form Table Modernization */
+.astropress-card .form-table {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.astropress-card .form-table th {
+  width: 220px;
+  padding: 16px 14px 16px 0;
+  vertical-align: top;
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.astropress-card .form-table td {
+  padding: 14px 0;
+  vertical-align: top;
+}
+
+.astropress-card .form-table td input[type="text"],
+.astropress-card .form-table td input[type="password"],
+.astropress-card .form-table td input[type="url"],
+.astropress-card .form-table td select {
+  max-width: 100%;
+}
+
+/* Stat Cards Grid */
+.r2g-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.r2g-stat-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.r2g-stat-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.r2g-stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.r2g-stat-sub {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.r2g-card-success .r2g-stat-value { color: #059669; }
+.r2g-card-info .r2g-stat-value { color: #0284c7; }
+.r2g-card-warning .r2g-stat-value { color: #d97706; }
+
+/* Progress Bars */
+.r2g-progress-wrap {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.r2g-progress-bar-bg {
+  width: 100%;
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.r2g-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7, #38bdf8);
+  transition: width 0.3s ease;
+}
+
+.r2g-quality-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  background: #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.r2g-input {
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  padding: 0 8px;
+}
+
+@media screen and (max-width: 782px) {
+  .astropress-card .form-table th {
+    width: auto;
+    padding-bottom: 4px;
+  }
+  .astropress-card .form-table td {
+    padding-top: 4px;
+  }
+  .r2g-stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }

@@ -229,6 +229,9 @@ class AstroPress {
     public function get_secret() {
         if ($this->cached_secret === null) {
             $val = $this->get_compat_option(self::OPTION_SECRET, 'astropress_headless_secret', 'topnepali_headless_secret', '');
+            if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
+                $val = AstroPress_Encryption::decrypt($val);
+            }
             $this->cached_secret = (string) $val;
         }
         return $this->cached_secret;

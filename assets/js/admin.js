@@ -63,14 +63,22 @@
     });
 
     // ========================================================
-    // 2. Headless Handshake Test
+    // 2. Secret Key Handshake & Rotation Management
     // ========================================================
-    $('#astropress-test-handshake').on('click', function(e) {
+    const $testKeyBtn      = $('#astropress-test-key-btn');
+    const $changeKeyBtn    = $('#astropress-change-key-btn');
+    const $cancelKeyBtn    = $('#astropress-cancel-change-key-btn');
+    const $keyInputBox     = $('#astropress-key-input-container');
+    const $keyStatusBadge  = $('#astropress-key-badge');
+    const $keyFeedback     = $('#astropress-key-test-feedback');
+    const $keyStatusIcon   = $('#astropress-key-status-icon');
+
+    // Revalidate Key Handshake
+    $testKeyBtn.on('click', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const $status = $('#astropress-handshake-status');
-      $btn.prop('disabled', true).text('Testing...');
-      $status.html('<span style="color:#64748b;">Pinging frontend /api/revalidate...</span>');
+      $btn.prop('disabled', true).addClass('updating-message');
+      $keyFeedback.html('<div style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-update spin"></span> Verifying secret key handshake with Cloudflare Pages/Workers...</div>').slideDown(150);
 
       $.ajax({
         url: ajaxurl,
@@ -82,26 +90,83 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#057a55;font-weight:600;">✓ ' + res.data.message + ' (' + res.data.latency_ms + 'ms)</span>');
+            $keyStatusBadge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
+            $keyStatusIcon.removeClass('dashicons-warning dashicons-dismiss').addClass('dashicons-shield-alt').css('color', '#059669');
+            $keyFeedback.html('<div style="padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-yes-alt"></span> <strong>Key Verified:</strong> ' + res.data.message + ' (' + res.data.latency_ms + 'ms latency)</div>');
+            $keyInputBox.slideUp(150);
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data.message || 'Handshake failed') + '</span>');
+            $keyStatusBadge.css({'background': '#fef2f2', 'color': '#991b1b', 'border-color': '#fecaca'}).text('Failed (HTTP ' + (res.data.code || 0) + ')');
+            $keyStatusIcon.removeClass('dashicons-shield-alt').addClass('dashicons-warning').css('color', '#dc2626');
+            $keyFeedback.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-warning"></span> <strong>Key Failed:</strong> ' + res.data.message + ' Please enter a new key below.</div>');
+            $keyInputBox.slideDown(200);
+            $('#astropress_secret').focus();
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;">✗ Request error: ' + err + '</span>');
+          $keyFeedback.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> Server error while testing secret key: ' + err + '</div>');
+          $keyInputBox.slideDown(200);
         },
         complete: function() {
-          $btn.prop('disabled', false).text('Test Webhook Handshake');
+          $btn.prop('disabled', false).removeClass('updating-message');
         }
       });
     });
 
+    $changeKeyBtn.on('click', function(e) {
+      e.preventDefault();
+      $keyInputBox.slideToggle(150, function() {
+        if ($keyInputBox.is(':visible')) {
+          $('#astropress_secret').focus();
+        }
+      });
+    });
+
+    $cancelKeyBtn.on('click', function(e) {
+      e.preventDefault();
+      $keyInputBox.slideUp(150);
+      $('#astropress_secret').val('');
+    });
+
+    // Cloudflare Token Change / Cancel
+    $('#astropress-btn-change-cf-token').on('click', function(e) {
+      e.preventDefault();
+      $('#astropress-cf-token-display').hide();
+      $('#astropress-cf-token-input-wrap').show().find('input').focus();
+    });
+
+    $('#astropress-btn-cancel-cf-token').on('click', function(e) {
+      e.preventDefault();
+      $('#astropress-cf-token-input-wrap').hide().find('input').val('');
+      $('#astropress-cf-token-display').show();
+    });
+
+    // R2 Secret Key Change / Cancel
+    $('#r2-btn-change-secret').on('click', function(e) {
+      e.preventDefault();
+      $('#r2-secret-display').hide();
+      $('#r2-secret-input-wrap').show().find('input').focus();
+    });
+
+    $('#r2-btn-cancel-secret').on('click', function(e) {
+      e.preventDefault();
+      $('#r2-secret-input-wrap').hide().find('input').val('');
+      $('#r2-secret-display').show();
+    });
+
+    // Old handshake button backwards compatibility
+    $('#astropress-test-handshake').on('click', function(e) {
+      e.preventDefault();
+      if ($testKeyBtn.length) {
+        $testKeyBtn.trigger('click');
+      }
+    });
+
     // ========================================================
-    // 3. Cloudflare R2 Discovery & Connection Testing
+    // 3. Cloudflare R2 Discovery, Selection, Creation & CDN
     // ========================================================
-    function handleFetchBuckets($btn, $status, accountId, accessKey, secretKey, $targetInput) {
+    function handleFetchBuckets($btn, $status, accountId, accessKey, secretKey, $targetInput, $targetSelect, $toggleBtn) {
       if (!accountId || !accessKey) {
-        $status.html('<span style="color:#e02424;">Please enter Account ID and Access Key ID first.</span>');
+        $status.html('<span style="color:#dc2626;font-weight:600;">Please enter Account ID and Access Key ID first.</span>');
         return;
       }
 
@@ -122,21 +187,58 @@
         success: function(res) {
           if (res.success && res.data?.buckets && res.data.buckets.length > 0) {
             const buckets = res.data.buckets;
-            $targetInput.val(buckets[0]);
-            $status.html('<span style="color:#057a55;font-weight:600;">✓ Discovered ' + buckets.length + ' bucket(s): ' + buckets.join(', ') + '</span>');
+            const currentBucket = $targetInput.val()?.trim() || '';
+
+            if ($targetSelect && $targetSelect.length) {
+              $targetSelect.empty().append('<option value="">-- Choose Discovered Bucket --</option>');
+              let matched = false;
+
+              buckets.forEach(function(b) {
+                const isSelected = (b === currentBucket);
+                if (isSelected) matched = true;
+                $targetSelect.append('<option value="' + b + '" ' + (isSelected ? 'selected' : '') + '>' + b + '</option>');
+              });
+
+              if (!matched && buckets.length === 1) {
+                $targetSelect.val(buckets[0]);
+                $targetInput.val(buckets[0]);
+              } else if (matched) {
+                $targetSelect.val(currentBucket);
+              }
+
+              $targetInput.hide();
+              $targetSelect.show();
+              if ($toggleBtn && $toggleBtn.length) {
+                $toggleBtn.show().text('Type Manually');
+              }
+            } else {
+              $targetInput.val(buckets[0]);
+            }
+
+            const chosen = ($targetSelect && $targetSelect.val()) ? $targetSelect.val() : (currentBucket || buckets[0]);
+
+            // Auto-suggest custom CDN domain if empty
+            const $domainInput = $('#r2_custom_domain');
+            if ($domainInput.length && !$domainInput.val()?.trim() && chosen === 'topnepali') {
+              $domainInput.val('https://objects.topnepali.com');
+              $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> https://objects.topnepali.com (Connected to bucket ' + chosen + ')');
+            }
+
+            $status.html('<span style="color:#059669;font-weight:600;">✓ Discovered ' + buckets.length + ' bucket(s). ' + (chosen ? 'Selected: <code>' + chosen + '</code>' : 'Please select a bucket from the dropdown.') + '</span>');
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Could not discover buckets.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || res.data?.error || 'Could not discover buckets. Verify credentials or create a bucket below.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;">✗ Discovery failed: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Discovery failed: ' + err + '</span>');
         },
         complete: function() {
-          $btn.prop('disabled', false).text('Discover Buckets');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Discover Buckets');
         }
       });
     }
 
+    // Discover in R2 Tab
     $('#astropress-fetch-buckets').on('click', function(e) {
       e.preventDefault();
       let secretKey = $('#r2_secret_key').val()?.trim();
@@ -147,10 +249,115 @@
         $('#r2_account_id').val()?.trim(),
         $('#r2_access_key').val()?.trim(),
         secretKey,
-        $('#r2_bucket')
+        $('#r2_bucket'),
+        $('#r2_bucket_select'),
+        $('#astropress-btn-toggle-bucket-input')
       );
     });
 
+    // Select change sync (R2 Tab)
+    $('#r2_bucket_select').on('change', function() {
+      const val = $(this).val();
+      $('#r2_bucket').val(val);
+      const $domainInput = $('#r2_custom_domain');
+      if ($domainInput.length && !$domainInput.val()?.trim() && val === 'topnepali') {
+        $domainInput.val('https://objects.topnepali.com');
+        $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> https://objects.topnepali.com (Connected to bucket ' + val + ')');
+      }
+    });
+
+    // Toggle between Dropdown and Manual Text Input
+    $('#astropress-btn-toggle-bucket-input').on('click', function(e) {
+      e.preventDefault();
+      const $select = $('#r2_bucket_select');
+      const $input = $('#r2_bucket');
+      if ($select.is(':visible')) {
+        $select.hide();
+        $input.show().focus();
+        $(this).text('Choose from Discovered');
+      } else {
+        $input.hide();
+        $select.show().focus();
+        $(this).text('Type Manually');
+      }
+    });
+
+    // Show / Hide Inline Create Bucket (R2 Tab)
+    $('#astropress-btn-show-create-bucket').on('click', function(e) {
+      e.preventDefault();
+      $('#astropress-create-bucket-wrap').slideToggle(150, function() {
+        if ($(this).is(':visible')) {
+          $('#astropress_new_bucket_name').focus();
+        }
+      });
+    });
+
+    $('#astropress-btn-cancel-create-bucket').on('click', function(e) {
+      e.preventDefault();
+      $('#astropress-create-bucket-wrap').slideUp(150);
+      $('#astropress_new_bucket_name').val('');
+      $('#astropress-create-bucket-status').empty();
+    });
+
+    // Confirm Create Bucket (R2 Tab)
+    $('#astropress-btn-confirm-create-bucket').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const bucketName = $('#astropress_new_bucket_name').val()?.trim().toLowerCase();
+      const $status = $('#astropress-create-bucket-status');
+
+      if (!bucketName) {
+        $status.html('<span style="color:#dc2626;font-weight:600;">Please enter a bucket name.</span>');
+        return;
+      }
+
+      $btn.prop('disabled', true).text('Creating bucket on R2...');
+      $status.html('<span style="color:#64748b;">Creating bucket via S3 SigV4 API...</span>');
+
+      let secretKey = $('#r2_secret_key').val()?.trim();
+      if (secretKey && secretKey.indexOf('••••') !== -1) secretKey = '';
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_create_bucket',
+          bucket_name: bucketName,
+          account_id: $('#r2_account_id').val()?.trim(),
+          access_key: $('#r2_access_key').val()?.trim(),
+          secret_key: secretKey,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+            const created = res.data.bucket || bucketName;
+
+            // Add to dropdown and select it
+            const $select = $('#r2_bucket_select');
+            $select.append('<option value="' + created + '" selected>' + created + '</option>');
+            $select.val(created).show();
+            $('#r2_bucket').val(created).hide();
+            $('#astropress-btn-toggle-bucket-input').show().text('Type Manually');
+
+            setTimeout(function() {
+              $('#astropress-create-bucket-wrap').slideUp(200);
+            }, 1800);
+          } else {
+            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Bucket creation failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Request error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).text('Create & Use Bucket');
+        }
+      });
+    });
+
+    // Discover in Onboarding Wizard
     $('#onboard-fetch-buckets').on('click', function(e) {
       e.preventDefault();
       let secretKey = $('#onboard_r2_secret_key').val()?.trim();
@@ -161,10 +368,139 @@
         $('#onboard_r2_account_id').val()?.trim(),
         $('#onboard_r2_access_key').val()?.trim(),
         secretKey,
-        $('#onboard_r2_bucket')
+        $('#onboard_r2_bucket'),
+        $('#onboard_r2_bucket_select'),
+        $('#onboard-btn-toggle-bucket-input')
       );
     });
 
+    $('#onboard_r2_bucket_select').on('change', function() {
+      $('#onboard_r2_bucket').val($(this).val());
+    });
+
+    $('#onboard-btn-toggle-bucket-input').on('click', function(e) {
+      e.preventDefault();
+      const $select = $('#onboard_r2_bucket_select');
+      const $input = $('#onboard_r2_bucket');
+      if ($select.is(':visible')) {
+        $select.hide();
+        $input.show().focus();
+        $(this).text('Choose from Discovered');
+      } else {
+        $input.hide();
+        $select.show().focus();
+        $(this).text('Type Manually');
+      }
+    });
+
+    $('#onboard-btn-show-create-bucket').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard-create-bucket-wrap').slideToggle(150, function() {
+        if ($(this).is(':visible')) {
+          $('#onboard_new_bucket_name').focus();
+        }
+      });
+    });
+
+    $('#onboard-btn-cancel-create-bucket').on('click', function(e) {
+      e.preventDefault();
+      $('#onboard-create-bucket-wrap').slideUp(150);
+    });
+
+    $('#onboard-btn-confirm-create-bucket').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const bucketName = $('#onboard_new_bucket_name').val()?.trim().toLowerCase();
+      const $status = $('#onboard-create-bucket-status');
+
+      if (!bucketName) {
+        $status.html('<span style="color:#dc2626;font-weight:600;">Please enter a bucket name.</span>');
+        return;
+      }
+
+      $btn.prop('disabled', true).text('Creating...');
+      let secretKey = $('#onboard_r2_secret_key').val()?.trim();
+      if (secretKey && secretKey.indexOf('••••') !== -1) secretKey = '';
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_create_bucket',
+          bucket_name: bucketName,
+          account_id: $('#onboard_r2_account_id').val()?.trim(),
+          access_key: $('#onboard_r2_access_key').val()?.trim(),
+          secret_key: secretKey,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+            const created = res.data.bucket || bucketName;
+            const $select = $('#onboard_r2_bucket_select');
+            $select.append('<option value="' + created + '" selected>' + created + '</option>');
+            $select.val(created).show();
+            $('#onboard_r2_bucket').val(created).hide();
+            $('#onboard-btn-toggle-bucket-input').show().text('Type Manually');
+
+            setTimeout(function() {
+              $('#onboard-create-bucket-wrap').slideUp(200);
+            }, 1800);
+          } else {
+            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Bucket creation failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Request error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).text('Create & Select');
+        }
+      });
+    });
+
+    // Deploy Cloudflare "Cache Everything" Page Rule
+    $('#astropress-btn-deploy-cache-rule').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#astropress-deploy-rule-status');
+      const cdnDomain = $('#r2_custom_domain').val()?.trim();
+
+      if (!cdnDomain) {
+        $status.html('<span style="color:#dc2626;font-weight:600;">Please enter a Public CDN Domain first (e.g. objects.topnepali.com).</span>');
+        return;
+      }
+
+      $btn.prop('disabled', true).text('Deploying Rule to Cloudflare Edge...');
+      $status.html('<span style="color:#64748b;">Deploying "Cache Everything" rule with 1-year Edge TTL via Cloudflare API...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_deploy_cache_rule',
+          cdn_domain: cdnDomain,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+          } else {
+            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Failed to deploy rule.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Network error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-generic" style="vertical-align:-2px;"></span> Deploy Edge Cache Rule');
+        }
+      });
+    });
+
+    // Test R2 Connection Live
     $('#astropress-test-r2').on('click', function(e) {
       e.preventDefault();
       const $btn = $(this);
@@ -175,16 +511,16 @@
       if (secretKey && secretKey.indexOf('••••') !== -1) {
         secretKey = '';
       }
-      const bucket = $('#r2_bucket').val()?.trim();
+      const bucket = ($('#r2_bucket_select').is(':visible') && $('#r2_bucket_select').val()) ? $('#r2_bucket_select').val() : $('#r2_bucket').val()?.trim();
       const customDomain = $('#r2_custom_domain').val()?.trim();
 
       if (!accountId || !accessKey || !bucket) {
-        $status.html('<span style="color:#e02424;">Please enter Account ID, Access Key, and Bucket name.</span>');
+        $status.html('<span style="color:#dc2626;font-weight:600;">Please enter Account ID, Access Key, and Bucket name.</span>');
         return;
       }
 
       $btn.prop('disabled', true).text('Testing...');
-      $status.html('<span style="color:#64748b;">Testing read/write permissions...</span>');
+      $status.html('<span style="color:#64748b;">Testing read/write permissions & CDN resolution...</span>');
 
       $.ajax({
         url: ajaxurl,
@@ -201,16 +537,16 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#057a55;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data.message || 'Connection test failed.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data.message || 'Connection test failed.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;">✗ Connection error: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Connection error: ' + err + '</span>');
         },
         complete: function() {
-          $btn.prop('disabled', false).text('Test Connection');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Connection');
         }
       });
     });
@@ -426,85 +762,314 @@
     });
 
     // ========================================================
-    // 7. Bulk Media Sync to Cloudflare R2
+    // 7. Bulk Media Sync Engine & Verified Storage Cleanup
     // ========================================================
-    let syncActive = false;
-    let syncOffset = 0;
+    let syncPaused = false;
+    let syncCancelled = false;
 
-    $('#astropress-start-sync').on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      syncActive = true;
-      syncOffset = 0;
-
-      $btn.hide();
-      $('#astropress-cancel-sync').show();
-      $('#astropress-sync-log').show().empty().append('Starting media sync to Cloudflare R2...\n');
-
-      processSyncBatch();
+    $('#r2g-sync-quality-slider').on('input', function() {
+      $('#r2g-sync-quality-val').text($(this).val() + '%');
     });
 
-    function processSyncBatch() {
-      if (!syncActive) return;
+    $('#r2g-sync-engine').on('change', function() {
+      const eng = $(this).val();
+      const $notice = $('#r2g-sync-notice-text');
+      if (eng === 'resmush') {
+        $notice.text('reSmush.it Engine: Compresses via free reSmush API (auto-fallback to PHP GD/Imagick if >5MB or offline).');
+      } else if (eng === 'none') {
+        $notice.text('Lossless Engine: Pushes binary files directly to R2 without alteration.');
+      } else {
+        $notice.text('Server Engine: Media items are processed and pushed to R2 by PHP in safe batches of 5.');
+      }
+    });
+
+    // Bulk Sync Execution
+    $('#r2g-btn-start-sync, #astropress-start-sync').on('click', function(e) {
+      e.preventDefault();
+      if ($(this).is(':disabled')) return;
+
+      syncPaused = false;
+      syncCancelled = false;
+      let failedIds = [];
+
+      const $startBtn = $(this);
+      const $pauseBtn = $('#r2g-btn-pause-sync');
+      const $cancelBtn = $('#r2g-btn-cancel-sync');
+      const $progBox = $('#r2g-sync-progress-box');
+      const $progFill = $('#r2g-sync-progress-fill');
+      const $progText = $('#r2g-sync-status-text');
+      const $progPct = $('#r2g-sync-percentage');
+
+      const syncPreset = $('#r2g-sync-preset').val() || 'keep_current';
+      const syncQuality = parseInt($('#r2g-sync-quality-slider').val(), 10) || 82;
+      const syncEngine = $('#r2g-sync-engine').val() || 'server';
+
+      $startBtn.hide();
+      $pauseBtn.show().text('Pause');
+      $cancelBtn.show();
+      $progBox.show();
+
+      function processBatch() {
+        if (syncPaused || syncCancelled) {
+          return;
+        }
+
+        $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_bulk_sync_batch',
+            batch_size: 5,
+            format: 'keep',
+            preset: syncPreset,
+            quality: syncQuality,
+            engine: syncEngine,
+            exclude_ids: failedIds,
+            nonce: nonce,
+          },
+          success: function(res) {
+            if (!res.success) {
+              $progText.text('Error: ' + (res.data?.message || 'Sync failed'));
+              $pauseBtn.hide();
+              $startBtn.show().text('Retry Bulk Sync');
+              return;
+            }
+
+            if (res.data.results && Array.isArray(res.data.results)) {
+              res.data.results.forEach(function(item) {
+                if (item.status === 'failed' && failedIds.indexOf(item.id) === -1) {
+                  failedIds.push(item.id);
+                }
+              });
+            }
+
+            const stats = res.data.stats || {};
+            const total = stats.total_wp || 0;
+            const synced = stats.synced || 0;
+            const remaining = (typeof res.data.remaining_count !== 'undefined') ? res.data.remaining_count : Math.max(0, total - synced);
+            const pct = total > 0 ? Math.min(100, Math.round((synced / total) * 100)) : 100;
+
+            // Update stats cards live
+            $('#r2g-stat-total').text(total);
+            $('#r2g-stat-synced').text(stats.synced || 0);
+            $('#r2g-stat-cloud').text(stats.cloud_only || 0);
+            $('#r2g-stat-local').text(stats.local_only || 0);
+            if (stats.verified_with_local !== undefined) {
+              $('#r2g-verified-count').text(stats.verified_with_local);
+              $('#r2g-btn-clean-verified').prop('disabled', stats.verified_with_local === 0);
+            }
+
+            $progFill.css('width', pct + '%');
+            $progPct.text(pct + '% (' + synced + '/' + total + ')');
+            $progText.text('Synced ' + synced + ' / ' + total + ' media items (' + remaining + ' remaining)...');
+
+            if (res.data.done || !res.data.remaining || remaining <= failedIds.length) {
+              $progFill.css('width', '100%');
+              $progPct.text('100% (' + total + '/' + total + ')');
+              if (failedIds.length > 0) {
+                $progText.text('Bulk sync completed. ' + failedIds.length + ' item(s) could not be synced. Check R2 permissions and click below to retry.');
+                $startBtn.show().text('Retry Failed Items (' + failedIds.length + ')');
+              } else {
+                $progText.html('<strong style="color:#059669;">✓ All media successfully synced to Cloudflare R2! (0 remaining). Local copies preserved safely.</strong>');
+                $startBtn.show().text('Sync Finished (Run Again)');
+              }
+              $pauseBtn.hide();
+              $cancelBtn.hide();
+              return;
+            }
+
+            // Continue to next batch
+            setTimeout(processBatch, 400);
+          },
+          error: function() {
+            $progText.text('Network glitch during batch sync. Retrying in 3s...');
+            setTimeout(processBatch, 3000);
+          }
+        });
+      }
+
+      processBatch();
+    });
+
+    $('#r2g-btn-pause-sync').on('click', function(e) {
+      e.preventDefault();
+      syncPaused = !syncPaused;
+      $(this).text(syncPaused ? 'Resume' : 'Pause');
+      if (!syncPaused) {
+        $('#r2g-btn-start-sync').trigger('click');
+      }
+    });
+
+    $('#r2g-btn-cancel-sync').on('click', function(e) {
+      e.preventDefault();
+      syncCancelled = true;
+      syncPaused = true;
+      $('#r2g-btn-pause-sync').hide();
+      $('#r2g-btn-cancel-sync').hide();
+      $('#r2g-btn-start-sync').show().text('Resume Bulk Sync');
+      $('#r2g-sync-status-text').text('Sync paused by user.');
+    });
+
+    // Verified Local Storage Cleanup
+    $('#r2g-btn-clean-verified').on('click', function(e) {
+      e.preventDefault();
+      if ($(this).is(':disabled')) return;
+      if (!confirm('Clean local media files after verifying each object exists on Cloudflare R2? This leaves R2 as your media storage. Cancel if you need to take a server backup first.')) {
+        return;
+      }
+
+      const $btn = $(this);
+      const $box = $('#r2g-clean-progress-box');
+      const $fill = $('#r2g-clean-progress-fill');
+      const $text = $('#r2g-clean-status-text');
+      const $pct = $('#r2g-clean-percentage');
+
+      $btn.prop('disabled', true);
+      $box.show();
+      $fill.css('width', '0%');
+      $pct.text('0%');
+      $text.text('Cleaning local copies in safe batches...');
+
+      let totalToClean = parseInt($('#r2g-verified-count').text(), 10) || 1;
+      let cleanedSoFar = 0;
+
+      function cleanBatch() {
+        $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_bulk_clean_verified_local',
+            batch_size: 15,
+            nonce: nonce,
+          },
+          success: function(res) {
+            if (!res.success) {
+              $text.text('Error: ' + (res.data?.message || 'Cleanup failed'));
+              $btn.prop('disabled', false);
+              return;
+            }
+
+            const cleanedBatch = res.data.cleaned_count || 0;
+            const failedBatch = res.data.failed_count || 0;
+            const remaining = res.data.remaining || 0;
+            cleanedSoFar += cleanedBatch;
+
+            const pct = (cleanedSoFar + remaining) > 0 ? Math.min(100, Math.round((cleanedSoFar / (cleanedSoFar + remaining)) * 100)) : 100;
+            $fill.css('width', pct + '%');
+            $pct.text(pct + '%');
+            $text.text('Cleaned ' + cleanedSoFar + ' local files. ' + remaining + ' remaining...');
+
+            if (failedBatch > 0 && cleanedBatch === 0) {
+              $text.text('Stopped: R2 could not verify remaining files, or server could not delete them. No further files removed.');
+              $btn.prop('disabled', false);
+              return;
+            }
+
+            // Update verified count in UI
+            $('#r2g-verified-count').text(remaining);
+
+            // Update stats cards live
+            if (res.data.stats) {
+              $('#r2g-stat-synced').text(res.data.stats.synced || 0);
+              $('#r2g-stat-cloud').text(res.data.stats.cloud_only || 0);
+              $('#r2g-stat-local').text(res.data.stats.local_only || 0);
+            }
+
+            if (res.data.done || remaining === 0) {
+              $fill.css('width', '100%');
+              $pct.text('100%');
+              $text.html('<strong style="color:#059669;">✓ Verified local cleanup complete! Web hosting disk space freed.</strong>');
+              $btn.prop('disabled', true);
+              return;
+            }
+
+            setTimeout(cleanBatch, 300);
+          },
+          error: function() {
+            $text.text('Network glitch. Retrying cleanup in 3s...');
+            setTimeout(cleanBatch, 3000);
+          }
+        });
+      }
+
+      cleanBatch();
+    });
+
+    // Database Index Maintenance & Legacy Import
+    $('#r2g-btn-import-legacy').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#r2g-import-status');
+
+      $btn.prop('disabled', true).text('Scanning & Importing...');
+      $status.css('color', '#64748b').text('Scanning Media Cloud Sync & previous offload records...');
 
       $.ajax({
         url: ajaxurl,
         type: 'POST',
         dataType: 'json',
         data: {
-          action: 'astropress_sync_batch',
-          offset: syncOffset,
-          batch_size: 10,
+          action: 'astropress_import_legacy',
           nonce: nonce,
         },
         success: function(res) {
-          if (res.success && res.data) {
-            const total = res.data.total || 0;
-            const synced = res.data.synced || 0;
-            const processed = res.data.processed || 0;
-
-            if (res.data.logs && res.data.logs.length > 0) {
-              res.data.logs.forEach(function(l) {
-                $('#astropress-sync-log').append(l + '\n');
-              });
-              const syncLog = document.getElementById('astropress-sync-log');
-              if (syncLog) syncLog.scrollTop = syncLog.scrollHeight;
-            }
-
-            const pct = (total > 0) ? Math.min(100, Math.round((synced / total) * 100)) : 100;
-            $('#astropress-sync-progress-bar').css('width', pct + '%');
-            $('#astropress-sync-counter').text(synced + ' / ' + total + ' synced (' + pct + '%)');
-
-            if (res.data.complete || processed === 0) {
-              $('#astropress-sync-log').append('✓ Bulk media sync complete!\n');
-              finishSync();
-            } else {
-              syncOffset += processed;
-              setTimeout(processSyncBatch, 300);
+          if (res.success) {
+            $status.css('color', '#059669').html('<strong>✓ ' + res.data.message + '</strong>');
+            if (res.data.stats) {
+              $('#r2g-stat-synced').text(res.data.stats.synced || 0);
+              $('#r2g-stat-cloud').text(res.data.stats.cloud_only || 0);
+              $('#r2g-stat-local').text(res.data.stats.local_only || 0);
             }
           } else {
-            $('#astropress-sync-log').append('✗ Sync error: ' + (res.data?.message || 'Unknown') + '\n');
-            finishSync();
+            $status.css('color', '#dc2626').text(res.data?.message || 'Import failed.');
           }
         },
-        error: function(xhr, status, err) {
-          $('#astropress-sync-log').append('✗ Network error during sync: ' + err + '\n');
-          finishSync();
+        error: function() {
+          $status.css('color', '#dc2626').text('Network request failed.');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-database-import" style="vertical-align:-2px;"></span> Import Existing Offloaded Media');
         }
       });
-    }
+    });
 
-    function finishSync() {
-      syncActive = false;
-      $('#astropress-cancel-sync').hide();
-      $('#astropress-start-sync').show().html('<span class="dashicons dashicons-upload"></span> Sync All to Cloudflare R2');
-    }
-
-    $('#astropress-cancel-sync').on('click', function(e) {
+    $('#r2g-btn-reindex').on('click', function(e) {
       e.preventDefault();
-      syncActive = false;
-      finishSync();
-      $('#astropress-sync-log').append('— Sync stopped by user.\n');
+      const $btn = $(this);
+      const $status = $('#r2g-reindex-status');
+
+      $btn.prop('disabled', true).text('Scanning...');
+      $status.css('color', '#64748b').text('Verifying local files and database index...');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_reindex_media',
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.css('color', '#059669').html('<strong>✓ ' + res.data.message + '</strong>');
+            if (res.data.stats) {
+              $('#r2g-stat-synced').text(res.data.stats.synced || 0);
+              $('#r2g-stat-cloud').text(res.data.stats.cloud_only || 0);
+              $('#r2g-stat-local').text(res.data.stats.local_only || 0);
+            }
+          } else {
+            $status.css('color', '#dc2626').text(res.data?.message || 'Re-index failed.');
+          }
+        },
+        error: function() {
+          $status.css('color', '#dc2626').text('Network request failed.');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-image-rotate" style="vertical-align:-2px;"></span> Scan & Refresh Index');
+        }
+      });
     });
 
     // ========================================================
