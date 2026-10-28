@@ -462,33 +462,40 @@ class AstroPress_Admin {
     /**
      * Get Cloudflare API Token Template URL with pre-filled scopes & permissions
      *
-     * Pre-configures:
-     * - Cache Purge (Zone): Purge
-     * - Workers R2 (Account): Edit
-     * - Cloudflare Pages (Account): Edit
-     * - Page Rules / Cache Rules (Zone): Edit
-     * - Zone (Zone): Read
-     * - Account Settings (Account): Read
-     * - Zone DNS (Zone): Edit
-     * - Cloudflare Pages (Account): Edit
+     * Pre-configures exact Cloudflare Dashboard permissionGroupKeys:
+     * - Zone > Cache Purge (cache_purge): purge
+     * - Zone > Cache Rules / Settings (cache_settings): edit
+     * - Zone > Page Rules (page_rules): edit
+     * - Zone > DNS (zone_dns): edit
+     * - Zone > Zone (zone): read
+     * - Account > Workers R2 Storage (workers_r2): edit
+     * - Account > Cloudflare Pages (page): edit
+     * - Account > Account Settings (account_settings): read
      *
+     * @param array $target_keys Optional subset of keys to remediate
      * @return string
      */
     public function get_cf_token_template_url(array $target_keys = array()) {
         $all_permissions = array(
-            'cache_purge'        => array('key' => 'cache_purge',        'type' => 'purge'),
-            'cache_rules'        => array('key' => 'cache_rules',        'type' => 'edit'),
-            'page_rules'         => array('key' => 'page_rules',         'type' => 'edit'),
-            'dns'                => array('key' => 'dns',                'type' => 'edit'),
-            'zone'               => array('key' => 'zone',               'type' => 'read'),
-            'workers_r2_storage' => array('key' => 'workers_r2_storage', 'type' => 'edit'),
-            'pages'              => array('key' => 'pages',              'type' => 'edit'),
-            'account_settings'   => array('key' => 'account_settings',   'type' => 'read'),
+            'cache_purge'      => array('key' => 'cache_purge',      'type' => 'purge'),
+            'cache_settings'   => array('key' => 'cache_settings',   'type' => 'edit'),
+            'page_rules'       => array('key' => 'page_rules',       'type' => 'edit'),
+            'zone_dns'         => array('key' => 'zone_dns',         'type' => 'edit'),
+            'zone'             => array('key' => 'zone',             'type' => 'read'),
+            'workers_r2'       => array('key' => 'workers_r2',       'type' => 'edit'),
+            'page'             => array('key' => 'page',             'type' => 'edit'),
+            'account_settings' => array('key' => 'account_settings', 'type' => 'read'),
         );
 
+        // Comprehensive alias map from friendly names to exact Cloudflare dashboard keys
         $alias_map = array(
-            'workers_r2' => array('workers_r2_storage'),
-            'page'       => array('pages'),
+            'cache_rules'        => array('cache_settings'),
+            'dns'                => array('zone_dns'),
+            'workers_r2_storage' => array('workers_r2'),
+            'r2_storage'         => array('workers_r2'),
+            'pages'              => array('page'),
+            'accounts'           => array('account_settings'),
+            'zones'              => array('zone'),
         );
 
         $permissions = array();
@@ -524,42 +531,56 @@ class AstroPress_Admin {
             array(
                 'category' => 'Zone',
                 'name'     => 'Cache Purge',
+                'key'      => 'cache_purge',
                 'access'   => 'Purge',
                 'desc'     => 'Real-time cache invalidation on post/page publish & 1-click CDN edge purge',
             ),
             array(
                 'category' => 'Zone',
-                'name'     => 'Cache Rules',
+                'name'     => 'Cache Rules (Cache Settings)',
+                'key'      => 'cache_settings',
                 'access'   => 'Edit',
                 'desc'     => 'Modern Cloudflare Cache Rules deployment (1-year Edge & Browser TTL via Ruleset API)',
             ),
             array(
                 'category' => 'Zone',
+                'name'     => 'Page Rules',
+                'key'      => 'page_rules',
+                'access'   => 'Edit',
+                'desc'     => 'Fallback cache & edge rules for standard Cloudflare zones',
+            ),
+            array(
+                'category' => 'Zone',
                 'name'     => 'DNS',
+                'key'      => 'zone_dns',
                 'access'   => 'Edit',
                 'desc'     => 'Auto-verify DNS records & 1-click attach custom CDN domains to R2',
             ),
             array(
                 'category' => 'Zone',
                 'name'     => 'Zone',
+                'key'      => 'zone',
                 'access'   => 'Read',
                 'desc'     => 'Auto-discovery of domain Zone ID',
             ),
             array(
                 'category' => 'Account',
                 'name'     => 'Workers R2 Storage',
+                'key'      => 'workers_r2',
                 'access'   => 'Edit',
                 'desc'     => 'Single-Token zero-egress media uploads & bucket management',
             ),
             array(
                 'category' => 'Account',
                 'name'     => 'Cloudflare Pages',
+                'key'      => 'page',
                 'access'   => 'Edit',
                 'desc'     => 'Zero-touch push of environment variables (REVALIDATE_SECRET, WP_API_URL)',
             ),
             array(
                 'category' => 'Account',
                 'name'     => 'Account Settings',
+                'key'      => 'account_settings',
                 'access'   => 'Read',
                 'desc'     => 'Cloudflare Account ID discovery',
             ),
@@ -572,7 +593,7 @@ class AstroPress_Admin {
      * @return string
      */
     public function get_cf_permissions_recipe_text() {
-        return "Token Name: AstroPress Universal Bridge\n\nPermissions:\n1. Zone > Cache Purge > Purge\n2. Zone > Cache Rules > Edit\n3. Zone > Page Rules > Edit\n4. Zone > DNS > Edit\n5. Zone > Zone > Read\n6. Account > Workers R2 Storage > Edit\n7. Account > Cloudflare Pages > Edit\n8. Account > Account Settings > Read\n\nAccount Resources: Include > All accounts (or your account)\nZone Resources: Include > All zones (or your domain)";
+        return "Token Name: AstroPress Universal Bridge\n\nPermissions:\n1. Zone > Cache Purge > Purge\n2. Zone > Cache Rules (or Cache Settings) > Edit\n3. Zone > Page Rules > Edit\n4. Zone > DNS > Edit\n5. Zone > Zone > Read\n6. Account > Workers R2 Storage > Edit\n7. Account > Cloudflare Pages > Edit\n8. Account > Account Settings > Read\n\nAccount Resources: Include > All accounts (or your account)\nZone Resources: Include > All zones (or your domain)";
     }
 
     /**
@@ -2165,19 +2186,19 @@ class AstroPress_Admin {
             $missing_scope_keys[] = 'cache_purge';
         }
         if (!$can_cache_rules) {
-            $missing_scope_keys[] = 'cache_rules';
+            $missing_scope_keys[] = 'cache_settings';
         }
         if (!$can_dns) {
-            $missing_scope_keys[] = 'dns';
+            $missing_scope_keys[] = 'zone_dns';
         }
         if (empty($zones)) {
             $missing_scope_keys[] = 'zone';
         }
         if (!$can_r2) {
-            $missing_scope_keys[] = 'workers_r2_storage';
+            $missing_scope_keys[] = 'workers_r2';
         }
         if (!$can_pages) {
-            $missing_scope_keys[] = 'pages';
+            $missing_scope_keys[] = 'page';
         }
         if (empty($accounts)) {
             $missing_scope_keys[] = 'account_settings';
@@ -2282,8 +2303,20 @@ class AstroPress_Admin {
             ));
         }
 
-        $err_msg = $body['errors'][0]['message'] ?? sprintf(esc_html__('HTTP %d returned by Cloudflare Ruleset API.', 'astropress'), $code);
-        wp_send_json_error(array('message' => $err_msg));
+        $err_msg  = $body['errors'][0]['message'] ?? sprintf(esc_html__('HTTP %d returned by Cloudflare Ruleset API.', 'astropress'), $code);
+        $err_code = (int) ($body['errors'][0]['code'] ?? $code);
+
+        // Friendly actionable detection for missing Cache Rules permission
+        if ($code === 401 || $code === 403 || $err_code === 10000 || stripos($err_msg, 'authentication error') !== false) {
+            wp_send_json_error(array(
+                'message'       => esc_html__('Cloudflare API Token is missing the "Zone > Cache Rules: Edit" (internal key: cache_settings) permission. Please update your token in Cloudflare or re-create it via the Setup Wizard.', 'astropress'),
+                'code'          => 10000,
+                'missing_scope' => 'cache_settings',
+                'fix_token_url' => $this->get_cf_token_template_url(array('cache_settings')),
+            ));
+        }
+
+        wp_send_json_error(array('message' => $err_msg, 'code' => $err_code));
     }
 
     /**
@@ -2426,8 +2459,18 @@ class AstroPress_Admin {
             $existing_rules = array();
         } else {
             $body = json_decode(wp_remote_retrieve_body($get_res), true);
-            $err_msg = $body['errors'][0]['message'] ?? ('HTTP ' . $get_code);
-            wp_send_json_error(array('message' => 'Could not fetch existing cache rules from Cloudflare: ' . $err_msg));
+            $err_msg  = $body['errors'][0]['message'] ?? ('HTTP ' . $get_code);
+            $err_code = (int) ($body['errors'][0]['code'] ?? $get_code);
+
+            if ($get_code === 401 || $get_code === 403 || $err_code === 10000 || stripos($err_msg, 'authentication error') !== false) {
+                wp_send_json_error(array(
+                    'message'       => esc_html__('Could not fetch existing cache rules: Your Cloudflare API Token is missing the "Zone > Cache Rules: Edit" (permission key: cache_settings). Please re-generate or update your token.', 'astropress'),
+                    'code'          => 10000,
+                    'missing_scope' => 'cache_settings',
+                    'fix_token_url' => $this->get_cf_token_template_url(array('cache_settings')),
+                ));
+            }
+            wp_send_json_error(array('message' => 'Could not fetch existing cache rules from Cloudflare: ' . $err_msg, 'code' => $err_code));
         }
 
         $clean_rules = array();
@@ -2488,8 +2531,19 @@ class AstroPress_Admin {
             ));
         }
 
-        $err_msg = $put_body['errors'][0]['message'] ?? sprintf(esc_html__('Cloudflare returned status code %d', 'astropress'), $put_code);
-        wp_send_json_error(array('message' => $err_msg));
+        $err_msg  = $put_body['errors'][0]['message'] ?? sprintf(esc_html__('Cloudflare returned status code %d', 'astropress'), $put_code);
+        $err_code = (int) ($put_body['errors'][0]['code'] ?? $put_code);
+
+        if ($put_code === 401 || $put_code === 403 || $err_code === 10000 || stripos($err_msg, 'authentication error') !== false) {
+            wp_send_json_error(array(
+                'message'       => esc_html__('Could not deploy Cache Rule: Cloudflare API Token is missing "Zone > Cache Rules: Edit" (permission key: cache_settings).', 'astropress'),
+                'code'          => 10000,
+                'missing_scope' => 'cache_settings',
+                'fix_token_url' => $this->get_cf_token_template_url(array('cache_settings')),
+            ));
+        }
+
+        wp_send_json_error(array('message' => $err_msg, 'code' => $err_code));
     }
 
     /**
@@ -2933,10 +2987,10 @@ class AstroPress_Admin {
                                 <div>
                                     <strong style="color:#0f172a; font-size:13px;"><?php esc_html_e('Need an API Token?', 'astropress'); ?></strong>
                                     <p style="margin:2px 0 0 0; font-size:12px; color:#64748b;">
-                                        <?php esc_html_e('Click below to create a pre-configured scoped token with all 7 exact permissions on Cloudflare.', 'astropress'); ?>
+                                        <?php esc_html_e('Click below to create a pre-configured scoped token with all 8 exact permissions on Cloudflare.', 'astropress'); ?>
                                     </p>
                                 </div>
-                                <div style="display:flex; gap:8px; align-items:center;">
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                     <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
                                         <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('Create Scoped Token on Cloudflare', 'astropress'); ?> &rarr;
                                     </a>
@@ -2949,8 +3003,8 @@ class AstroPress_Admin {
                             <!-- Blueprint Table (Collapsible) -->
                             <div id="onboard-blueprint-wrap" style="display:none; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-top:12px;">
                                 <strong style="font-size:12px; color:#1e293b; display:block; margin-bottom:6px;"><?php esc_html_e('Required Token Scopes & Permissions:', 'astropress'); ?></strong>
-                                <div class="astropress-table-responsive">
-                                <table class="widefat striped" style="font-size:12px; margin-bottom:8px; min-width:540px;">
+                                <div class="astropress-table-responsive" style="overflow-x:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:100%;">
+                                <table class="widefat striped" style="font-size:12px; margin-bottom:8px; width:100%;">
                                     <thead>
                                         <tr>
                                             <th><?php esc_html_e('Category', 'astropress'); ?></th>
@@ -2976,14 +3030,14 @@ class AstroPress_Admin {
                             <!-- Token Connected Card (Shown when token is saved/verified) -->
                             <div id="onboard-token-connected-card" style="<?php echo !empty($cf_token) ? '' : 'display:none;'; ?> background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; margin-top:14px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                                    <div style="display:flex; align-items:center; gap:10px;">
+                                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                                         <span class="dashicons dashicons-shield-alt" style="font-size:28px; width:28px; height:28px; color:#059669;"></span>
                                         <div>
-                                            <div style="display:flex; align-items:center; gap:8px;">
+                                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                                                 <strong style="color:#0f172a; font-size:13px;"><?php esc_html_e('Cloudflare Scoped Token Active', 'astropress'); ?></strong>
                                                 <span class="astropress-badge" style="background:#ecfdf5; color:#065f46; font-size:11px; padding:2px 8px;"><?php esc_html_e('Connected', 'astropress'); ?></span>
                                             </div>
-                                            <div style="font-size:12px; color:#64748b; margin-top:2px; font-family:monospace;">
+                                            <div style="font-size:12px; color:#64748b; margin-top:2px; font-family:monospace; word-break:break-all;">
                                                 <span>••••••••••••••••••••••••••••••••</span>
                                                 <?php if (!empty($cf_zone_id)): ?>
                                                     &bull; <span>Zone: <?php echo esc_html(substr($cf_zone_id, 0, 8)); ?>••••</span>
@@ -2991,7 +3045,7 @@ class AstroPress_Admin {
                                             </div>
                                         </div>
                                     </div>
-                                    <div style="display:flex; gap:8px; align-items:center;">
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                         <button type="button" class="button button-secondary" id="onboard-verify-token-btn">
                                             <span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <?php esc_html_e('Check Connection', 'astropress'); ?>
                                         </button>

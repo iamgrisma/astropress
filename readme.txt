@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.02
+Stable tag: 2.0.03
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.03 =
+* Resolved Scoped Token Prefill: Fixed internal permission keys for `cache_settings`, `zone_dns`, `workers_r2`, and `page`, ensuring all 8 essential permissions pre-populate accurately in Cloudflare's dashboard.
+* Actionable Cache Rules Error Detection: Replaced generic "Authentication error" with guided 1-click token re-generation when `Zone > Cache Rules: Edit` scope is absent.
+* Smart Token Re-verification: Enabled "Check Connection" to seamlessly re-verify saved credentials without triggering false "Please enter token first" prompts, keeping drawer closed on success and opening on error.
+* Fully Responsive Setup Wizard: Eliminated mobile table and button overflows, ensuring 100% viewport containment and zero horizontal scrolling on mobile viewports.
+* Retired Legacy Webhook Ping: Streamlined frontend reachability indicator to verify Cloudflare Edge deployment and Astro SSR status cleanly.
 
 = 2.0.02 =
 * Setup Wizard Polish: Added masked token connected card with Check Connection and Change Token drawers, preventing raw token exposure.

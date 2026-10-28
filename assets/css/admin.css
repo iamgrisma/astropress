@@ -829,9 +829,46 @@
   padding: 0 8px;
 }
 
+.astropress-wizard-wrap {
+  width: 100% !important;
+  max-width: 880px !important;
+  box-sizing: border-box !important;
+  margin: 16px auto !important;
+}
+
+.astropress-wizard-step {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.astropress-table-responsive {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  display: block !important;
+}
+
+body.toplevel_page_astropress,
+body.astropress_page_astropress {
+  overflow-x: hidden !important;
+}
+
+body.toplevel_page_astropress #wpcontent,
+body.astropress_page_astropress #wpcontent,
+body.toplevel_page_astropress #wpbody,
+body.astropress_page_astropress #wpbody,
+body.toplevel_page_astropress #wpbody-content,
+body.astropress_page_astropress #wpbody-content {
+  overflow-x: hidden !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
 @media screen and (max-width: 782px) {
   .astropress-wrap {
-    margin: 10px 0 20px 0 !important;
+    margin: 8px 0 20px 0 !important;
     max-width: 100% !important;
     width: 100% !important;
     overflow-x: hidden !important;
@@ -840,9 +877,35 @@
 
   .astropress-card,
   .astropress-wizard-wrap {
-    padding: 16px 14px !important;
+    padding: 14px 10px !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  .astropress-wizard-step {
+    padding: 12px 10px !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+  }
+
+  .astropress-wizard-wrap .button,
+  .astropress-card .button {
+    white-space: normal !important;
+    height: auto !important;
+    min-height: 32px !important;
+    line-height: 1.4 !important;
+    padding: 6px 12px !important;
+    text-align: center !important;
+    max-width: 100% !important;
+  }
+
+  .astropress-wizard-wrap div[style*="display:flex"],
+  .astropress-wizard-wrap div[style*="display: flex"],
+  .astropress-card div[style*="display:flex"],
+  .astropress-card div[style*="display: flex"] {
+    flex-wrap: wrap !important;
   }
 
   .astropress-header {

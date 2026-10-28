@@ -1708,12 +1708,21 @@
       $(btnSelector).on('click', function(e) {
         e.preventDefault();
         const $btn = $(this);
-        const token = $(tokenInputSelector).val().trim();
+        let token = $(tokenInputSelector).val() ? $(tokenInputSelector).val().trim() : '';
         const $results = $(resultsContainerSelector);
+        const hasSavedToken = $('#onboard-token-connected-card').length > 0 && $('#onboard-token-connected-card').is(':visible');
 
-        if (!token) {
+        // Only prompt if both the input field AND the saved token are absent
+        if (!token && !hasSavedToken) {
           alert('Please paste your Cloudflare API Token first.');
           return;
+        }
+
+        const $verifyBtn = $('#onboard-verify-token-btn');
+        let origVerifyHtml = '';
+        if ($verifyBtn.length) {
+          origVerifyHtml = $verifyBtn.html();
+          $verifyBtn.prop('disabled', true).html('<span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> Verifying...');
         }
 
         $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Discovering...');
@@ -1836,11 +1845,15 @@
                   }
                 }
               }
+
+              // On verified success, keep field closed and update connected card
               if ($('#onboard-token-connected-card').length) {
                 $('#onboard-token-connected-card').slideDown(150);
                 $('#onboard-token-input-drawer').slideUp(150);
+                $(tokenInputSelector).val('');
               }
             } else {
+              // On error, reveal drawer and focus token input so user can replace/fix it
               if ($('#onboard-token-input-drawer').length) {
                 $('#onboard-token-input-drawer').slideDown(150);
                 $('#onboard-token-connected-card').slideUp(150);
@@ -1857,6 +1870,9 @@
             $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span></div>');
           },
           complete: function() {
+            if ($verifyBtn.length && origVerifyHtml) {
+              $verifyBtn.prop('disabled', false).html(origVerifyHtml);
+            }
             $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Auto-Discover & Verify Token');
           }
         });
@@ -2040,7 +2056,7 @@
       }
 
       $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Pinging...');
-      $badge.show().html('<div class="astropress-detect-pill is-loading"><span class="dashicons dashicons-update"></span> Pinging ' + url + ' & testing /api/revalidate...</div>');
+      $badge.show().html('<div class="astropress-detect-pill is-loading"><span class="dashicons dashicons-update"></span> Pinging ' + url + ' & verifying Edge deployment...</div>');
 
       $.ajax({
         url: ajaxurl,
@@ -2066,11 +2082,8 @@
             html += '</div>';
             html += '</div>';
 
-            // Webhook route indicator
-            if (d.webhook_reachable) {
-              html += '<span class="astropress-badge" style="background:#ecfdf5; color:#065f46; font-size:11px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Webhook /api/revalidate Active</span>';
-            } else {
-              html += '<span class="astropress-badge" style="background:#fffbeb; color:#b45309; font-size:11px;">ℹ Webhook Route Not Mounted (HTTP ' + d.webhook_status + ')</span>';
+            if (d.reachable) {
+              html += '<span class="astropress-badge" style="background:#ecfdf5; color:#065f46; font-size:11px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Edge Architecture Verified</span>';
             }
             html += '</div>';
             html += '</div>';
@@ -2084,7 +2097,7 @@
           $badge.html('<div class="astropress-detect-pill is-error"><span class="dashicons dashicons-warning"></span> Ping request error: ' + err + '</div>');
         },
         complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Ping & Detect Frontend');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Ping & Verify Reachability');
         }
       });
     }
@@ -2493,7 +2506,20 @@
             tbl += '</tbody></table></div>';
             $container.html(tbl);
           } else {
-            $container.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:12px; color:#991b1b; font-size:13px;"><strong>Failed to load rules:</strong> ' + (res.data ? res.data.message : 'Error') + '</div>');
+            const errMsg = res.data ? res.data.message : 'Error';
+            let errHtml = '<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:16px; color:#991b1b; font-size:13px;">';
+            errHtml += '<div style="display:flex; align-items:flex-start; gap:10px;">';
+            errHtml += '<span class="dashicons dashicons-warning" style="font-size:22px; width:22px; height:22px; color:#dc2626; flex-shrink:0;"></span>';
+            errHtml += '<div style="flex:1;">';
+            errHtml += '<strong style="display:block; font-size:14px; margin-bottom:4px;">Failed to load rules: ' + escapeHtml(errMsg) + '</strong>';
+            if (res.data && res.data.fix_token_url) {
+              errHtml += '<p style="margin:8px 0 10px 0; color:#7f1d1d; font-size:12px;">Your Cloudflare API Token needs the <strong>Zone &gt; Cache Rules: Edit</strong> permission (internal key: <code>cache_settings</code>). Click below to re-generate your token with all required permissions in 1 click.</p>';
+              errHtml += '<a href="' + res.data.fix_token_url + '" target="_blank" rel="noopener noreferrer" class="button button-primary button-small" style="background:#dc2626; border-color:#b91c1c;">';
+              errHtml += '<span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> Re-create Scoped Token with Cache Rules &rarr;';
+              errHtml += '</a>';
+            }
+            errHtml += '</div></div></div>';
+            $container.html(errHtml);
           }
         },
         error: function(xhr, status, err) {
