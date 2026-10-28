@@ -105,13 +105,11 @@ function astropress_register_legacy_shims() {
 
     // TopNepali Headless Compatibility
     if (!class_exists('TopNepali_Headless', false)) {
-        if (!defined('TOPNEPALI_HEADLESS_VERSION')) define('TOPNEPALI_HEADLESS_VERSION', ASTROPRESS_VERSION);
-        if (!defined('TOPNEPALI_HEADLESS_FILE'))    define('TOPNEPALI_HEADLESS_FILE', ASTROPRESS_FILE);
-        if (!defined('TOPNEPALI_HEADLESS_PATH'))    define('TOPNEPALI_HEADLESS_PATH', ASTROPRESS_PATH);
-        if (!defined('TOPNEPALI_HEADLESS_URL'))     define('TOPNEPALI_HEADLESS_URL', ASTROPRESS_URL);
-
         if (!function_exists('topnepali_headless')) {
             function topnepali_headless() {
+                if (class_exists('TopNepali_Headless', false)) {
+                    return TopNepali_Headless::instance();
+                }
                 return astropress();
             }
         }
@@ -127,7 +125,7 @@ function astropress_register_legacy_shims() {
         );
 
         foreach ($tn_aliases as $alias => $original) {
-            if (!class_exists($alias, false)) {
+            if (!class_exists($alias, false) && class_exists($original, false)) {
                 class_alias($original, $alias);
             }
         }
