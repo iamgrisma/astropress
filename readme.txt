@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.04
+Stable tag: 2.0.05
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,14 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.05 =
+* Deep Architectural Debloat: Retired legacy TopNepali Headless class aliases and shims, eliminating over 640 lines of duplicate and dead code across PHP, JS, and CSS.
+* Purged Duplicate Database Writes: Removed unnecessary dual-writes to legacy `topnepali_headless_*` options across all settings forms.
+* Clean Cache Warmer Standardization: Fully migrated Warmer UI IDs, classes, and AJAX hooks to the unified `astropress-*` namespace.
+* XML Sitemap CDATA Support: Enhanced XML sitemap crawler to robustly extract `<loc>` URLs containing CDATA wrappers or whitespace, resolving "No URLs found for selected scope".
+* Background Warmer Progress Sync: Fixed background job progress counter so live batches accurately increment UI counts and progress bar percentages in real time.
+* Cleaned 270+ Lines of Dead CSS: Pruned obsolete wizard steps, onboarding banners, and unused selector blocks from admin stylesheets.
 
 = 2.0.04 =
 * Radical DOM Flattening: Slashed Setup Wizard DOM nesting depth from 10 nested wrappers down to 2 semantic levels (`.astropress-wizard > .wizard-section`), eliminating container traps and excess wrapper padding.
