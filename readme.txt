@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.2
+Stable tag: 1.2.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,14 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.3 =
+* Flexible Architecture Modes: Introduced 1-Click Full Architecture mode (Astro Pages frontend, Cloudflare Edge, cache purge, cache warmer, R2 media storage, CDN cache rules, subdomain protection) and Modular/Selective mode for users requiring targeted submodules.
+* Zero-Touch Cloudflare Pages Secret Sync: Direct push of REVALIDATE_SECRET, WP_API_URL, and API_URL directly into Cloudflare Pages Production & Preview deployment configs via Cloudflare REST API (eliminating manual dashboard copy-pasting).
+* Live Frontend Auto-Detection: Real-time URL detector measuring ping latency, HTTP status code, Cloudflare Edge ray headers, Astro framework presence, and /api/revalidate webhook endpoint reachability.
+* Public CDN Domain & Edge Cache Rule Audit: Automated inspection of DNS proxying, R2 bucket custom domain attachment, and 1-Year Cache Everything rules, featuring 1-click domain attachment and rule deployment.
+* Cloudflare DNS Scoped Permission Integration: Added Zone > DNS: Edit to the token permission blueprint and live quick connect audit for seamless custom CDN domain attachment.
+* Universal Astro Backend API Resolver: Added production-ready TypeScript snippet supporting explicit WP_API_URL / API_URL environment variables, tester worker endpoints, and dynamic fallback to https://wp.{rootDomain}.
 
 = 1.2.2 =
 * Unified Single-Token Architecture: Support native Cloudflare Bearer REST API for R2 object storage, uploads, deletions, and bucket discovery—eliminating mandatory S3 credentials for normal users while maintaining full SigV4 compatibility.

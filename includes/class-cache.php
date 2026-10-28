@@ -836,6 +836,379 @@ class AstroPress_Cache {
         }
     }
 
+    /**
+     * Push Environment Variables directly to a Cloudflare Pages Project
+     *
+     * Injects REVALIDATE_SECRET, WP_API_URL, etc., into both production & preview environments.
+     *
+     * @param string $project_name
+     * @param array $env_vars Associative array of key => value pairs
+     * @param string $account_id
+     * @param string $token
+     * @return array [ 'success' => bool, 'message' => string ]
+     */
+    public function sync_pages_env($project_name, $env_vars, $account_id = '', $token = '') {
+        $project_name = sanitize_text_field($project_name);
+        $account_id   = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
+        $token        = $token ?: $this->core->get_cf_api_token();
+
+        if (empty($project_name) || empty($account_id) || empty($token)) {
+            return array('success' => false, 'message' => esc_html__('Missing Pages Project Name, Account ID, or Cloudflare API Token.', 'astropress'));
+        }
+
+        // 1. Fetch current project configuration to avoid overwriting unrelated environment variables
+        $get_url = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/pages/projects/" . rawurlencode($project_name);
+        $get_res = wp_remote_get($get_url, array(
+            'timeout' => 12,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+
+        if (is_wp_error($get_res)) {
+            return array('success' => false, 'message' => 'Connection error: ' . $get_res->get_error_message());
+        }
+
+        $get_code = wp_remote_retrieve_response_code($get_res);
+        $get_body = json_decode(wp_remote_retrieve_body($get_res), true);
+
+        if ($get_code !== 200 || empty($get_body['success'])) {
+            $err = !empty($get_body['errors'][0]['message']) ? $get_body['errors'][0]['message'] : "HTTP {$get_code}";
+            return array('success' => false, 'message' => sprintf(esc_html__('Could not read Pages project "%s": %s', 'astropress'), $project_name, $err));
+        }
+
+        $project_data = $get_body['result'] ?? array();
+        $prod_env = $project_data['deployment_configs']['production']['env_vars'] ?? array();
+        $prev_env = $project_data['deployment_configs']['preview']['env_vars'] ?? array();
+
+        // 2. Merge new variables into production and preview maps
+        foreach ($env_vars as $k => $v) {
+            $prod_env[$k] = array('value' => (string) $v, 'type' => 'plain_text');
+            $prev_env[$k] = array('value' => (string) $v, 'type' => 'plain_text');
+        }
+
+        $patch_payload = array(
+            'deployment_configs' => array(
+                'production' => array('env_vars' => $prod_env),
+                'preview'    => array('env_vars' => $prev_env),
+            ),
+        );
+
+        $patch_res = wp_remote_request($get_url, array(
+            'method'  => 'PATCH',
+            'timeout' => 15,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'    => wp_json_encode($patch_payload),
+        ));
+
+        if (is_wp_error($patch_res)) {
+            return array('success' => false, 'message' => 'Update failed: ' . $patch_res->get_error_message());
+        }
+
+        $patch_code = wp_remote_retrieve_response_code($patch_res);
+        $patch_body = json_decode(wp_remote_retrieve_body($patch_res), true);
+
+        if ($patch_code === 200 && !empty($patch_body['success'])) {
+            return array(
+                'success' => true,
+                'message' => sprintf(esc_html__('Successfully synced %d environment variable(s) to Cloudflare Pages project "%s" (Production & Preview)!', 'astropress'), count($env_vars), $project_name),
+            );
+        }
+
+        $patch_err = !empty($patch_body['errors'][0]['message']) ? $patch_body['errors'][0]['message'] : "HTTP {$patch_code}";
+        return array('success' => false, 'message' => sprintf(esc_html__('Cloudflare Pages API error: %s (Ensure token has "Account > Cloudflare Pages: Edit" permission).', 'astropress'), $patch_err));
+    }
+
+    /**
+     * Audit Custom CDN Domain for DNS, R2 Bucket Attachment & Edge Caching Rules
+     *
+     * @param string $custom_domain
+     * @param string $zone_id
+     * @param string $account_id
+     * @param string $bucket_name
+     * @param string $token
+     * @return array
+     */
+    public function audit_cdn_domain($custom_domain, $zone_id, $account_id = '', $bucket_name = '', $token = '') {
+        $parsed = wp_parse_url($custom_domain);
+        $host   = !empty($parsed['host']) ? $parsed['host'] : trim($custom_domain, '/');
+        $zone_id = sanitize_text_field($zone_id ?: $this->core->get_cf_zone_id());
+        $account_id = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
+        $bucket_name = sanitize_text_field($bucket_name ?: get_option('r2g_bucket', ''));
+        $token   = $token ?: $this->core->get_cf_api_token();
+
+        if (empty($host) || empty($zone_id) || empty($token)) {
+            return array('success' => false, 'message' => esc_html__('Domain, Zone ID, and API Token are required.', 'astropress'));
+        }
+
+        $headers = array('Authorization' => 'Bearer ' . $token);
+
+        // A. Check DNS Record on Cloudflare Zone
+        $dns_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/dns_records?name=" . rawurlencode($host);
+        $dns_res = wp_remote_get($dns_url, array('timeout' => 8, 'headers' => $headers));
+        $dns_found = false;
+        $dns_proxied = false;
+        $dns_content = '';
+        if (!is_wp_error($dns_res) && wp_remote_retrieve_response_code($dns_res) === 200) {
+            $dns_body = json_decode(wp_remote_retrieve_body($dns_res), true);
+            if (!empty($dns_body['result']) && is_array($dns_body['result']) && count($dns_body['result']) > 0) {
+                $dns_found = true;
+                $dns_proxied = !empty($dns_body['result'][0]['proxied']);
+                $dns_content = $dns_body['result'][0]['content'] ?? '';
+            }
+        }
+
+        // B. Check R2 Custom Domains Attachment
+        $r2_attached = false;
+        $r2_status = '';
+        if (!empty($account_id) && !empty($bucket_name)) {
+            $r2_cd_url = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
+            $r2_cd_res = wp_remote_get($r2_cd_url, array('timeout' => 8, 'headers' => $headers));
+            if (!is_wp_error($r2_cd_res) && wp_remote_retrieve_response_code($r2_cd_res) === 200) {
+                $r2_cd_body = json_decode(wp_remote_retrieve_body($r2_cd_res), true);
+                if (!empty($r2_cd_body['result']['domains']) && is_array($r2_cd_body['result']['domains'])) {
+                    foreach ($r2_cd_body['result']['domains'] as $d) {
+                        if (strcasecmp($d['domain'] ?? '', $host) === 0) {
+                            $r2_attached = true;
+                            $r2_status = $d['status']['state'] ?? 'active';
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // C. Check Cache Rules / Page Rules
+        $pattern = "*{$host}/*";
+        $rule_status = 'missing';
+        $rule_id = '';
+        $rule_desc = '';
+        $rules_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/pagerules?status=active&per_page=50";
+        $rules_res = wp_remote_get($rules_url, array('timeout' => 8, 'headers' => $headers));
+        if (!is_wp_error($rules_res) && wp_remote_retrieve_response_code($rules_res) === 200) {
+            $rules_body = json_decode(wp_remote_retrieve_body($rules_res), true);
+            if (!empty($rules_body['result']) && is_array($rules_body['result'])) {
+                foreach ($rules_body['result'] as $r) {
+                    $val = $r['targets'][0]['constraint']['value'] ?? '';
+                    if ($val === $pattern || strpos($val, $host) !== false) {
+                        $rule_id = $r['id'] ?? '';
+                        $is_cache_everything = false;
+                        $has_long_ttl = false;
+                        if (!empty($r['actions']) && is_array($r['actions'])) {
+                            foreach ($r['actions'] as $act) {
+                                if ($act['id'] === 'cache_level' && $act['value'] === 'cache_everything') {
+                                    $is_cache_everything = true;
+                                }
+                                if ($act['id'] === 'edge_cache_ttl' && $act['value'] >= 86400) {
+                                    $has_long_ttl = true;
+                                }
+                            }
+                        }
+                        if ($is_cache_everything && $has_long_ttl) {
+                            $rule_status = 'optimal';
+                            $rule_desc = '1-Year Cache Everything Active';
+                        } else {
+                            $rule_status = 'suboptimal';
+                            $rule_desc = 'Rule exists but lacks 1-year Cache Everything setting';
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        return array(
+            'success'          => true,
+            'host'             => $host,
+            'dns_found'        => $dns_found,
+            'dns_proxied'      => $dns_proxied,
+            'dns_content'      => $dns_content,
+            'r2_attached'      => $r2_attached,
+            'r2_status'        => $r2_status,
+            'rule_status'      => $rule_status,
+            'rule_id'          => $rule_id,
+            'rule_desc'        => $rule_desc,
+        );
+    }
+
+    /**
+     * Attach a Custom Domain to Cloudflare R2 Bucket
+     *
+     * @param string $bucket_name
+     * @param string $custom_domain
+     * @param string $zone_id
+     * @param string $zone_name
+     * @param string $account_id
+     * @param string $token
+     * @return array
+     */
+    public function attach_r2_custom_domain($bucket_name, $custom_domain, $zone_id, $zone_name = '', $account_id = '', $token = '') {
+        $parsed = wp_parse_url($custom_domain);
+        $host   = !empty($parsed['host']) ? $parsed['host'] : trim($custom_domain, '/');
+        $bucket_name = sanitize_text_field($bucket_name ?: get_option('r2g_bucket', ''));
+        $zone_id     = sanitize_text_field($zone_id ?: $this->core->get_cf_zone_id());
+        $account_id  = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
+        $token       = $token ?: $this->core->get_cf_api_token();
+
+        if (empty($host) || empty($bucket_name) || empty($zone_id) || empty($account_id) || empty($token)) {
+            return array('success' => false, 'message' => esc_html__('Missing required parameters to attach R2 custom domain.', 'astropress'));
+        }
+
+        $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
+        $payload = array(
+            'domain'   => $host,
+            'zoneId'   => $zone_id,
+            'zoneName' => $zone_name ?: $host,
+            'minTLS'   => '1.2',
+        );
+
+        $res = wp_remote_post($endpoint, array(
+            'timeout' => 15,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'    => wp_json_encode($payload),
+        ));
+
+        if (is_wp_error($res)) {
+            return array('success' => false, 'message' => 'Connection error: ' . $res->get_error_message());
+        }
+
+        $code = wp_remote_retrieve_response_code($res);
+        $body = json_decode(wp_remote_retrieve_body($res), true);
+
+        if ($code === 200 || $code === 201 || !empty($body['success'])) {
+            return array(
+                'success' => true,
+                'message' => sprintf(esc_html__('Custom domain "%s" attached to R2 bucket "%s" successfully! DNS routing is now active.', 'astropress'), $host, $bucket_name),
+            );
+        }
+
+        $err = !empty($body['errors'][0]['message']) ? $body['errors'][0]['message'] : "HTTP {$code}";
+        return array('success' => false, 'message' => sprintf(esc_html__('Failed to attach custom domain: %s (Requires "Zone > DNS: Edit" & "Account > Workers R2 Storage: Edit").', 'astropress'), $err));
+    }
+
+    /**
+     * Auto-Detect Active Astro Frontend & Revalidation Bridge on Entered URL
+     *
+     * Pings root and /api/revalidate to verify deployment status, Cloudflare edge,
+     * framework signatures, and webhook reachability.
+     *
+     * @param string $frontend_url
+     * @return array
+     */
+    public function detect_frontend($frontend_url) {
+        $url = trim($frontend_url);
+        if (empty($url)) {
+            return array(
+                'reachable' => false,
+                'message'   => esc_html__('No frontend URL provided.', 'astropress'),
+            );
+        }
+
+        if (!preg_match('#^https?://#i', $url)) {
+            $url = 'https://' . $url;
+        }
+
+        $url = rtrim($url, '/');
+
+        // 1. Ping root URL with latency measurement
+        $start_time = microtime(true);
+        $root_res = wp_remote_get($url, array(
+            'timeout'     => 10,
+            'redirection' => 3,
+            'sslverify'   => false,
+            'headers'     => array(
+                'User-Agent' => 'AstroPress-Bridge-Detector/1.2.3 (WordPress/' . get_bloginfo('version') . ')',
+            ),
+        ));
+        $latency_ms = round((microtime(true) - $start_time) * 1000);
+
+        if (is_wp_error($root_res)) {
+            return array(
+                'url'               => $url,
+                'reachable'         => false,
+                'root_status'       => 0,
+                'latency_ms'        => $latency_ms,
+                'is_astro'          => false,
+                'is_cloudflare'     => false,
+                'webhook_reachable' => false,
+                'webhook_status'    => 0,
+                'message'           => sprintf(esc_html__('Could not reach frontend URL: %s', 'astropress'), $root_res->get_error_message()),
+            );
+        }
+
+        $root_code = (int) wp_remote_retrieve_response_code($root_res);
+        $headers   = wp_remote_retrieve_headers($root_res);
+        $body      = wp_remote_retrieve_body($root_res);
+
+        // Analyze Cloudflare Edge signatures
+        $server_header = strtolower($headers['server'] ?? '');
+        $cf_ray        = $headers['cf-ray'] ?? '';
+        $is_cloudflare = strpos($server_header, 'cloudflare') !== false || !empty($cf_ray);
+
+        // Analyze Astro Framework signatures
+        $is_astro = false;
+        $confidence = 'unknown';
+
+        if (stripos($body, 'generator" content="Astro') !== false || stripos($body, 'astro-island') !== false || stripos($body, 'data-astro-') !== false) {
+            $is_astro = true;
+            $confidence = 'confirmed';
+        } elseif (stripos($body, '_astro/') !== false || stripos($body, 'astro') !== false) {
+            $is_astro = true;
+            $confidence = 'probable';
+        }
+
+        // 2. Ping /api/revalidate bridge endpoint
+        $webhook_url = $url . '/api/revalidate';
+        $wh_res = wp_remote_post($webhook_url, array(
+            'timeout'   => 8,
+            'sslverify' => false,
+            'headers'   => array(
+                'Content-Type' => 'application/json',
+                'User-Agent'   => 'AstroPress-Bridge-Detector/1.2.3',
+            ),
+            'body'      => wp_json_encode(array('action' => 'ping', 'timestamp' => time())),
+        ));
+
+        $webhook_reachable = false;
+        $webhook_code      = 0;
+
+        if (!is_wp_error($wh_res)) {
+            $webhook_code = (int) wp_remote_retrieve_response_code($wh_res);
+            // Any response other than 404 indicates the route exists and is mounted (200, 400, 401, 405)
+            if ($webhook_code !== 404 && $webhook_code > 0) {
+                $webhook_reachable = true;
+            }
+        }
+
+        $summary = sprintf(
+            esc_html__('Status %d in %dms. %s. Webhook route %s (HTTP %d).', 'astropress'),
+            $root_code,
+            $latency_ms,
+            $is_astro ? esc_html__('Astro frontend detected', 'astropress') : esc_html__('Frontend responding', 'astropress'),
+            $webhook_reachable ? esc_html__('active', 'astropress') : esc_html__('not found (404)', 'astropress'),
+            $webhook_code
+        );
+
+        return array(
+            'url'               => $url,
+            'reachable'         => ($root_code >= 200 && $root_code < 400),
+            'root_status'       => $root_code,
+            'latency_ms'        => $latency_ms,
+            'is_astro'          => $is_astro,
+            'confidence'        => $confidence,
+            'is_cloudflare'     => $is_cloudflare,
+            'cf_ray'            => !empty($cf_ray),
+            'webhook_url'       => $webhook_url,
+            'webhook_reachable' => $webhook_reachable,
+            'webhook_status'    => $webhook_code,
+            'message'           => $summary,
+        );
+    }
+
     public function __call($name, $arguments) {
         if (isset($this->core->warmer) && method_exists($this->core->warmer, $name)) {
             return call_user_func_array(array($this->core->warmer, $name), $arguments);
