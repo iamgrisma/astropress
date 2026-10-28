@@ -118,10 +118,10 @@ class AstroPress_Cache {
      * @param array $extra_urls
      * @return bool
      */
-    public function queue_invalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array()) {
+    public function queue_invalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $extra_data = array()) {
         // If debouncing is disabled, dispatch immediately
         if (!$this->core->should_debounce_webhooks()) {
-            return $this->dispatch_revalidation($slug, $type, $action, $extra_urls);
+            return $this->dispatch_revalidation($slug, $type, $action, $extra_urls, false, $extra_data);
         }
 
         if (!empty($slug)) {
@@ -140,6 +140,7 @@ class AstroPress_Cache {
             'slug'   => $slug,
             'type'   => $type,
             'action' => $action,
+            'data'   => $extra_data,
         );
 
         return true;
@@ -164,7 +165,14 @@ class AstroPress_Cache {
         $action = (count($events) === 1) ? $events[0]['action'] : 'update';
         $slug   = (count($unique_slugs) === 1) ? $unique_slugs[0] : null;
 
-        $this->dispatch_revalidation($slug, $type, $action, $unique_urls);
+        $extra_data = array();
+        foreach ($events as $ev) {
+            if (!empty($ev['data']) && is_array($ev['data'])) {
+                $extra_data = array_merge($extra_data, $ev['data']);
+            }
+        }
+
+        $this->dispatch_revalidation($slug, $type, $action, $unique_urls, false, $extra_data);
     }
 
     /**
@@ -175,22 +183,27 @@ class AstroPress_Cache {
      * @param string $action
      * @param array $extra_urls
      * @param bool $blocking Whether to wait for HTTP response (useful for test/resend)
+     * @param array $extra_data Dynamic post or page payload for in-memory snapshot updates
      * @return array Result summary with status and response info
      */
-    public function dispatch_revalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $blocking = false) {
+    public function dispatch_revalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $blocking = false, $extra_data = array()) {
         $frontend_url = $this->core->get_frontend_url();
         $secret       = $this->core->get_secret();
+        $cf_token     = $this->core->get_cf_api_token();
+        $cf_zone      = $this->core->get_cf_zone_id();
 
         $clean_urls = array_values(array_unique(array_filter((array)$extra_urls)));
 
-        $payload = array(
-            'slug'   => $slug,
-            'type'   => $type,
-            'action' => $action,
-            'urls'   => $clean_urls,
-            'time'   => current_time('mysql'),
-            'warm'   => true,
-        );
+        $payload = array_merge(array(
+            'slug'          => $slug,
+            'type'          => $type,
+            'action'        => $action,
+            'urls'          => $clean_urls,
+            'time'          => current_time('mysql'),
+            'warm'          => true,
+            'cf_api_token'  => $cf_token,
+            'cf_zone_id'    => $cf_zone,
+        ), is_array($extra_data) ? $extra_data : array());
 
         $results = array(
             'astro_webhook'  => null,
@@ -207,17 +220,22 @@ class AstroPress_Cache {
             }
             $start_time = microtime(true);
 
+            $headers = array(
+                'Content-Type'        => 'application/json',
+                'Origin'              => $frontend_url,
+                'Referer'             => $frontend_url,
+                'x-revalidate-secret' => $secret,
+            );
+            if (!empty($cf_token)) {
+                $headers['x-cf-api-token'] = $cf_token;
+            }
+
             $response = wp_remote_post($endpoint, array(
                 'method'      => 'POST',
                 'timeout'     => $blocking ? 10 : 5,
                 'blocking'    => $blocking,
                 'sslverify'   => true,
-                'headers'     => array(
-                    'Content-Type'        => 'application/json',
-                    'Origin'              => $frontend_url,
-                    'Referer'             => $frontend_url,
-                    'x-revalidate-secret' => $secret,
-                ),
+                'headers'     => $headers,
                 'body'        => wp_json_encode($payload),
                 'data_format' => 'body',
             ));
@@ -506,7 +524,30 @@ class AstroPress_Cache {
             $extra_urls[] = '/blog';
         }
 
-        $this->queue_invalidation($post->post_name, $post->post_type, $update ? 'update' : 'publish', array_unique(array_filter($extra_urls)));
+        $extra_data = array();
+        if ($post->post_type === 'post') {
+            if (class_exists('WP_REST_Request') && class_exists('WP_REST_Posts_Controller')) {
+                $req = new WP_REST_Request('GET', '/wp/v2/posts/' . $post_id);
+                $req->set_param('context', 'view');
+                $req->set_param('_embed', true);
+                $res = rest_do_request($req);
+                if (!$res->is_error()) {
+                    $extra_data['post'] = $res->get_data();
+                }
+            }
+        } elseif ($post->post_type === 'page') {
+            if (class_exists('WP_REST_Request') && class_exists('WP_REST_Posts_Controller')) {
+                $req = new WP_REST_Request('GET', '/wp/v2/pages/' . $post_id);
+                $req->set_param('context', 'view');
+                $req->set_param('_embed', true);
+                $res = rest_do_request($req);
+                if (!$res->is_error()) {
+                    $extra_data['page'] = $res->get_data();
+                }
+            }
+        }
+
+        $this->queue_invalidation($post->post_name, $post->post_type, $update ? 'update' : 'publish', array_unique(array_filter($extra_urls)), $extra_data);
     }
 
     /**

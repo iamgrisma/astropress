@@ -301,11 +301,23 @@ class AstroPress {
 
     public function get_cf_api_token() {
         $val = get_option(self::OPTION_CF_API_TOKEN, '');
-        return !empty($val) ? AstroPress_Encryption::decrypt($val) : '';
+        if (!empty($val)) {
+            return AstroPress_Encryption::decrypt($val);
+        }
+        $val2 = get_option('topnepali_headless_cf_api_token', '');
+        if (!empty($val2)) {
+            $dec = AstroPress_Encryption::decrypt($val2);
+            return !empty($dec) ? $dec : $val2;
+        }
+        return '';
     }
 
     public function get_cf_zone_id() {
-        return (string) get_option(self::OPTION_CF_ZONE_ID, '');
+        $val = get_option(self::OPTION_CF_ZONE_ID, '');
+        if (empty($val)) {
+            $val = get_option('topnepali_headless_cf_zone_id', '');
+        }
+        return (string) $val;
     }
 
     public function get_cf_deploy_hook() {
@@ -317,7 +329,11 @@ class AstroPress {
     }
 
     public function should_direct_purge_cloudflare() {
-        return (bool) get_option(self::OPTION_CF_DIRECT_PURGE, '0');
+        $setting = get_option(self::OPTION_CF_DIRECT_PURGE, null);
+        if ($setting !== null) {
+            return (bool) $setting;
+        }
+        return !empty($this->get_cf_api_token()) && !empty($this->get_cf_zone_id());
     }
 
     /**

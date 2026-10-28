@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.6
+Stable tag: 1.2.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.7 =
+* Push-Based Snapshot Updates: Automatically serializes and embeds full REST post and page payloads (`/wp/v2/posts/:id` and `/wp/v2/pages/:id` with `_embed=true`) directly in revalidation webhook payloads, feeding Astro SSR in-memory snapshot caches even when edge subrequests are firewalled.
+* Cloudflare Token Forwarding: Forwards configured Cloudflare API Bearer token and Zone ID in webhook payloads and `x-cf-api-token` request headers, allowing edge workers to orchestrate secondary CDN purges seamlessly.
+* Cross-Plugin Compatibility: Added bi-directional option fallbacks for `topnepali_headless_cf_zone_id` and `topnepali_headless_cf_api_token`.
+* Cloudflare Edge Purge by Default: Enabled direct Cloudflare Zone API purging by default whenever Zone ID and API Token credentials are configured.
 
 = 1.2.6 =
 * Security & Privacy: Completely eliminated plaintext secret exposure and DOM attributes (`data-secret`); Revalidation Secret is strictly concealed and AES-256 encrypted at rest.
