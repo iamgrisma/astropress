@@ -28,9 +28,8 @@ class AstroPress_Warmer {
 
         // Background Warmer WP-Cron Hook
         add_action('astropress_warm_bg_worker', array($this, 'run_background_worker'));
-        add_action('topnepali_warm_bg_worker', array($this, 'run_background_worker'));
 
-        // AJAX handlers (both AstroPress & legacy TopNepali)
+        // AJAX handlers
         if (is_admin()) {
             $actions = array(
                 'get_warmup_urls',
@@ -46,7 +45,6 @@ class AstroPress_Warmer {
 
             foreach ($actions as $act) {
                 add_action("wp_ajax_astropress_{$act}", array($this, "ajax_{$act}"));
-                add_action("wp_ajax_topnepali_{$act}", array($this, "ajax_{$act}"));
             }
         }
     }
@@ -142,7 +140,7 @@ class AstroPress_Warmer {
 
         if (!empty($xml_content)) {
             $is_index = (stripos($xml_content, '<sitemapindex') !== false);
-            preg_match_all('/<loc>\s*(https?:\/\/[^\s<]+)\s*<\/loc>/i', $xml_content, $matches);
+            preg_match_all('/<loc>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<>\s]+)\s*(?:\]\]>)?\s*<\/loc>/i', $xml_content, $matches);
             $locs = !empty($matches[1]) ? $matches[1] : array();
 
             if ($is_index && $sitemap_type === 'sitemap_files_only') {
@@ -165,7 +163,7 @@ class AstroPress_Warmer {
                     $sub_xml = $this->fetch_sitemap_xml($sub_loc);
                     if (!$sub_xml) continue;
 
-                    preg_match_all('/<loc>\s*(https?:\/\/[^\s<]+)\s*<\/loc>/i', $sub_xml, $sub_matches);
+                    preg_match_all('/<loc>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<>\s]+)\s*(?:\]\]>)?\s*<\/loc>/i', $sub_xml, $sub_matches);
                     if (!empty($sub_matches[1])) {
                         foreach ($sub_matches[1] as $page_loc) {
                             $parsed = parse_url($page_loc, PHP_URL_PATH);
@@ -528,6 +526,7 @@ class AstroPress_Warmer {
             'batch_size' => max(1, min(10, (int)$batch_size)),
             'total'      => count($items),
             'processed'  => 0,
+            'current'    => 0,
             'succeeded'  => 0,
             'failed'     => 0,
             'queue'      => $items,

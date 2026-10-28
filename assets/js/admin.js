@@ -195,9 +195,10 @@
 
             // Auto-suggest custom CDN domain if empty
             const $domainInput = $('#r2_custom_domain');
-            if ($domainInput.length && !$domainInput.val()?.trim() && chosen === 'topnepali') {
-              $domainInput.val('https://objects.topnepali.com');
-              $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> https://objects.topnepali.com (Connected to bucket ' + chosen + ')');
+            if ($domainInput.length && !$domainInput.val()?.trim() && config.allowedRoots && config.allowedRoots.length) {
+              const autoCdn = 'https://media.' + config.allowedRoots[0];
+              $domainInput.val(autoCdn);
+              $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> ' + escapeHtml(autoCdn) + ' (Connected to bucket ' + escapeHtml(chosen) + ')');
             }
 
             $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Discovered ' + buckets.length + ' bucket(s). ' + (chosen ? 'Selected: <code>' + chosen + '</code>' : 'Please select a bucket from the dropdown.') + '</span>');
@@ -236,9 +237,10 @@
       const val = $(this).val();
       $('#r2_bucket').val(val);
       const $domainInput = $('#r2_custom_domain');
-      if ($domainInput.length && !$domainInput.val()?.trim() && val === 'topnepali') {
-        $domainInput.val('https://objects.topnepali.com');
-        $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> https://objects.topnepali.com (Connected to bucket ' + val + ')');
+      if ($domainInput.length && !$domainInput.val()?.trim() && config.allowedRoots && config.allowedRoots.length) {
+        const autoCdn = 'https://media.' + config.allowedRoots[0];
+        $domainInput.val(autoCdn);
+        $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> ' + escapeHtml(autoCdn) + ' (Connected to bucket ' + escapeHtml(val) + ')');
       }
     });
 
@@ -744,36 +746,36 @@
     var cancelRequested = false;
     var bgPollTimer = null;
 
-    var $startWarmBtn   = $('#topnepali-start-warm-btn, #astropress-start-warmer');
-    var $startBgWarmBtn = $('#topnepali-start-bg-warm-btn, #astropress-start-bg-warmer');
-    var $cancelWarmBtn  = $('#topnepali-cancel-warm-btn, #astropress-cancel-warmer');
-    var $progressBox    = $('#topnepali-warm-progress-box, #astropress-warmer-progress-container');
-    var $countEl        = $('#topnepali-warm-current, #astropress-warmer-progress-count');
-    var $totalEl        = $('#topnepali-warm-total, #astropress-warmer-progress-total');
-    var $percentEl      = $('#topnepali-warm-percent, #astropress-warmer-progress-percent');
-    var $barFill        = $('#topnepali-progress-bar-fill, #astropress-warmer-progress-bar');
-    var $currentUrl     = $('#topnepali-warm-current-url, #astropress-warmer-progress-text');
-    var $statusPill     = $('#topnepali-warm-status-pill, #astropress-warmer-status-pill');
-    var $logConsole     = $('#topnepali-warm-log, #astropress-warmer-log');
-    var $presetSelect   = $('#topnepali-warm-preset, #astropress-warmer-preset');
-    var $delaySelect    = $('#topnepali-warm-delay, #astropress-warmer-delay');
+    var $startWarmBtn   = $('#astropress-start-warm-btn, #topnepali-start-warm-btn, #astropress-start-warmer');
+    var $startBgWarmBtn = $('#astropress-start-bg-warm-btn, #topnepali-start-bg-warm-btn, #astropress-start-bg-warmer');
+    var $cancelWarmBtn  = $('#astropress-cancel-warm-btn, #topnepali-cancel-warm-btn, #astropress-cancel-warmer');
+    var $progressBox    = $('#astropress-warm-progress-box, #topnepali-warm-progress-box, #astropress-warmer-progress-container');
+    var $countEl        = $('#astropress-warm-current, #topnepali-warm-current, #astropress-warmer-progress-count');
+    var $totalEl        = $('#astropress-warm-total, #topnepali-warm-total, #astropress-warmer-progress-total');
+    var $percentEl      = $('#astropress-warm-percent, #topnepali-warm-percent, #astropress-warmer-progress-percent');
+    var $barFill        = $('#astropress-progress-bar-fill, #topnepali-progress-bar-fill, #astropress-warmer-progress-bar');
+    var $currentUrl     = $('#astropress-warm-current-url, #topnepali-warm-current-url, #astropress-warmer-progress-text');
+    var $statusPill     = $('#astropress-warm-status-pill, #topnepali-warm-status-pill, #astropress-warmer-status-pill');
+    var $logConsole     = $('#astropress-warm-log, #topnepali-warm-log, #astropress-warmer-log');
+    var $presetSelect   = $('#astropress-warm-preset, #topnepali-warm-preset, #astropress-warmer-preset');
+    var $delaySelect    = $('#astropress-warm-delay, #topnepali-warm-delay, #astropress-warmer-delay');
 
     // Background Job UI Elements
-    var $bgBox         = $('#topnepali-bg-warm-box');
-    var $bgCurrent     = $('#topnepali-bg-warm-current');
-    var $bgTotal       = $('#topnepali-bg-warm-total');
-    var $bgBarFill     = $('#topnepali-bg-progress-bar-fill');
-    var $bgStatusPill  = $('#topnepali-bg-warm-status-pill');
-    var $bgMeta        = $('#topnepali-bg-warm-meta');
-    var $pauseBgBtn    = $('#topnepali-pause-bg-btn');
-    var $resumeBgBtn   = $('#topnepali-resume-bg-btn');
-    var $cancelBgBtn   = $('#topnepali-cancel-bg-btn');
-    var $clearBgBtn    = $('#topnepali-clear-bg-btn');
+    var $bgBox         = $('#astropress-bg-warm-box, #topnepali-bg-warm-box');
+    var $bgCurrent     = $('#astropress-bg-warm-current, #topnepali-bg-warm-current');
+    var $bgTotal       = $('#astropress-bg-warm-total, #topnepali-bg-warm-total');
+    var $bgBarFill     = $('#astropress-bg-progress-bar-fill, #topnepali-bg-progress-bar-fill');
+    var $bgStatusPill  = $('#astropress-bg-warm-status-pill, #topnepali-bg-warm-status-pill');
+    var $bgMeta        = $('#astropress-bg-warm-meta, #topnepali-bg-warm-meta');
+    var $pauseBgBtn    = $('#astropress-pause-bg-btn, #topnepali-pause-bg-btn');
+    var $resumeBgBtn   = $('#astropress-resume-bg-btn, #topnepali-resume-bg-btn');
+    var $cancelBgBtn   = $('#astropress-cancel-bg-btn, #topnepali-cancel-bg-btn');
+    var $clearBgBtn    = $('#astropress-clear-bg-btn, #topnepali-clear-bg-btn');
 
     function appendWarmLog(statusClass, path, metaText) {
-      var $entry = $('<div class="topnepali-log-entry"></div>');
-      var $pathSpan = $('<span class="topnepali-log-path"></span>').text(path);
-      var $metaSpan = $('<span class="topnepali-log-meta ' + statusClass + '"></span>').text(metaText);
+      var $entry = $('<div class="astropress-log-entry"></div>');
+      var $pathSpan = $('<span class="astropress-log-path"></span>').text(path);
+      var $metaSpan = $('<span class="astropress-log-meta ' + statusClass + '"></span>').text(metaText);
       $entry.append($pathSpan).append($metaSpan);
       $logConsole.append($entry);
       if ($logConsole[0]) {
@@ -788,7 +790,7 @@
 
       var preset = $presetSelect.val() || 'standard';
       var throttleMs = parseInt($delaySelect.val(), 10) || 500;
-      var batchSize = parseInt($('#topnepali-warm-batch-size').val(), 10) || config.defaultBatch || 5;
+      var batchSize = parseInt($('#astropress-warm-batch-size, #topnepali-warm-batch-size').val(), 10) || config.defaultBatch || 5;
       if (batchSize < 1) batchSize = 1;
 
       isWarming = true;
@@ -806,7 +808,7 @@
       $statusPill.text('FETCHING QUEUE...').css('background', '#0284c7');
       $currentUrl.text('Querying URLs to warm from WordPress / XML Sitemap...');
 
-      appendWarmLog('topnepali-log-status-200', '— System Initialized —', 'Scope: ' + preset + ' | Gap: ' + throttleMs + 'ms');
+      appendWarmLog('astropress-log-status-200', '— System Initialized —', 'Scope: ' + preset + ' | Gap: ' + throttleMs + 'ms');
 
       // Step 1: Fetch list of URLs to warm
       var queueResponse;
@@ -822,7 +824,7 @@
           }
         });
       } catch (err) {
-        appendWarmLog('topnepali-log-status-err', 'Failed to fetch warmup list', err.statusText || 'Error');
+        appendWarmLog('astropress-log-status-err', 'Failed to fetch warmup list', err.statusText || 'Error');
         $statusPill.text('ERROR').css('background', '#ef4444');
         $startWarmBtn.prop('disabled', false).css('opacity', 1);
         $startBgWarmBtn.prop('disabled', false).css('opacity', 1);
@@ -833,7 +835,7 @@
 
       var items = (queueResponse && queueResponse.data && (queueResponse.data.items || queueResponse.data.urls)) || [];
       if (!queueResponse || !queueResponse.success || !items.length) {
-        appendWarmLog('topnepali-log-status-err', 'No URLs found for selected scope', 'Empty');
+        appendWarmLog('astropress-log-status-err', 'No URLs found for selected scope', 'Empty');
         $statusPill.text('EMPTY').css('background', '#64748b');
         $startWarmBtn.prop('disabled', false).css('opacity', 1);
         $startBgWarmBtn.prop('disabled', false).css('opacity', 1);
@@ -843,7 +845,7 @@
       }
       var total = items.length;
       $totalEl.text(total);
-      appendWarmLog('topnepali-log-status-200', 'Queue loaded successfully', total + ' URLs ready');
+      appendWarmLog('astropress-log-status-200', 'Queue loaded successfully', total + ' URLs ready');
 
       var current = 0;
       $statusPill.text('WARMING (' + batchSize + '/batch)...').css('background', '#059669');
@@ -851,7 +853,7 @@
       // Step 2: Warm in polite sequential batches with user-defined delay
       for (var i = 0; i < items.length; i += batchSize) {
         if (cancelRequested) {
-          appendWarmLog('topnepali-log-status-redirect', '— Warming process stopped by user —', 'Cancelled');
+          appendWarmLog('astropress-log-status-redirect', '— Warming process stopped by user —', 'Cancelled');
           $statusPill.text('CANCELLED').css('background', '#d97706');
           break;
         }
@@ -874,16 +876,16 @@
 
           if (batchRes.success && batchRes.data.results) {
             batchRes.data.results.forEach(function(r) {
-              var statusClass = 'topnepali-log-status-200';
-              if (r.status >= 300 && r.status < 400) statusClass = 'topnepali-log-status-redirect';
-              else if (r.status >= 400 || !r.ok) statusClass = 'topnepali-log-status-err';
+              var statusClass = 'astropress-log-status-200';
+              if (r.status >= 300 && r.status < 400) statusClass = 'astropress-log-status-redirect';
+              else if (r.status >= 400 || !r.ok) statusClass = 'astropress-log-status-err';
 
               var metaStr = 'HTTP ' + r.status + ' | ' + (r.cf_cache || 'MISS') + ' | ' + r.duration_ms + 'ms';
               appendWarmLog(statusClass, r.url, metaStr);
             });
           }
         } catch (bErr) {
-          appendWarmLog('topnepali-log-status-err', 'Batch network error', bErr.statusText || 'Error');
+          appendWarmLog('astropress-log-status-err', 'Batch network error', bErr.statusText || 'Error');
         }
 
         current = Math.min(total, i + batch.length);
@@ -902,7 +904,7 @@
       if (!cancelRequested) {
         $statusPill.text('COMPLETED').css('background', '#059669');
         $currentUrl.text('All ' + total + ' edge cache URLs successfully refreshed and warmed!');
-        appendWarmLog('topnepali-log-status-200', '— Process Finished —', '100% Pre-warmed');
+        appendWarmLog('astropress-log-status-200', '— Process Finished —', '100% Pre-warmed');
       }
 
       $startWarmBtn.prop('disabled', false).css('opacity', 1);
@@ -924,7 +926,7 @@
 
       var preset = $presetSelect.val() || 'standard';
       var throttleMs = parseInt($delaySelect.val(), 10) || 500;
-      var batchSize = parseInt($('#topnepali-warm-batch-size').val(), 10) || config.defaultBatch || 5;
+      var batchSize = parseInt($('#astropress-warm-batch-size, #topnepali-warm-batch-size').val(), 10) || config.defaultBatch || 5;
 
       $startBgWarmBtn.prop('disabled', true).addClass('updating-message');
 
@@ -964,10 +966,11 @@
       }
 
       $bgBox.slideDown(200);
-      $bgCurrent.text(job.current || 0);
+      var currentProcessed = job.processed || job.current || 0;
+      $bgCurrent.text(currentProcessed);
       $bgTotal.text(job.total || 0);
 
-      var pct = (job.total > 0) ? Math.round((job.current / job.total) * 100) : 0;
+      var pct = (job.total > 0) ? Math.round((currentProcessed / job.total) * 100) : 0;
       $bgBarFill.css('width', pct + '%');
 
       var st = (job.status || 'RUNNING').toUpperCase();

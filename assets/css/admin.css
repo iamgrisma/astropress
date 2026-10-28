@@ -353,149 +353,7 @@
   margin-top: 14px;
 }
 
-/* Pre-Flight Diagnostics */
-.astropress-preflight-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 18px 22px;
-  margin-bottom: 28px;
-}
 
-.astropress-preflight-card h3 {
-  margin: 0 0 14px 0;
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.astropress-preflight-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.astropress-preflight-item {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 12px;
-}
-
-.astropress-preflight-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  font-weight: 700;
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.astropress-status-pass .astropress-preflight-badge {
-  background: #def7ec;
-  color: #03543f;
-}
-
-.astropress-status-warn .astropress-preflight-badge {
-  background: #fef08a;
-  color: #854d0e;
-}
-
-.astropress-status-fail .astropress-preflight-badge {
-  background: #fde8e8;
-  color: #9b1c1c;
-}
-
-.astropress-status-info .astropress-preflight-badge {
-  background: #e1effe;
-  color: #1e429f;
-}
-
-.astropress-preflight-desc {
-  color: #64748b;
-  font-size: 11px;
-  margin-top: 2px;
-}
-
-/* Guided Wizard Steps */
-.astropress-wizard-step {
-  display: flex;
-  gap: 18px;
-  padding: 20px 0;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.astropress-wizard-step:last-of-type {
-  border-bottom: none;
-}
-
-.astropress-step-num {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: #0284c7;
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 15px;
-  flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);
-}
-
-.astropress-step-body {
-  flex: 1;
-}
-
-.astropress-step-body h3 {
-  margin: 0 0 4px 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.astropress-check-list {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0 0 0;
-}
-
-.astropress-check-list li {
-  padding: 6px 0;
-  font-size: 13px;
-  color: #334155;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.astropress-check-list .dashicons {
-  color: #057a55;
-  font-size: 18px;
-}
-
-.astropress-wizard-footer {
-  margin-top: 24px;
-  text-align: right;
-  padding-top: 20px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.astropress-wizard-footer .button-hero {
-  padding: 10px 24px;
-  font-size: 15px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
 
 /* Snippet Blocks */
 .astropress-snippet-block {
@@ -650,35 +508,6 @@
   padding: 16px;
 }
 
-.astropress-cf-resource-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.astropress-cf-resource-card {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.astropress-cf-resource-card h4 {
-  margin: 0 0 6px 0;
-  font-size: 13px;
-  color: #475569;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.astropress-cf-resource-card p {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-  word-break: break-all;
-}
 
 /* Webhook Delivery Audit Log Table */
 .astropress-log-table th {
@@ -1311,12 +1140,8 @@ body.astropress_page_astropress #wpbody-content {
     grid-template-columns: 1fr !important;
   }
 
-  .astropress-mode-grid,
   .astropress-metrics,
-  .astropress-preflight-grid,
-  .astropress-abilities-grid,
   .astropress-preset-grid,
-  .astropress-cf-resource-grid,
   .astropress-flat-list,
   .astropress-audit-checklist {
     flex-direction: column !important;
@@ -1334,37 +1159,17 @@ body.astropress_page_astropress #wpbody-content {
     max-height: 180px !important;
   }
 
-  .astropress-onboarding-banner {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 12px !important;
-    padding: 16px 14px !important;
-  }
-
-  .astropress-onboarding-banner-action {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
-
-  .astropress-onboarding-banner-action .button {
-    width: 100% !important;
-    text-align: center;
-  }
-
-  .topnepali-log-console,
   .astropress-log-console {
     max-height: 180px !important;
     font-size: 10px !important;
     padding: 8px !important;
   }
 
-  .topnepali-log-entry,
   .astropress-log-entry {
     flex-wrap: wrap !important;
     gap: 4px !important;
   }
 
-  .topnepali-log-path,
   .astropress-log-path {
     width: 100% !important;
     word-break: break-all !important;
@@ -1418,7 +1223,6 @@ body.astropress_page_astropress #wpbody-content {
 /* ========================================================
    Live Edge Cache Warmer Console & Background Job Styles
    ======================================================== */
-.topnepali-progress-bar-bg,
 .astropress-progress-bar-bg {
   height: 8px;
   background: #e2e8f0;
@@ -1428,7 +1232,6 @@ body.astropress_page_astropress #wpbody-content {
   margin-bottom: 6px;
 }
 
-.topnepali-progress-bar-fill,
 .astropress-progress-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
@@ -1436,7 +1239,6 @@ body.astropress_page_astropress #wpbody-content {
   border-radius: 999px;
 }
 
-.topnepali-log-console,
 .astropress-log-console {
   max-height: 220px;
   overflow-y: auto;
@@ -1451,7 +1253,6 @@ body.astropress_page_astropress #wpbody-content {
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.topnepali-log-entry,
 .astropress-log-entry {
   margin-bottom: 4px;
   display: flex;
@@ -1462,14 +1263,12 @@ body.astropress_page_astropress #wpbody-content {
   padding-bottom: 2px;
 }
 
-.topnepali-log-entry:last-child,
 .astropress-log-entry:last-child {
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
 }
 
-.topnepali-log-path,
 .astropress-log-path {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1479,25 +1278,21 @@ body.astropress_page_astropress #wpbody-content {
   flex: 1;
 }
 
-.topnepali-log-meta,
 .astropress-log-meta {
   flex-shrink: 0;
   font-size: 10px;
 }
 
-.topnepali-log-status-200,
 .astropress-log-status-200 {
   color: #4ade80;
   font-weight: 600;
 }
 
-.topnepali-log-status-redirect,
 .astropress-log-status-redirect {
   color: #facc15;
   font-weight: 600;
 }
 
-.topnepali-log-status-err,
 .astropress-log-status-err {
   color: #f87171;
   font-weight: 600;
@@ -1511,71 +1306,6 @@ body.astropress_page_astropress #wpbody-content {
 .spin {
   animation: astropress-spin 1s linear infinite;
   display: inline-block;
-}
-
-/* Token Abilities & Health Audit (Fluid Flex List, Zero Multi-Column Bloat) */
-.astropress-abilities-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 12px 0;
-}
-
-.astropress-ability-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.astropress-ability-card.is-granted {
-  border-left: 3px solid #10b981;
-}
-
-.astropress-ability-card.is-missing {
-  border-left: 3px solid #f59e0b;
-  background: #fffdfa;
-}
-
-.astropress-ability-icon {
-  font-size: 20px;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.astropress-ability-card.is-granted .astropress-ability-icon {
-  color: #10b981;
-}
-
-.astropress-ability-card.is-missing .astropress-ability-icon {
-  color: #f59e0b;
-}
-
-.astropress-ability-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: #0f172a;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.astropress-ability-scope {
-  font-size: 11px;
-  color: #64748b;
-  margin-top: 2px;
-  font-family: monospace;
-}
-
-.astropress-ability-desc {
-  font-size: 11px;
-  color: #475569;
-  margin-top: 3px;
-  line-height: 1.4;
 }
 
 /* Password Eye Visibility Toggle */
@@ -1601,34 +1331,6 @@ body.astropress_page_astropress #wpbody-content {
 @keyframes astropress-fade-in {
   from { opacity: 0; transform: translateY(-2px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-/* Architecture Setup Mode Selector (Fluid Flex Wrap, Zero 3-Column Squeeze) */
-.astropress-mode-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 12px 0 16px 0;
-}
-
-.astropress-mode-card {
-  flex: 1 1 260px;
-  box-sizing: border-box;
-  transition: all 0.2s ease;
-  border-radius: 8px;
-  background: #ffffff;
-  border: 2px solid #e2e8f0;
-}
-
-.astropress-mode-card:hover {
-  border-color: #93c5fd !important;
-  transform: translateY(-1px);
-}
-
-.astropress-mode-card.is-active {
-  border-color: #2563eb !important;
-  background: #eff6ff !important;
-  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.1);
 }
 
 /* Frontend Auto-Detection Pill */

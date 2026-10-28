@@ -49,7 +49,6 @@ class AstroPress_Admin {
 
             // AJAX Handlers for Headless & Cache Warmer (warmer hooks delegated to AstroPress_Warmer)
             add_action('wp_ajax_astropress_test_key', array($this, 'ajax_test_key'));
-            add_action('wp_ajax_topnepali_test_key', array($this, 'ajax_test_key'));
 
             // AJAX Handlers for Cloudflare R2 & Image Compression
             add_action('wp_ajax_astropress_test_connection', array($this, 'ajax_test_connection'));
@@ -213,16 +212,10 @@ class AstroPress_Admin {
 
         // Backward compatibility redirect menus for legacy URLs
         add_submenu_page(null, 'R2 by Grisma', 'R2 by Grisma', 'manage_options', 'r2-by-grisma', array($this, 'redirect_to_r2_tab'));
-        add_submenu_page(null, 'Headless Setup', 'Headless Setup', 'manage_options', 'topnepali-headless', array($this, 'redirect_to_bridge_tab'));
     }
 
     public function redirect_to_r2_tab() {
         wp_safe_redirect(admin_url('admin.php?page=astropress&tab=r2'));
-        exit;
-    }
-
-    public function redirect_to_bridge_tab() {
-        wp_safe_redirect(admin_url('admin.php?page=astropress&tab=bridge'));
         exit;
     }
 
@@ -278,15 +271,6 @@ class AstroPress_Admin {
             'compress'     => $compress_config,
             'allowedRoots' => $this->get_allowed_domain_roots(),
         ));
-
-        wp_localize_script('astropress-admin-js', 'topnepaliAdmin', array(
-            'ajaxUrl'     => admin_url('admin-ajax.php'),
-            'nonce'       => wp_create_nonce('topnepali_admin_nonce'),
-            'frontendUrl' => $this->core->get_frontend_url(),
-            'defaultDelay'=> $this->core->get_warm_delay(),
-            'defaultBatch'=> $this->core->get_warm_batch_size(),
-        ));
-        wp_localize_script('astropress-admin-js', 'r2g_compress_config', $compress_config);
 
         if ((int) get_option('r2g_interceptor_enabled', 1) === 1 || $is_astropress_page) {
             wp_enqueue_script(
@@ -807,12 +791,10 @@ class AstroPress_Admin {
 
             if (!empty($frontend_url)) {
                 update_option(AstroPress::OPTION_FRONTEND_URL, $frontend_url);
-                update_option('topnepali_headless_frontend_url', $frontend_url);
             }
             if (!empty($new_secret)) {
                 $enc_secret = AstroPress_Encryption::encrypt($new_secret);
                 update_option(AstroPress::OPTION_SECRET, $enc_secret);
-                update_option('topnepali_headless_secret', $enc_secret);
             }
 
             // Test Handshake automatically
@@ -836,7 +818,6 @@ class AstroPress_Admin {
             }
 
             update_option(AstroPress::OPTION_CONNECTED, $connected ? '1' : '0');
-            update_option('topnepali_headless_connected', $connected ? '1' : '0');
 
             set_transient('astropress_notice', array(
                 'type'    => $connected ? 'success' : 'warning',
@@ -888,13 +869,8 @@ class AstroPress_Admin {
             $subdomain_noindex = isset($_POST['subdomain_noindex']) ? '1' : '0';
 
             update_option(AstroPress::OPTION_REWRITE_LINKS, $rewrite_links);
-            update_option('topnepali_headless_rewrite_links', $rewrite_links);
-
             update_option(AstroPress::OPTION_SUBDOMAIN_SHIELD, $subdomain_shield);
-            update_option('topnepali_headless_subdomain_shield', $subdomain_shield);
-
             update_option(AstroPress::OPTION_SUBDOMAIN_NOINDEX, $subdomain_noindex);
-            update_option('topnepali_headless_subdomain_noindex', $subdomain_noindex);
 
             set_transient('astropress_notice', array(
                 'type'    => 'success',
@@ -1006,19 +982,16 @@ class AstroPress_Admin {
 
             if (!empty($frontend_url)) {
                 update_option(AstroPress::OPTION_FRONTEND_URL, $frontend_url);
-                update_option('topnepali_headless_frontend_url', $frontend_url);
             }
 
             if (!empty($cf_token) && strpos($cf_token, '••••') === false) {
                 $enc_cf = AstroPress_Encryption::encrypt($cf_token);
                 update_option(AstroPress::OPTION_CF_API_TOKEN, $enc_cf);
-                update_option('topnepali_headless_cf_api_token', $enc_cf);
                 update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
             }
 
             if (!empty($cf_zone_id)) {
                 update_option(AstroPress::OPTION_CF_ZONE_ID, $cf_zone_id);
-                update_option('topnepali_headless_cf_zone_id', $cf_zone_id);
             }
 
             update_option(AstroPress::OPTION_MEDIA_MODE, $media_mode);
@@ -1232,121 +1205,6 @@ class AstroPress_Admin {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
         }
-    }
-
-    /**
-     * AJAX: Get structured list of URLs to warm
-     */
-    public function ajax_get_warmup_urls() {
-        $this->verify_admin_ajax();
-
-        $preset = sanitize_text_field($_POST['preset'] ?? 'standard');
-        $items = $this->core->cache->get_warmup_urls($preset);
-
-        wp_send_json_success(array(
-            'total' => count($items),
-            'items' => $items,
-            'urls'  => $items,
-        ));
-    }
-
-    /**
-     * AJAX: Warm a small batch of URLs sequentially with live metrics
-     */
-    public function ajax_warm_batch() {
-        $this->verify_admin_ajax();
-
-        $raw_batch = $_POST['batch'] ?? $_POST['urls'] ?? array();
-        if (!is_array($raw_batch) || empty($raw_batch)) {
-            wp_send_json_error(array('message' => 'Empty batch provided'), 400);
-        }
-
-        $sanitized_batch = array();
-        foreach ($raw_batch as $item) {
-            if (is_array($item)) {
-                $sanitized_batch[] = array(
-                    'url'   => sanitize_text_field($item['url'] ?? '/'),
-                    'title' => sanitize_text_field($item['title'] ?? ''),
-                    'type'  => sanitize_text_field($item['type'] ?? 'Page'),
-                );
-            } else {
-                $sanitized_batch[] = sanitize_text_field($item);
-            }
-        }
-
-        $results = $this->core->cache->warm_url_batch($sanitized_batch);
-
-        wp_send_json_success(array(
-            'results' => $results,
-        ));
-    }
-
-    /**
-     * AJAX: Start asynchronous background warming job
-     */
-    public function ajax_start_bg_warm() {
-        $this->verify_admin_ajax();
-
-        $preset     = sanitize_text_field($_POST['preset'] ?? 'standard');
-        $delay_ms   = absint($_POST['delay'] ?? 1000);
-        $batch_size = absint($_POST['batch_size'] ?? 2);
-
-        $res = $this->core->cache->start_background_job($preset, $delay_ms, $batch_size);
-        if (is_wp_error($res)) {
-            wp_send_json_error(array('message' => $res->get_error_message()), 400);
-        }
-
-        wp_send_json_success(array('job' => $res));
-    }
-
-    /**
-     * AJAX: Query background warming job progress
-     */
-    public function ajax_get_bg_warm_status() {
-        $this->verify_admin_ajax();
-
-        $status = $this->core->cache->get_background_job_status();
-        wp_send_json_success(array('job' => $status));
-    }
-
-    /**
-     * AJAX: Pause background job
-     */
-    public function ajax_pause_bg_warm() {
-        $this->verify_admin_ajax();
-
-        $ok = $this->core->cache->pause_background_job();
-        wp_send_json_success(array('paused' => $ok));
-    }
-
-    /**
-     * AJAX: Resume background job
-     */
-    public function ajax_resume_bg_warm() {
-        $this->verify_admin_ajax();
-
-        $ok = $this->core->cache->resume_background_job();
-        wp_send_json_success(array('resumed' => $ok));
-    }
-
-    /**
-     * AJAX: Cancel background job
-     */
-    public function ajax_cancel_bg_warm() {
-        $this->verify_admin_ajax();
-
-        $ok = $this->core->cache->cancel_background_job();
-        wp_send_json_success(array('cancelled' => $ok));
-    }
-
-    /**
-     * AJAX: Clear finished/cancelled background job
-     */
-    public function ajax_clear_bg_warm() {
-        $this->verify_admin_ajax();
-
-        $this->core->cache->clear_background_job();
-        wp_send_json_success(array('cleared' => true));
     }
 
     /**
@@ -3876,10 +3734,10 @@ class AstroPress_Admin {
 
             <div class="astropress-preset-grid" style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:20px;">
                 <div style="flex:1 1 240px; min-width:200px;">
-                    <label for="topnepali-warm-preset" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
+                    <label for="astropress-warm-preset" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
                         <?php esc_html_e('Select Warming Scope / XML Sitemap:', 'astropress'); ?>
                     </label>
-                    <select id="topnepali-warm-preset" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
+                    <select id="astropress-warm-preset" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
                         <optgroup label="<?php esc_attr_e('Standard Presets', 'astropress'); ?>">
                             <option value="standard" selected><?php esc_html_e('Standard (Core Pages + Top Categories + Top 20 Posts ~ 35 URLs)', 'astropress'); ?></option>
                             <option value="deep"><?php esc_html_e('Comprehensive Deep (Core Pages + Top Categories + Top 50 Posts ~ 80 URLs)', 'astropress'); ?></option>
@@ -3902,10 +3760,10 @@ class AstroPress_Admin {
                 </div>
 
                 <div style="flex:1 1 200px; min-width:180px;">
-                    <label for="topnepali-warm-delay" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
+                    <label for="astropress-warm-delay" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
                         <?php esc_html_e('Gap Between Requests:', 'astropress'); ?>
                     </label>
-                    <select id="topnepali-warm-delay" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
+                    <select id="astropress-warm-delay" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
                         <option value="300"><?php esc_html_e('300ms (0.3s - Ultra Fast / High Performance)', 'astropress'); ?></option>
                         <option value="500"><?php esc_html_e('500ms (0.5s - Fast / Normal Server)', 'astropress'); ?></option>
                         <option value="1000" selected><?php esc_html_e('1,000ms (1.0s - Recommended Balanced)', 'astropress'); ?></option>
@@ -3916,10 +3774,10 @@ class AstroPress_Admin {
                 </div>
 
                 <div style="flex:1 1 180px; min-width:160px;">
-                    <label for="topnepali-warm-batch-size" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
+                    <label for="astropress-warm-batch-size" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
                         <?php esc_html_e('Batch Size (URLs / Request):', 'astropress'); ?>
                     </label>
-                    <select id="topnepali-warm-batch-size" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
+                    <select id="astropress-warm-batch-size" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
                         <option value="2"><?php esc_html_e('2 URLs / Batch (Gentle)', 'astropress'); ?></option>
                         <option value="5" selected><?php esc_html_e('5 URLs / Batch (Recommended)', 'astropress'); ?></option>
                         <option value="10"><?php esc_html_e('10 URLs / Batch (Fast Turbo)', 'astropress'); ?></option>
@@ -3929,60 +3787,60 @@ class AstroPress_Admin {
 
             <!-- Action Buttons Row -->
             <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
-                <button type="button" id="topnepali-start-warm-btn" class="button button-primary button-hero" style="display:inline-flex; align-items:center; gap:6px;">
+                <button type="button" id="astropress-start-warm-btn" class="button button-primary button-hero" style="display:inline-flex; align-items:center; gap:6px;">
                     <span class="dashicons dashicons-controls-play" style="vertical-align:-2px;"></span> <?php esc_html_e('Start Interactive Warmer (Browser Mode)', 'astropress'); ?>
                 </button>
-                <button type="button" id="topnepali-start-bg-warm-btn" class="button button-secondary" style="display:inline-flex; align-items:center; gap:6px;">
+                <button type="button" id="astropress-start-bg-warm-btn" class="button button-secondary" style="display:inline-flex; align-items:center; gap:6px;">
                     <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Run in Background (WP-Cron)', 'astropress'); ?>
                 </button>
-                <button type="button" id="topnepali-cancel-warm-btn" class="button button-link-delete" style="display:none; padding:8px 14px;">
+                <button type="button" id="astropress-cancel-warm-btn" class="button button-link-delete" style="display:none; padding:8px 14px;">
                     <span class="dashicons dashicons-controls-pause" style="vertical-align:-2px;"></span> <?php esc_html_e('Pause / Cancel', 'astropress'); ?>
                 </button>
             </div>
 
             <!-- Persistent Background Job Box -->
-            <div id="topnepali-bg-warm-box" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; padding:16px; border-radius:8px; margin-bottom:18px;">
+            <div id="astropress-bg-warm-box" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; padding:16px; border-radius:8px; margin-bottom:18px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
                     <span style="font-size:13px; font-weight:700; color:#15803d;">
                         <span class="dashicons dashicons-admin-generic" style="vertical-align:text-bottom;"></span>
-                        <?php esc_html_e('Background Warmer Job (WP-Cron):', 'astropress'); ?> <span id="topnepali-bg-warm-current">0</span> / <span id="topnepali-bg-warm-total">0</span>
+                        <?php esc_html_e('Background Warmer Job (WP-Cron):', 'astropress'); ?> <span id="astropress-bg-warm-current">0</span> / <span id="astropress-bg-warm-total">0</span>
                     </span>
-                    <span id="topnepali-bg-warm-status-pill" class="astropress-badge astropress-badge-online" style="font-size:11px;">RUNNING</span>
+                    <span id="astropress-bg-warm-status-pill" class="astropress-badge astropress-badge-online" style="font-size:11px;">RUNNING</span>
                 </div>
-                <div class="topnepali-progress-bar-bg" style="background:#dcfce7;">
-                    <div id="topnepali-bg-progress-bar-fill" class="topnepali-progress-bar-fill" style="width: 0%; background:#16a34a;"></div>
+                <div class="astropress-progress-bar-bg" style="background:#dcfce7;">
+                    <div id="astropress-bg-progress-bar-fill" class="astropress-progress-bar-fill" style="width: 0%; background:#16a34a;"></div>
                 </div>
-                <div id="topnepali-bg-warm-meta" style="font-size:12px; color:#166534; margin:8px 0;">
+                <div id="astropress-bg-warm-meta" style="font-size:12px; color:#166534; margin:8px 0;">
                     <?php esc_html_e('Job active in background. You may safely close this browser window.', 'astropress'); ?>
                 </div>
                 <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
-                    <button type="button" id="topnepali-pause-bg-btn" class="button button-secondary button-small">
+                    <button type="button" id="astropress-pause-bg-btn" class="button button-secondary button-small">
                         <span class="dashicons dashicons-controls-pause"></span> <?php esc_html_e('Pause Job', 'astropress'); ?>
                     </button>
-                    <button type="button" id="topnepali-resume-bg-btn" class="button button-secondary button-small" style="display:none;">
+                    <button type="button" id="astropress-resume-bg-btn" class="button button-secondary button-small" style="display:none;">
                         <span class="dashicons dashicons-controls-play"></span> <?php esc_html_e('Resume Job', 'astropress'); ?>
                     </button>
-                    <button type="button" id="topnepali-cancel-bg-btn" class="button button-link-delete button-small">
+                    <button type="button" id="astropress-cancel-bg-btn" class="button button-link-delete button-small">
                         <span class="dashicons dashicons-dismiss"></span> <?php esc_html_e('Cancel Job', 'astropress'); ?>
                     </button>
-                    <button type="button" id="topnepali-clear-bg-btn" class="button button-secondary button-small" style="display:none;">
+                    <button type="button" id="astropress-clear-bg-btn" class="button button-secondary button-small" style="display:none;">
                         <span class="dashicons dashicons-trash"></span> <?php esc_html_e('Dismiss Job', 'astropress'); ?>
                     </button>
                 </div>
             </div>
 
             <!-- Real-time Progress Display -->
-            <div id="topnepali-warm-progress-box" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:16px; border-radius:8px;">
+            <div id="astropress-warm-progress-box" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:16px; border-radius:8px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:13px; font-weight:600; color:#334155; flex-wrap:wrap; gap:8px;">
-                    <span><?php esc_html_e('Warming Progress:', 'astropress'); ?> <span id="topnepali-warm-current">0</span> / <span id="topnepali-warm-total">0</span></span>
-                    <span id="topnepali-warm-percent" style="color:#0284c7; font-weight:700;">0%</span>
+                    <span><?php esc_html_e('Warming Progress:', 'astropress'); ?> <span id="astropress-warm-current">0</span> / <span id="astropress-warm-total">0</span></span>
+                    <span id="astropress-warm-percent" style="color:#0284c7; font-weight:700;">0%</span>
                 </div>
 
-                <div class="topnepali-progress-bar-bg">
-                    <div id="topnepali-progress-bar-fill" class="topnepali-progress-bar-fill" style="width: 0%;"></div>
+                <div class="astropress-progress-bar-bg">
+                    <div id="astropress-progress-bar-fill" class="astropress-progress-bar-fill" style="width: 0%;"></div>
                 </div>
 
-                <div id="topnepali-warm-current-url" style="font-size:12px; color:#64748b; margin:10px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <div id="astropress-warm-current-url" style="font-size:12px; color:#64748b; margin:10px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     <?php esc_html_e('Initializing queue...', 'astropress'); ?>
                 </div>
 
@@ -3990,9 +3848,9 @@ class AstroPress_Admin {
                     <strong style="font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:0.5px;">
                         <?php esc_html_e('Live Cloudflare Edge Activity Console:', 'astropress'); ?>
                     </strong>
-                    <span id="topnepali-warm-status-pill" class="astropress-badge" style="background:#0284c7; color:#fff; font-size:10px;">IDLE</span>
+                    <span id="astropress-warm-status-pill" class="astropress-badge" style="background:#0284c7; color:#fff; font-size:10px;">IDLE</span>
                 </div>
-                <div id="topnepali-warm-log" class="topnepali-log-console"></div>
+                <div id="astropress-warm-log" class="astropress-log-console"></div>
             </div>
         </div>
         <?php

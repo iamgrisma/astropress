@@ -501,6 +501,8 @@ class AstroPress_Cache {
         if ($this->core->should_purge_feeds()) {
             $extra_urls[] = '/sitemap.xml';
             $extra_urls[] = '/sitemap_index.xml';
+            $extra_urls[] = '/feed';
+            $extra_urls[] = '/rss';
             $extra_urls[] = '/rss.xml';
             $extra_urls[] = '/feed.xml';
             $extra_urls[] = '/blogs';
@@ -524,7 +526,7 @@ class AstroPress_Cache {
             delete_post_meta($post->ID, '_astropress_rm_head');
             delete_post_meta($post->ID, '_headless_rm_head');
             $slug = ($post->post_type === 'page') ? get_page_uri($post->ID) : $post->post_name;
-            $extra_urls = array('/', '/blogs', '/blog', '/rss.xml', '/sitemap.xml');
+            $extra_urls = array('/', '/blogs', '/blog', '/feed', '/rss', '/rss.xml', '/sitemap.xml');
             $this->queue_invalidation($slug, $post->post_type, 'unpublish', $extra_urls);
         }
     }
