@@ -1741,64 +1741,62 @@
             if (res.success) {
               const data = res.data;
               let html = '<div class="astropress-quick-results-box">';
-              html += '<h4 style="margin:0 0 10px 0; color:#057a55;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Cloudflare Resources Auto-Discovered:</h4>';
-              html += '<div class="astropress-cf-resource-grid">';
+              html += '<h4 style="margin:0 0 8px 0; color:#057a55;"><span class="dashicons dashicons-yes-alt"></span> Cloudflare Resources Auto-Discovered:</h4>';
+              html += '<div class="astropress-flat-list">';
 
               if (data.matched_account) {
-                html += '<div class="astropress-cf-resource-card"><h4>Account</h4><p>' + data.matched_account.name + ' <br><small style="color:#64748b;font-weight:normal;">' + data.matched_account.id + '</small></p></div>';
+                html += '<div class="astropress-flat-row"><span class="flat-label">Account:</span> <span class="flat-val"><strong>' + escapeHtml(data.matched_account.name) + '</strong> <code>' + escapeHtml(data.matched_account.id) + '</code></span></div>';
               }
               if (data.matched_zone) {
-                html += '<div class="astropress-cf-resource-card"><h4>Zone (Domain)</h4><p>' + data.matched_zone.name + ' <br><small style="color:#64748b;font-weight:normal;">' + data.matched_zone.id + '</small></p></div>';
+                html += '<div class="astropress-flat-row"><span class="flat-label">Zone:</span> <span class="flat-val"><strong>' + escapeHtml(data.matched_zone.name) + '</strong> <code>' + escapeHtml(data.matched_zone.id) + '</code></span></div>';
               }
               if (data.buckets && data.buckets.length > 0) {
-                html += '<div class="astropress-cf-resource-card"><h4>R2 Buckets (' + data.buckets.length + ')</h4><p>' + data.buckets.join(', ') + '</p></div>';
+                html += '<div class="astropress-flat-row"><span class="flat-label">R2 Buckets:</span> <span class="flat-val">' + escapeHtml(data.buckets.join(', ')) + '</span></div>';
               }
               if (data.pages_projects && data.pages_projects.length > 0) {
                 const projectNames = data.pages_projects.map(function(p) { return p.name; }).join(', ');
-                html += '<div class="astropress-cf-resource-card"><h4>Pages Projects</h4><p>' + projectNames + '</p></div>';
+                html += '<div class="astropress-flat-row"><span class="flat-label">Pages:</span> <span class="flat-val">' + escapeHtml(projectNames) + '</span></div>';
               }
 
               html += '</div>';
 
               // 1-Click Remediation for Missing Cloudflare Scopes
               if (!data.all_granted && data.fix_token_url) {
-                html += '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:14px; margin-top:14px;">';
-                html += '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">';
+                html += '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; margin-top:10px;">';
+                html += '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">';
                 html += '<div>';
-                html += '<strong style="color:#b45309; font-size:13px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Missing Cloudflare Token Permissions Detected</strong>';
-                html += '<p style="margin:4px 0 0 0; font-size:12px; color:#92400e;">Your token is missing ' + (data.missing_scopes ? data.missing_scopes.length : 'required') + ' permission(s). Click below to re-generate your token with all missing scopes pre-selected in 1 click.</p>';
+                html += '<strong style="color:#b45309; font-size:13px;"><span class="dashicons dashicons-warning"></span> Incomplete Cloudflare Permissions</strong>';
+                html += '<p style="margin:2px 0 0 0; font-size:12px; color:#92400e;">Missing ' + (data.missing_scopes ? data.missing_scopes.length : 'required') + ' permission(s). Click to re-generate with all required scopes pre-filled.</p>';
                 html += '</div>';
-                html += '<a href="' + data.fix_token_url + '" target="_blank" rel="noopener noreferrer" class="button button-primary" style="background:#d97706; border-color:#b45309;">';
-                html += '<span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> Re-Generate Token with Missing Scopes &rarr;';
+                html += '<a href="' + data.fix_token_url + '" target="_blank" rel="noopener noreferrer" class="button button-primary button-small" style="background:#d97706; border-color:#b45309;">';
+                html += '<span class="dashicons dashicons-external"></span> Re-Generate Token &rarr;';
                 html += '</a>';
                 html += '</div>';
                 html += '</div>';
               }
 
-              // Render Deep Abilities Audit
+              // Render Deep Abilities Audit (Flat Checklist - Zero 3-Column Bloat)
               if (data.abilities) {
-                html += '<div style="margin-top:14px;">';
-                html += '<h4 style="margin:0 0 8px 0; color:#334155; font-size:12px; text-transform:uppercase; letter-spacing:0.5px;">Token Abilities & Permissions Health Audit:</h4>';
-                html += '<div class="astropress-abilities-grid">';
+                html += '<div style="margin-top:12px;">';
+                html += '<h4 style="margin:0 0 6px 0; color:#334155; font-size:12px; text-transform:uppercase; letter-spacing:0.5px;">Permissions Health Checklist:</h4>';
+                html += '<div class="astropress-audit-checklist">';
                 for (const key in data.abilities) {
                   const ab = data.abilities[key];
                   const isGranted = ab.granted;
-                  const cardClass = isGranted ? 'is-granted' : 'is-missing';
                   const icon = isGranted ? 'dashicons-yes' : 'dashicons-warning';
-                  html += '<div class="astropress-ability-card ' + cardClass + '">';
-                  html += '<span class="dashicons ' + icon + ' astropress-ability-icon"></span>';
-                  html += '<div>';
-                  html += '<div class="astropress-ability-title">' + ab.label + ' <span class="astropress-badge" style="font-size:10px; padding:1px 6px;' + (isGranted ? 'background:#ecfdf5;color:#065f46;' : 'background:#fffbeb;color:#b45309;') + '">' + (isGranted ? 'Passed' : 'Missing Scope') + '</span></div>';
-                  html += '<div class="astropress-ability-scope">' + ab.scope + '</div>';
-                  html += '<div class="astropress-ability-desc">' + ab.description + '</div>';
-                  html += '</div>';
+                  const badgeStyle = isGranted ? 'background:#ecfdf5;color:#065f46;' : 'background:#fffbeb;color:#b45309;';
+                  html += '<div class="astropress-audit-row ' + (isGranted ? 'is-pass' : 'is-fail') + '">';
+                  html += '<span class="dashicons ' + icon + '"></span>';
+                  html += '<span class="audit-name">' + escapeHtml(ab.label) + '</span>';
+                  html += '<code class="audit-scope">' + escapeHtml(ab.scope) + '</code>';
+                  html += '<span class="audit-badge" style="' + badgeStyle + '">' + (isGranted ? 'Granted' : 'Missing') + '</span>';
                   html += '</div>';
                 }
                 html += '</div>';
                 html += '</div>';
               }
 
-              html += '<button type="button" class="button button-primary astropress-apply-cf-btn" data-token="' + encodeURIComponent(token) + '">Apply Discovered Settings to WordPress</button>';
+              html += '<div style="margin-top:12px;"><button type="button" class="button button-primary astropress-apply-cf-btn" data-token="' + encodeURIComponent(token) + '">Apply Discovered Settings to WordPress</button></div>';
               html += '</div>';
 
               $results.html(html);

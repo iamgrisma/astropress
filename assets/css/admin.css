@@ -250,19 +250,20 @@
   font-size: 12px;
 }
 
-/* Metrics Box */
+/* Metrics Box (Fluid Flex, Zero 3-Column Squeeze) */
 .astropress-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin: 16px 0;
 }
 
 .astropress-metric-box {
+  flex: 1 1 140px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 14px 12px;
+  padding: 12px 10px;
   text-align: center;
 }
 
@@ -369,9 +370,9 @@
 }
 
 .astropress-preflight-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .astropress-preflight-item {
@@ -650,9 +651,9 @@
 }
 
 .astropress-cf-resource-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 12px 0;
 }
 
@@ -829,17 +830,308 @@
   padding: 0 8px;
 }
 
-.astropress-wizard-wrap {
-  width: 100% !important;
-  max-width: 880px !important;
-  box-sizing: border-box !important;
-  margin: 16px auto !important;
+/* ========================================================
+   FLATTENED SETUP WIZARD (Zero DOM Bloat, Zero Overflow)
+   ======================================================== */
+.astropress-wizard {
+  max-width: 800px;
+  margin: 16px auto;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
-.astropress-wizard-step {
-  box-sizing: border-box !important;
-  width: 100% !important;
-  max-width: 100% !important;
+.wizard-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.wizard-header .dashicons-cloud {
+  font-size: 36px;
+  width: 36px;
+  height: 36px;
+  color: #2563eb;
+  margin-bottom: 6px;
+}
+
+.wizard-header h2 {
+  font-size: 20px;
+  margin: 0 0 4px 0;
+  color: #0f172a;
+}
+
+.wizard-header p {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0;
+}
+
+.wizard-system-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.wizard-system-status.is-fail {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.wizard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+}
+
+.wizard-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 18px 16px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.step-badge {
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 700;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.section-header p {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.wizard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.wizard-connected-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.connected-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.connected-info .dashicons-shield-alt {
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
+  color: #059669;
+}
+
+.token-mask {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  font-family: monospace;
+  word-break: break-all;
+  margin-top: 2px;
+}
+
+.connected-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wizard-input-drawer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wizard-input-drawer input[type="password"] {
+  flex: 1 1 240px;
+  max-width: 100%;
+}
+
+.wizard-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wizard-input-row input {
+  flex: 1 1 240px;
+  max-width: 100%;
+}
+
+.wizard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wizard-field label {
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.field-help {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.wizard-subpanel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wizard-subpanel-inner {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.wizard-footer {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.wizard-footer .button-hero {
+  min-width: 260px;
+  font-size: 15px;
+}
+
+/* Flat Auto-Discovery Results (Zero 3-Column Bloat) */
+.astropress-flat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.astropress-flat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.astropress-flat-row .flat-label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.astropress-flat-row .flat-val {
+  color: #0f172a;
+}
+
+/* Flat Audit Checklist (Zero Multi-Column Bloat) */
+.astropress-audit-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.astropress-audit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.astropress-audit-row.is-pass {
+  border-left: 3px solid #10b981;
+}
+
+.astropress-audit-row.is-fail {
+  border-left: 3px solid #f59e0b;
+  background: #fffdfa;
+}
+
+.astropress-audit-row .audit-name {
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1 1 auto;
+}
+
+.astropress-audit-row .audit-scope {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.astropress-audit-row .audit-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
 }
 
 .astropress-table-responsive {
@@ -876,7 +1168,7 @@ body.astropress_page_astropress #wpbody-content {
   }
 
   .astropress-card,
-  .astropress-wizard-wrap {
+  .astropress-wizard {
     padding: 14px 10px !important;
     max-width: 100% !important;
     width: 100% !important;
@@ -884,13 +1176,22 @@ body.astropress_page_astropress #wpbody-content {
     overflow-x: hidden !important;
   }
 
-  .astropress-wizard-step {
+  .wizard-section {
     padding: 12px 10px !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
   }
 
-  .astropress-wizard-wrap .button,
+  .wizard-actions,
+  .wizard-connected-card,
+  .connected-actions,
+  .wizard-input-drawer,
+  .wizard-input-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .astropress-wizard .button,
   .astropress-card .button {
     white-space: normal !important;
     height: auto !important;
@@ -899,13 +1200,7 @@ body.astropress_page_astropress #wpbody-content {
     padding: 6px 12px !important;
     text-align: center !important;
     max-width: 100% !important;
-  }
-
-  .astropress-wizard-wrap div[style*="display:flex"],
-  .astropress-wizard-wrap div[style*="display: flex"],
-  .astropress-card div[style*="display:flex"],
-  .astropress-card div[style*="display: flex"] {
-    flex-wrap: wrap !important;
+    width: 100% !important;
   }
 
   .astropress-header {
@@ -1012,14 +1307,20 @@ body.astropress_page_astropress #wpbody-content {
   }
 
   .astropress-grid-2,
-  .r2g-stats-grid,
+  .r2g-stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
   .astropress-mode-grid,
   .astropress-metrics,
   .astropress-preflight-grid,
   .astropress-abilities-grid,
   .astropress-preset-grid,
-  .astropress-cf-resource-grid {
-    grid-template-columns: 1fr !important;
+  .astropress-cf-resource-grid,
+  .astropress-flat-list,
+  .astropress-audit-checklist {
+    flex-direction: column !important;
+    width: 100% !important;
   }
 
   .astropress-preview-result-card {
@@ -1212,11 +1513,11 @@ body.astropress_page_astropress #wpbody-content {
   display: inline-block;
 }
 
-/* Token Abilities & Health Audit Grid */
+/* Token Abilities & Health Audit (Fluid Flex List, Zero Multi-Column Bloat) */
 .astropress-abilities-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin: 12px 0;
 }
 
@@ -1302,15 +1603,17 @@ body.astropress_page_astropress #wpbody-content {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Architecture Setup Mode Selector */
+/* Architecture Setup Mode Selector (Fluid Flex Wrap, Zero 3-Column Squeeze) */
 .astropress-mode-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   margin: 12px 0 16px 0;
 }
 
 .astropress-mode-card {
+  flex: 1 1 260px;
+  box-sizing: border-box;
   transition: all 0.2s ease;
   border-radius: 8px;
   background: #ffffff;
@@ -1399,11 +1702,11 @@ body.astropress_page_astropress #wpbody-content {
   border-radius: 4px;
 }
 
-/* Preset Cards Grid */
+/* Preset Cards Grid (Fluid Vertical Stack, Zero 3-Column Squeeze) */
 .astropress-preset-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* Upload Interceptor Modal */

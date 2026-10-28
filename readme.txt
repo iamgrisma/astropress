@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.03
+Stable tag: 2.0.04
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.04 =
+* Radical DOM Flattening: Slashed Setup Wizard DOM nesting depth from 10 nested wrappers down to 2 semantic levels (`.astropress-wizard > .wizard-section`), eliminating container traps and excess wrapper padding.
+* Responsive Vertical Checklists: Replaced rigid 3-column CSS grids (`.astropress-cf-resource-grid`, `.astropress-abilities-grid`, `.astropress-preflight-grid`, `.astropress-preset-grid`) with fluid flex vertical checklists (`.astropress-audit-checklist`, `.astropress-flat-list`), preventing card clipping and horizontal overflow on mobile and tablet screens.
+* Fluid Metrics & Mode Cards: Restructured metrics and architecture setup modes to use fluid flexbox wrapping (`flex: 1 1 240px`) instead of forced 3-column grid layouts.
+* Simplified Pre-Flight Status: Collapsed bulky pre-flight server check cards into an ultra-clean, 1-line verified status banner.
 
 = 2.0.03 =
 * Resolved Scoped Token Prefill: Fixed internal permission keys for `cache_settings`, `zone_dns`, `workers_r2`, and `page`, ensuring all 8 essential permissions pre-populate accurately in Cloudflare's dashboard.
