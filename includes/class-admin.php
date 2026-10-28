@@ -476,32 +476,42 @@ class AstroPress_Admin {
      */
     public function get_cf_token_template_url(array $target_keys = array()) {
         $all_permissions = array(
-            'cache_purge'      => array('key' => 'cache_purge',      'type' => 'purge'),
-            'cache_rules'      => array('key' => 'cache_rules',      'type' => 'edit'),
-            'dns'              => array('key' => 'dns',              'type' => 'edit'),
-            'zone'             => array('key' => 'zone',             'type' => 'read'),
-            'workers_r2'       => array('key' => 'workers_r2',       'type' => 'edit'),
-            'page'             => array('key' => 'page',             'type' => 'edit'),
-            'account_settings' => array('key' => 'account_settings', 'type' => 'read'),
+            'cache_purge'        => array('key' => 'cache_purge',        'type' => 'purge'),
+            'cache_rules'        => array('key' => 'cache_rules',        'type' => 'edit'),
+            'page_rules'         => array('key' => 'page_rules',         'type' => 'edit'),
+            'dns'                => array('key' => 'dns',                'type' => 'edit'),
+            'zone'               => array('key' => 'zone',               'type' => 'read'),
+            'workers_r2_storage' => array('key' => 'workers_r2_storage', 'type' => 'edit'),
+            'pages'              => array('key' => 'pages',              'type' => 'edit'),
+            'account_settings'   => array('key' => 'account_settings',   'type' => 'read'),
         );
 
+        $alias_map = array(
+            'workers_r2' => array('workers_r2_storage'),
+            'page'       => array('pages'),
+        );
+
+        $permissions = array();
         if (!empty($target_keys)) {
-            $permissions = array();
             foreach ($target_keys as $k) {
-                if (isset($all_permissions[$k])) {
-                    $permissions[] = $all_permissions[$k];
+                if (isset($alias_map[$k])) {
+                    foreach ($alias_map[$k] as $alias) {
+                        if (isset($all_permissions[$alias])) {
+                            $permissions[$alias] = $all_permissions[$alias];
+                        }
+                    }
+                } elseif (isset($all_permissions[$k])) {
+                    $permissions[$k] = $all_permissions[$k];
                 }
             }
-            if (empty($permissions)) {
-                $permissions = array_values($all_permissions);
-            }
-        } else {
-            $permissions = array_values($all_permissions);
+        }
+        if (empty($permissions)) {
+            $permissions = $all_permissions;
         }
 
         $token_name = !empty($target_keys) ? 'AstroPress Token (Remediated Scopes)' : 'AstroPress Universal Bridge';
 
-        return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' . rawurlencode(wp_json_encode($permissions)) . '&accountId=*&zoneId=all&name=' . rawurlencode($token_name);
+        return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' . rawurlencode(wp_json_encode(array_values($permissions))) . '&accountId=*&zoneId=all&name=' . rawurlencode($token_name);
     }
 
     /**
@@ -2164,10 +2174,10 @@ class AstroPress_Admin {
             $missing_scope_keys[] = 'zone';
         }
         if (!$can_r2) {
-            $missing_scope_keys[] = 'workers_r2';
+            $missing_scope_keys[] = 'workers_r2_storage';
         }
         if (!$can_pages) {
-            $missing_scope_keys[] = 'page';
+            $missing_scope_keys[] = 'pages';
         }
         if (empty($accounts)) {
             $missing_scope_keys[] = 'account_settings';
@@ -2963,14 +2973,50 @@ class AstroPress_Admin {
                                 </div>
                             </div>
 
-                            <!-- Token Input Box -->
-                            <div style="display:flex; gap:8px; align-items:center; margin-top:14px; flex-wrap:wrap;">
-                                <div style="flex:1; min-width:200px; width:100%; max-width:100%;">
-                                    <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" placeholder="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : 'Paste Cloudflare API Token here...'; ?>" class="regular-text" style="width:100%; max-width:100%; box-sizing:border-box;" autocomplete="new-password" />
+                            <!-- Token Connected Card (Shown when token is saved/verified) -->
+                            <div id="onboard-token-connected-card" style="<?php echo !empty($cf_token) ? '' : 'display:none;'; ?> background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; margin-top:14px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span class="dashicons dashicons-shield-alt" style="font-size:28px; width:28px; height:28px; color:#059669;"></span>
+                                        <div>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <strong style="color:#0f172a; font-size:13px;"><?php esc_html_e('Cloudflare Scoped Token Active', 'astropress'); ?></strong>
+                                                <span class="astropress-badge" style="background:#ecfdf5; color:#065f46; font-size:11px; padding:2px 8px;"><?php esc_html_e('Connected', 'astropress'); ?></span>
+                                            </div>
+                                            <div style="font-size:12px; color:#64748b; margin-top:2px; font-family:monospace;">
+                                                <span>••••••••••••••••••••••••••••••••</span>
+                                                <?php if (!empty($cf_zone_id)): ?>
+                                                    &bull; <span>Zone: <?php echo esc_html(substr($cf_zone_id, 0, 8)); ?>••••</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex; gap:8px; align-items:center;">
+                                        <button type="button" class="button button-secondary" id="onboard-verify-token-btn">
+                                            <span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <?php esc_html_e('Check Connection', 'astropress'); ?>
+                                        </button>
+                                        <button type="button" class="button button-link" id="onboard-change-token-btn" style="text-decoration:none; font-size:12px; color:#475569;">
+                                            <span class="dashicons dashicons-edit" style="vertical-align:-2px;"></span> <?php esc_html_e('Change Token', 'astropress'); ?>
+                                        </button>
+                                    </div>
                                 </div>
-                                <button type="button" class="button button-primary" id="onboard-quick-audit-btn">
-                                    <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Auto-Discover & Verify Token', 'astropress'); ?>
-                                </button>
+                            </div>
+
+                            <!-- Token Input Drawer (Hidden when connected, revealed on Change Token or empty) -->
+                            <div id="onboard-token-input-drawer" style="<?php echo !empty($cf_token) ? 'display:none;' : ''; ?> margin-top:14px;">
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                    <div style="flex:1; min-width:200px; width:100%; max-width:100%;">
+                                        <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" placeholder="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : 'Paste Cloudflare API Token here...'; ?>" class="regular-text" style="width:100%; max-width:100%; box-sizing:border-box;" autocomplete="new-password" />
+                                    </div>
+                                    <button type="button" class="button button-primary" id="onboard-quick-audit-btn">
+                                        <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Auto-Discover & Verify Token', 'astropress'); ?>
+                                    </button>
+                                    <?php if (!empty($cf_token)): ?>
+                                        <button type="button" class="button button-link" id="onboard-cancel-change-token-btn" style="text-decoration:none; color:#64748b;">
+                                            <span class="dashicons dashicons-no" style="vertical-align:-2px;"></span> <?php esc_html_e('Cancel', 'astropress'); ?>
+                                        </button>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                             <input type="hidden" id="onboard_cf_zone_id" name="onboard_cf_zone_id" value="<?php echo esc_attr($cf_zone_id); ?>" />
                             <input type="hidden" id="onboard_r2_account_id" name="onboard_r2_account_id" value="<?php echo esc_attr($account_id); ?>" />
@@ -3172,14 +3218,14 @@ class AstroPress_Admin {
                 </table>
 
                 <div class="astropress-btn-group" style="margin-top:20px;">
-                    <button type="button" class="button button-primary" id="astropress-test-handshake">
-                        <span class="dashicons dashicons-admin-links"></span> <?php esc_html_e('Test Webhook Handshake', 'astropress'); ?>
+                    <button type="button" class="button button-primary" id="astropress-purge-cf-now">
+                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge Cloudflare Cache', 'astropress'); ?>
                     </button>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-secondary">
-                        <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
+                        <span class="dashicons dashicons-admin-generic" style="vertical-align:-2px;"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
                     </a>
                 </div>
-                <div id="astropress-handshake-status" style="margin-top:10px;"></div>
+                <div id="astropress-purge-cf-status" style="margin-top:10px;"></div>
             </div>
 
             <div class="astropress-card">
@@ -3795,6 +3841,24 @@ class AstroPress_Admin {
                 <?php esc_html_e('Pre-warms Cloudflare Edge CDN POPs in polite, throttled batches so visitors receive instant sub-15ms cache HITs without cold-start latency.', 'astropress'); ?>
             </p>
 
+            <!-- Cloudflare Edge HIT Enabler Advisory -->
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #10b981; padding:12px 16px; border-radius:6px; margin-bottom:18px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#065f46;">
+                            <span class="dashicons dashicons-shield" style="font-size:18px; width:18px; height:18px;"></span>
+                            <?php esc_html_e('Cloudflare Edge POP Caching (0ms Cold-Start / Zero Worker Limit)', 'astropress'); ?>
+                        </div>
+                        <p style="margin:4px 0 0 0; font-size:12px; color:#047857; line-height:1.5;">
+                            <?php esc_html_e('If URLs below show DYNAMIC or WORKER-HIT, deploy the Astro SSR Cache Rule. This commands Cloudflare Edge POPs to cache the HTML for 1 year so requests never burn Worker CPU limits.', 'astropress'); ?>
+                        </p>
+                    </div>
+                    <button type="button" class="button button-secondary astropress-deploy-preset-btn" data-preset="astro_ssr" style="background:#ffffff; border-color:#059669; color:#065f46; font-weight:600;">
+                        <span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Edge Cache Rule Now', 'astropress'); ?>
+                    </button>
+                </div>
+            </div>
+
             <!-- Server Resource & Capacity Advisory -->
             <div style="background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:6px; margin-bottom:18px;">
                 <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#92400e;">
@@ -3806,7 +3870,7 @@ class AstroPress_Admin {
                 </p>
             </div>
 
-            <div class="astropress-preset-grid" style="gap:16px; margin-bottom:20px;">
+            <div class="astropress-preset-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:20px;">
                 <div>
                     <label for="topnepali-warm-preset" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
                         <?php esc_html_e('Select Warming Scope / XML Sitemap:', 'astropress'); ?>
@@ -3838,12 +3902,23 @@ class AstroPress_Admin {
                         <?php esc_html_e('Gap Between Requests:', 'astropress'); ?>
                     </label>
                     <select id="topnepali-warm-delay" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
-                        <option value="500"><?php esc_html_e('500ms (0.5s - Aggressive / Fast Server)', 'astropress'); ?></option>
+                        <option value="300"><?php esc_html_e('300ms (0.3s - Ultra Fast / High Performance)', 'astropress'); ?></option>
+                        <option value="500"><?php esc_html_e('500ms (0.5s - Fast / Normal Server)', 'astropress'); ?></option>
                         <option value="1000" selected><?php esc_html_e('1,000ms (1.0s - Recommended Balanced)', 'astropress'); ?></option>
                         <option value="1500"><?php esc_html_e('1,500ms (1.5s - Moderate Shared Host)', 'astropress'); ?></option>
                         <option value="2000"><?php esc_html_e('2,000ms (2.0s - Low Impact Server)', 'astropress'); ?></option>
                         <option value="3000"><?php esc_html_e('3,000ms (3.0s - Conservative Safe)', 'astropress'); ?></option>
-                        <option value="5000"><?php esc_html_e('5,000ms (5.0s - Ultra Gentle)', 'astropress'); ?></option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="topnepali-warm-batch-size" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
+                        <?php esc_html_e('Batch Size (URLs / Request):', 'astropress'); ?>
+                    </label>
+                    <select id="topnepali-warm-batch-size" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
+                        <option value="2"><?php esc_html_e('2 URLs / Batch (Gentle)', 'astropress'); ?></option>
+                        <option value="5" selected><?php esc_html_e('5 URLs / Batch (Recommended)', 'astropress'); ?></option>
+                        <option value="10"><?php esc_html_e('10 URLs / Batch (Fast Turbo)', 'astropress'); ?></option>
                     </select>
                 </div>
             </div>

@@ -787,8 +787,8 @@
       if (isWarming) return;
 
       var preset = $presetSelect.val() || 'standard';
-      var throttleMs = parseInt($delaySelect.val(), 10) || 1000;
-      var batchSize = config.defaultBatch || 2;
+      var throttleMs = parseInt($delaySelect.val(), 10) || 500;
+      var batchSize = parseInt($('#topnepali-warm-batch-size').val(), 10) || config.defaultBatch || 5;
       if (batchSize < 1) batchSize = 1;
 
       isWarming = true;
@@ -923,8 +923,8 @@
       if ($startBgWarmBtn.prop('disabled')) return;
 
       var preset = $presetSelect.val() || 'standard';
-      var throttleMs = parseInt($delaySelect.val(), 10) || 1000;
-      var batchSize = config.defaultBatch || 2;
+      var throttleMs = parseInt($delaySelect.val(), 10) || 500;
+      var batchSize = parseInt($('#topnepali-warm-batch-size').val(), 10) || config.defaultBatch || 5;
 
       $startBgWarmBtn.prop('disabled', true).addClass('updating-message');
 
@@ -1019,6 +1019,9 @@
         });
         if (res.success && res.data.job) {
           updateBgJobUI(res.data.job);
+          if (res.data.job.status === 'running') {
+            $.post(ajaxurl, { action: 'astropress_ping_cron', nonce: nonce });
+          }
         }
       } catch (err) {}
     }
@@ -1833,15 +1836,28 @@
                   }
                 }
               }
+              if ($('#onboard-token-connected-card').length) {
+                $('#onboard-token-connected-card').slideDown(150);
+                $('#onboard-token-input-drawer').slideUp(150);
+              }
             } else {
+              if ($('#onboard-token-input-drawer').length) {
+                $('#onboard-token-input-drawer').slideDown(150);
+                $('#onboard-token-connected-card').slideUp(150);
+                $('#onboard_cf_api_token').focus();
+              }
               $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Discovery failed') + '</span></div>');
             }
           },
           error: function(xhr, status, err) {
+            if ($('#onboard-token-input-drawer').length) {
+              $('#onboard-token-input-drawer').slideDown(150);
+              $('#onboard-token-connected-card').slideUp(150);
+            }
             $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span></div>');
           },
           complete: function() {
-            $btn.prop('disabled', false).html('<span class="dashicons dashicons-search"></span> Auto-Discover Resources');
+            $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Auto-Discover & Verify Token');
           }
         });
       });
@@ -2400,73 +2416,24 @@
     $('#onboard_frontend_url').on('input blur change', validateFrontendUrl);
     validateFrontendUrl();
 
-    // 3. Setup Wizard: Quick Audit & Auto-Discover
-    $('#onboard-quick-audit-btn').on('click', function(e) {
+    // 3. Setup Wizard: Check Connection & Token Drawer Toggle
+    $(document).on('click', '#onboard-verify-token-btn', function(e) {
       e.preventDefault();
-      const $btn = $(this);
-      const token = $('#onboard_cf_api_token').val().trim();
-      const $results = $('#onboard-audit-results');
+      $('#onboard-quick-audit-btn').trigger('click');
+    });
 
-      $btn.prop('disabled', true).html('<span class="spinner is-active" style="float:none; margin:0 4px 0 0;"></span> Auditing...');
-      $results.show().html('<div style="color:#64748b; font-size:12px;"><span class="spinner is-active" style="float:none; margin:0 4px 0 0;"></span> Contacting Cloudflare API to audit token and discover resources...</div>');
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_cf_quick_connect',
-          cf_api_token: token,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            const d = res.data;
-            if (d.matched_account && d.matched_account.id) {
-              $('#onboard_r2_account_id').val(d.matched_account.id);
-            }
-            if (d.matched_zone && d.matched_zone.id) {
-              $('#onboard_cf_zone_id').val(d.matched_zone.id);
-            }
-
-            // Populate discovered buckets
-            if (d.buckets && d.buckets.length > 0) {
-              const $sel = $('#onboard_r2_bucket_select');
-              $sel.empty().append('<option value="">-- Discovered Buckets --</option>');
-              d.buckets.forEach(function(b) {
-                $sel.append('<option value="' + b + '">' + b + '</option>');
-              });
-              $sel.val(d.buckets[0]).show();
-              $('#onboard_r2_bucket').val(d.buckets[0]);
-            }
-
-            let auditHtml = '<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:12px; margin-top:10px;">';
-            auditHtml += '<div style="font-weight:700; color:#166534; font-size:13px; margin-bottom:6px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Cloudflare Scoped Token Verified!</div>';
-            auditHtml += '<div style="font-size:12px; color:#15803d; line-height:1.5;">';
-            auditHtml += '<strong>Zone:</strong> ' + ((d.matched_zone && d.matched_zone.name) ? d.matched_zone.name : 'Detected') + ' (<code>' + ((d.matched_zone && d.matched_zone.id) ? d.matched_zone.id.substring(0, 10) + '••••' : 'Found') + '</code>)<br />';
-            auditHtml += '<strong>Account:</strong> ' + ((d.matched_account && d.matched_account.name) ? d.matched_account.name : 'Detected') + '<br />';
-            auditHtml += '<strong>R2 Buckets:</strong> ' + (d.buckets ? d.buckets.length : 0) + ' bucket(s) discovered.<br />';
-            auditHtml += '<strong>Direct Cache Purge:</strong> ' + (d.can_purge ? '<span style="color:#059669; font-weight:600;">Authorized</span>' : '<span style="color:#dc2626;">Missing Scope</span>') + '<br />';
-            auditHtml += '<strong>Modern Cache Rules:</strong> ' + (d.can_cache_rules ? '<span style="color:#059669; font-weight:600;">Authorized</span>' : '<span style="color:#dc2626;">Missing Scope</span>');
-            auditHtml += '</div></div>';
-            $results.html(auditHtml);
-          } else {
-            $results.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; color:#991b1b; font-size:12px;"><strong>Verification Failed:</strong> ' + (res.data ? res.data.message : 'Invalid API Token') + '</div>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $results.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; color:#991b1b; font-size:12px;">Network error: ' + err + '</div>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Auto-Discover & Verify Token');
-        }
+    $(document).on('click', '#onboard-change-token-btn', function(e) {
+      e.preventDefault();
+      $('#onboard-token-connected-card').slideUp(150);
+      $('#onboard-token-input-drawer').slideDown(150, function() {
+        $('#onboard_cf_api_token').focus();
       });
     });
 
-    // 4. Setup Wizard: Blueprint Toggle
-    $('#onboard-toggle-blueprint-btn').on('click', function(e) {
+    $(document).on('click', '#onboard-cancel-change-token-btn', function(e) {
       e.preventDefault();
-      $('#onboard-blueprint-wrap').slideToggle(200);
+      $('#onboard-token-input-drawer').slideUp(150);
+      $('#onboard-token-connected-card').slideDown(150);
     });
 
     // 5. Cloudflare Ruleset Engine: Load Active Cache Rules Table

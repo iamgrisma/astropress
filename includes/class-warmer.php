@@ -41,6 +41,7 @@ class AstroPress_Warmer {
                 'resume_bg_warm',
                 'cancel_bg_warm',
                 'clear_bg_warm',
+                'ping_cron',
             );
 
             foreach ($actions as $act) {
@@ -457,7 +458,21 @@ class AstroPress_Warmer {
                 );
             } else {
                 $code = wp_remote_retrieve_response_code($response);
-                $cf_cache = wp_remote_retrieve_header($response, 'cf-cache-status') ?: (wp_remote_retrieve_header($response, 'x-cache') ?: 'UNKNOWN');
+                $cf_cache_hdr = wp_remote_retrieve_header($response, 'cf-cache-status');
+                $worker_cache_hdr = wp_remote_retrieve_header($response, 'x-worker-cache');
+
+                $cf_cache = 'MISS';
+                if (!empty($cf_cache_hdr) && strtoupper($cf_cache_hdr) === 'HIT') {
+                    $cf_cache = 'CF-HIT';
+                } elseif (!empty($worker_cache_hdr) && strtoupper($worker_cache_hdr) === 'HIT') {
+                    $cf_cache = 'WORKER-HIT';
+                } elseif (!empty($cf_cache_hdr) && strtoupper($cf_cache_hdr) === 'DYNAMIC' && !empty($worker_cache_hdr)) {
+                    $cf_cache = 'WORKER-' . strtoupper($worker_cache_hdr);
+                } elseif (!empty($cf_cache_hdr)) {
+                    $cf_cache = strtoupper($cf_cache_hdr);
+                } elseif (!empty($worker_cache_hdr)) {
+                    $cf_cache = strtoupper($worker_cache_hdr);
+                }
 
                 // If Cloudflare returned 404 or server error, retry once with bypass headers to bust stale edge micro-cache
                 if ($code === 404 || $code >= 500) {
@@ -487,12 +502,12 @@ class AstroPress_Warmer {
                     'code'        => $code,
                     'status'      => $code,
                     'duration_ms' => $duration,
-                    'cf_cache'    => strtoupper($cf_cache),
+                    'cf_cache'    => $cf_cache,
                     'success'     => ($code >= 200 && $code < 400),
                     'ok'          => ($code >= 200 && $code < 400),
                     'message'     => ($code === 404)
-                        ? "404 NOT FOUND ({$duration}ms) [CF: {$cf_cache}]"
-                        : "Status: {$code} ({$duration}ms) [CF: {$cf_cache}]",
+                        ? "404 NOT FOUND ({$duration}ms) [Cache: {$cf_cache}]"
+                        : "Status: {$code} ({$duration}ms) [Cache: {$cf_cache}]",
                 );
             }
         }
@@ -577,31 +592,43 @@ class AstroPress_Warmer {
                 return;
             }
 
-            $batch = array_splice($queue, 0, $batch_size);
-            $job['queue'] = $queue;
+            $start_loop      = microtime(true);
+            $max_run_seconds = 18; // safe under standard 30s timeout
 
-            $results = $this->warm_url_batch($batch);
+            while (!empty($queue) && (microtime(true) - $start_loop) < $max_run_seconds) {
+                $batch        = array_splice($queue, 0, $batch_size);
+                $job['queue'] = $queue;
 
-            foreach ($results as $res) {
-                $job['processed'] = ($job['processed'] ?? 0) + 1;
-                if (!empty($res['success'])) {
-                    $job['succeeded'] = ($job['succeeded'] ?? 0) + 1;
-                } else {
-                    $job['failed'] = ($job['failed'] ?? 0) + 1;
+                $results = $this->warm_url_batch($batch);
+
+                foreach ($results as $res) {
+                    $job['processed'] = ($job['processed'] ?? 0) + 1;
+                    if (!empty($res['success'])) {
+                        $job['succeeded'] = ($job['succeeded'] ?? 0) + 1;
+                    } else {
+                        $job['failed'] = ($job['failed'] ?? 0) + 1;
+                    }
+                    $job['log'][] = array(
+                        'time'    => current_time('H:i:s'),
+                        'url'     => $res['url'],
+                        'meta'    => ($res['code'] ?: 'ERR') . ' (' . $res['duration_ms'] . 'ms) [' . ($res['cf_cache'] ?: 'NONE') . ']',
+                        'success' => !empty($res['success']),
+                    );
                 }
-                $job['log'][] = array(
-                    'time'    => current_time('H:i:s'),
-                    'url'     => $res['url'],
-                    'meta'    => ($res['code'] ?: 'ERR') . ' (' . $res['duration_ms'] . 'ms) [CF: ' . ($res['cf_cache'] ?: 'NONE') . ']',
-                    'success' => !empty($res['success']),
-                );
-            }
 
-            if (count($job['log']) > 100) {
-                $job['log'] = array_slice($job['log'], -100);
-            }
+                if (count($job['log']) > 100) {
+                    $job['log'] = array_slice($job['log'], -100);
+                }
 
-            $job['updated_at'] = current_time('mysql');
+                $job['updated_at'] = current_time('mysql');
+
+                if (empty($queue) || $job['processed'] >= $job['total']) {
+                    break;
+                }
+
+                // Micro-pause between internal batch iterations
+                usleep(150000); // 150ms
+            }
 
             if (empty($job['queue']) || $job['processed'] >= $job['total']) {
                 $job['status']       = 'completed';
@@ -821,5 +848,13 @@ class AstroPress_Warmer {
         }
         $this->clear_background_job();
         wp_send_json_success(array('job' => null, 'status' => 'idle'));
+    }
+
+    public function ajax_ping_cron() {
+        if (!$this->verify_request()) {
+            wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
+        }
+        $this->run_background_worker();
+        wp_send_json_success(array('job' => $this->get_background_job_status()));
     }
 }

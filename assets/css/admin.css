@@ -1014,6 +1014,41 @@
     line-height: 1.4 !important;
     padding: 6px 12px !important;
   }
+
+  /* Setup Wizard Mobile Polish */
+  .astropress-wizard-wrap {
+    margin: 6px 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .astropress-wizard-wrap .astropress-card {
+    padding: 14px 10px !important;
+    border-radius: 6px !important;
+  }
+
+  .astropress-wizard-step {
+    padding: 12px 10px !important;
+    margin-bottom: 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  #onboard-token-connected-card > div {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  #onboard-token-connected-card > div > div:last-child {
+    width: 100% !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  #onboard-token-connected-card > div > div:last-child button {
+    flex: 1 !important;
+  }
 }
 
 /* ========================================================
