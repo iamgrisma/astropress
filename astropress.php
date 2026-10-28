@@ -3,7 +3,7 @@
  * Plugin Name:       AstroPress
  * Plugin URI:        https://github.com/iamgrisma/astropress
  * Description:       Universal Headless WordPress & Cloudflare R2 Suite for Astro on Cloudflare Pages and Workers. Features instant edge cache invalidation, automated background warmer, pure PHP SigV4 R2 media offloading, WebP/reSmush optimization, Rank Math & Yoast SEO bridge, native GitHub core updates and rollback.
- * Version:           1.2.3
+ * Version:           1.2.4
  * Author:            Grisma
  * Author URI:        https://grisma.com.np
  * Developer:         Grisma Bhandari
@@ -25,7 +25,7 @@ if (!defined('ABSPATH')) {
 
 // Core Plugin Constants
 if (!defined('ASTROPRESS_VERSION')) {
-    define('ASTROPRESS_VERSION', '1.2.3');
+    define('ASTROPRESS_VERSION', '1.2.4');
 }
 if (!defined('ASTROPRESS_FILE')) {
     define('ASTROPRESS_FILE', __FILE__);
@@ -142,6 +142,18 @@ add_action('plugins_loaded', 'astropress_register_legacy_shims', 999);
 register_activation_hook(__FILE__, function() {
     AstroPress_Database::create_table();
     AstroPress::activate_defaults();
+    set_transient('astropress_activation_redirect', true, 60);
+});
+
+// Redirect to Setup Wizard on activation
+add_action('admin_init', function() {
+    if (get_transient('astropress_activation_redirect')) {
+        delete_transient('astropress_activation_redirect');
+        if (!isset($_GET['activate-multi']) && current_user_can('manage_options')) {
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=onboarding'));
+            exit;
+        }
+    }
 });
 
 // Plugin Deactivation Hook

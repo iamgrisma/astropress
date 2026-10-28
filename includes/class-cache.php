@@ -1121,7 +1121,7 @@ class AstroPress_Cache {
             'redirection' => 3,
             'sslverify'   => false,
             'headers'     => array(
-                'User-Agent' => 'AstroPress-Bridge-Detector/1.2.3 (WordPress/' . get_bloginfo('version') . ')',
+                'User-Agent' => 'AstroPress-Bridge-Detector/1.2.4 (WordPress/' . get_bloginfo('version') . ')',
             ),
         ));
         $latency_ms = round((microtime(true) - $start_time) * 1000);
@@ -1168,7 +1168,7 @@ class AstroPress_Cache {
             'sslverify' => false,
             'headers'   => array(
                 'Content-Type' => 'application/json',
-                'User-Agent'   => 'AstroPress-Bridge-Detector/1.2.3',
+                'User-Agent'   => 'AstroPress-Bridge-Detector/1.2.4',
             ),
             'body'      => wp_json_encode(array('action' => 'ping', 'timestamp' => time())),
         ));

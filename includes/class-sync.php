@@ -34,6 +34,7 @@ class AstroPress_Sync {
             'get_stats',
             'reindex_media',
             'import_legacy',
+            'audit_media_health',
         );
 
         foreach ($actions as $action) {
@@ -248,6 +249,85 @@ class AstroPress_Sync {
                 $res['found_wpmcs'],
                 $res['found_offloaded']
             ),
+        ));
+    }
+
+    /**
+     * AJAX: Live Media Health & R2 Availability Audit
+     * Performs fast HEAD requests against CDN to verify file availability in R2
+     * and audits presence of local server files.
+     */
+    public function ajax_audit_media_health() {
+        if (!$this->verify_request()) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+
+        $offset = (int) ($_POST['offset'] ?? 0);
+        $batch_size = (int) ($_POST['batch_size'] ?? 10);
+        $batch_size = max(1, min(25, $batch_size));
+
+        global $wpdb;
+        $table = AstroPress_Database::table();
+        $records = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, attachment_id, r2_key, status, has_local FROM {$table} ORDER BY id ASC LIMIT %d OFFSET %d",
+            $batch_size,
+            $offset
+        ));
+
+        if (empty($records)) {
+            wp_send_json_success(array(
+                'done'        => true,
+                'audited'     => 0,
+                'stats'       => AstroPress_Database::get_stats(),
+                'next_offset' => $offset,
+            ));
+        }
+
+        $cdn_base = untrailingslashit(get_option('r2g_custom_domain', '') ?: get_option('r2g_public_url', ''));
+        $audited = 0;
+        $missing_local = 0;
+        $missing_r2 = 0;
+        $verified_ok = 0;
+
+        foreach ($records as $row) {
+            $audited++;
+            $attachment_id = (int) $row->attachment_id;
+            $file_path = get_attached_file($attachment_id);
+            $local_exists = (!empty($file_path) && file_exists($file_path)) ? 1 : 0;
+
+            if (!empty($row->r2_key) && !empty($cdn_base)) {
+                $check_url = $cdn_base . '/' . ltrim($row->r2_key, '/');
+                $head_res = wp_remote_head($check_url, array('timeout' => 4, 'sslverify' => false));
+                $code = wp_remote_retrieve_response_code($head_res);
+                if ($code === 200 || $code === 304) {
+                    $verified_ok++;
+                } elseif ($code === 404) {
+                    $missing_r2++;
+                    $wpdb->update($table, array('status' => 'failed'), array('id' => $row->id));
+                }
+            }
+
+            if ((int) $row->has_local !== $local_exists) {
+                $wpdb->update($table, array('has_local' => $local_exists), array('id' => $row->id));
+            }
+            if (!$local_exists) {
+                $missing_local++;
+            }
+        }
+
+        $total_in_table = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        $next_offset = $offset + count($records);
+        $done = ($next_offset >= $total_in_table);
+
+        wp_send_json_success(array(
+            'done'          => $done,
+            'audited'       => $audited,
+            'next_offset'   => $next_offset,
+            'total'         => $total_in_table,
+            'missing_local' => $missing_local,
+            'missing_r2'    => $missing_r2,
+            'verified_ok'   => $verified_ok,
+            'stats'         => AstroPress_Database::get_stats(),
         ));
     }
 }

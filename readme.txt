@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.3
+Stable tag: 1.2.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,11 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.4 =
+* Automatic Activation Redirect: New installations immediately redirect to the Setup Wizard on plugin activation for seamless zero-friction onboarding.
+* Live Media Health Audit: Added automated HEAD inspection of offloaded media files against your Cloudflare CDN domain in the Media Sync dashboard, identifying missing or healthy assets and auditing local server copies.
+* Full Frontend Synchronization: Fully synced with Grisma-AstroPress frontend engine for dynamic backend host derivation, tester endpoints, and CDN image rendering.
 
 = 1.2.3 =
 * Flexible Architecture Modes: Introduced 1-Click Full Architecture mode (Astro Pages frontend, Cloudflare Edge, cache purge, cache warmer, R2 media storage, CDN cache rules, subdomain protection) and Modular/Selective mode for users requiring targeted submodules.

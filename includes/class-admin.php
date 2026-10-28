@@ -3645,6 +3645,15 @@ class AstroPress_Admin {
                         </button>
                         <div id="r2g-reindex-status" style="margin-top:8px; font-size:12px;"></div>
                     </div>
+
+                    <div style="flex:1; min-width:280px; padding:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">
+                        <h3 style="margin-top:0; font-size:14px; font-weight:600; color:#0f172a;"><?php esc_html_e('Live R2 Availability Audit', 'astropress'); ?></h3>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:14px; line-height:1.5;"><?php esc_html_e('Audits live CDN URLs via HEAD requests to confirm offloaded images exist in R2, and checks if server copies are still on disk.', 'astropress'); ?></p>
+                        <button type="button" id="r2g-btn-audit-health" class="button button-secondary">
+                            <span class="dashicons dashicons-heart" style="vertical-align:-2px;"></span> <?php esc_html_e('Audit Media Health & Missing Files', 'astropress'); ?>
+                        </button>
+                        <div id="r2g-audit-status" style="margin-top:8px; font-size:12px;"></div>
+                    </div>
                 </div>
             </div>
         </div>

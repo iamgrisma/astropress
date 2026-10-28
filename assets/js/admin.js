@@ -1302,6 +1302,72 @@
       });
     });
 
+    // 7c. Audit Media Health & Missing Files
+    $('#r2g-btn-audit-health').on('click', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#r2g-audit-status');
+      $btn.prop('disabled', true);
+
+      let offset = 0;
+      let totalMissingLocal = 0;
+      let totalMissingR2 = 0;
+      let totalVerified = 0;
+
+      function runAuditBatch() {
+        $status.css('color', '#64748b').text('Auditing items ' + offset + '... (Checking CDN HEAD & server disk)');
+        $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_audit_media_health',
+            nonce: nonce,
+            offset: offset,
+            batch_size: 15,
+          },
+          success: function(res) {
+            if (res.success) {
+              const d = res.data;
+              totalMissingLocal += d.missing_local || 0;
+              totalMissingR2 += d.missing_r2 || 0;
+              totalVerified += d.verified_ok || 0;
+
+              if (d.stats) {
+                $('#r2g-stat-synced').text(d.stats.synced || 0);
+                $('#r2g-stat-cloud').text(d.stats.cloud_only || 0);
+                $('#r2g-stat-local').text(d.stats.local_only || 0);
+              }
+
+              if (d.done || d.audited === 0) {
+                let msg = '✓ Audit complete! ' + totalVerified + ' healthy in R2.';
+                if (totalMissingR2 > 0) {
+                  msg += ' ⚠ ' + totalMissingR2 + ' missing in R2 (marked as failed).';
+                }
+                if (totalMissingLocal > 0) {
+                  msg += ' ' + totalMissingLocal + ' cloud-only (no server copy).';
+                }
+                $status.css('color', totalMissingR2 > 0 ? '#b45309' : '#059669').html('<strong>' + msg + '</strong>');
+                $btn.prop('disabled', false).html('<span class="dashicons dashicons-heart" style="vertical-align:-2px;"></span> Audit Media Health');
+              } else {
+                offset = d.next_offset;
+                runAuditBatch();
+              }
+            } else {
+              $status.css('color', '#dc2626').text(res.data?.message || 'Audit encountered an error.');
+              $btn.prop('disabled', false).html('<span class="dashicons dashicons-heart" style="vertical-align:-2px;"></span> Audit Media Health');
+            }
+          },
+          error: function() {
+            $status.css('color', '#dc2626').text('Audit request timed out or failed.');
+            $btn.prop('disabled', false).html('<span class="dashicons dashicons-heart" style="vertical-align:-2px;"></span> Audit Media Health');
+          }
+        });
+      }
+
+      runAuditBatch();
+    });
+
     // ========================================================
     // 8. Media Library Single Attachment AJAX Buttons
     // ========================================================
