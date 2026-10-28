@@ -63,6 +63,46 @@ class AstroPress_Optimizer {
     }
 
     /**
+     * Alias for get_default_engine
+     *
+     * @return string
+     */
+    public static function get_engine() {
+        return self::get_default_engine();
+    }
+
+    /**
+     * Compress an image file (helper for AJAX preview & test tools)
+     *
+     * @param string $file_path
+     * @param string $format
+     * @param int $quality
+     * @param int $max_width
+     * @param string $engine
+     * @return array
+     */
+    public function compress_image($file_path, $format = 'webp', $quality = 82, $max_width = 1920, $engine = 'resmush') {
+        $res = self::optimize_local_file($file_path, array(
+            'format'    => $format,
+            'quality'   => $quality,
+            'max_width' => $max_width,
+            'engine'    => $engine,
+            'compress'  => true,
+        ));
+        if (!empty($res['success'])) {
+            return array(
+                'success'     => true,
+                'output_path' => $res['file_path'] ?? $file_path,
+                'engine_used' => $res['engine_used'] ?? $engine,
+            );
+        }
+        return array(
+            'success' => false,
+            'error'   => $res['error'] ?? __('Optimization failed.', 'astropress'),
+        );
+    }
+
+    /**
      * Check if server has WebP generation support via GD or Imagick
      */
     public static function can_generate_webp() {

@@ -234,6 +234,22 @@ class AstroPress_Media_Handler {
         );
     }
 
+    /**
+     * Get configured R2 media storage mode
+     *
+     * @return string 'both'|'r2_only'|'local_only'
+     */
+    public static function get_storage_mode() {
+        $mode = get_option('astropress_r2_storage_mode', null);
+        if ($mode === null) {
+            $mode = get_option('r2g_storage_mode', 'both');
+        }
+        if (!in_array($mode, array('both', 'r2_only', 'local_only'), true)) {
+            $mode = 'both';
+        }
+        return $mode;
+    }
+
     public static function get_effective_upload_options() {
         $presets = self::get_presets();
         $preset_id = isset($_POST['astropress_preset']) ? sanitize_key(wp_unslash($_POST['astropress_preset'])) : (isset($_POST['r2g_preset']) ? sanitize_key(wp_unslash($_POST['r2g_preset'])) : '');

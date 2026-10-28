@@ -46,6 +46,7 @@ class AstroPress {
     // In-memory memoized option values
     private $cached_frontend_url = null;
     private $cached_secret       = null;
+    private $client              = null;
 
     /**
      * Sub-module instances
@@ -145,7 +146,25 @@ class AstroPress {
      * @return AstroPress_R2_Client
      */
     public function get_client() {
-        return AstroPress_R2_Client::instance();
+        if (is_null($this->client)) {
+            $account_id = $this->get_compat_option('astropress_r2_account_id', 'astropress_r2_account_id', 'r2g_account_id', '');
+            $access_key = $this->get_compat_option('astropress_r2_access_key', 'astropress_r2_access_key', 'r2g_access_key', '');
+            $secret_enc = $this->get_compat_option('astropress_r2_secret_key', 'astropress_r2_secret_key', 'r2g_secret_key', '');
+            $secret_key = AstroPress_Encryption::decrypt($secret_enc);
+            $bucket     = $this->get_compat_option('astropress_r2_bucket', 'astropress_r2_bucket', 'r2g_bucket', '');
+
+            $this->client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, $bucket);
+        }
+        return $this->client;
+    }
+
+    /**
+     * Alias for get_client
+     *
+     * @return AstroPress_R2_Client
+     */
+    public function get_r2_client() {
+        return $this->get_client();
     }
 
     /**

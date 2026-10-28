@@ -46,6 +46,15 @@ class AstroPress_R2_Client {
     const SERVICE = 's3';
 
     /**
+     * Singleton / global accessor
+     *
+     * @return AstroPress_R2_Client
+     */
+    public static function instance() {
+        return astropress()->get_client();
+    }
+
+    /**
      * Constructor
      *
      * @param string $account_id

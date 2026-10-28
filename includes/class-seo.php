@@ -442,8 +442,7 @@ class AstroPress_SEO {
             $slug = $target_post->post_name;
             if ($slug) {
                 $row = $wpdb->get_row($wpdb->prepare(
-                    "SELECT url_to, header_code FROM {$table_name} WHERE status = 'active' AND (object_id = %d OR sources LIKE %s) ORDER BY id DESC LIMIT 1",
-                    $post_id,
+                    "SELECT url_to, header_code FROM {$table_name} WHERE status = 'active' AND sources LIKE %s ORDER BY id DESC LIMIT 1",
                     '%' . $wpdb->esc_like($slug) . '%'
                 ), ARRAY_A);
                 if ($row && !empty($row['url_to'])) {
@@ -540,8 +539,7 @@ class AstroPress_SEO {
         if ($wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name) {
             $slug = $term->slug;
             $row = $wpdb->get_row($wpdb->prepare(
-                "SELECT url_to, header_code FROM {$table_name} WHERE status = 'active' AND (object_id = %d OR sources LIKE %s) ORDER BY id DESC LIMIT 1",
-                $term_id,
+                "SELECT url_to, header_code FROM {$table_name} WHERE status = 'active' AND sources LIKE %s ORDER BY id DESC LIMIT 1",
                 '%' . $wpdb->esc_like($slug) . '%'
             ), ARRAY_A);
             if ($row && !empty($row['url_to'])) {

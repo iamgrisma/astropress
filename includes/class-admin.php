@@ -780,6 +780,17 @@ class AstroPress_Admin {
             exit;
         }
 
+        // Clear Webhook Logs Action
+        if (isset($_POST['astropress_clear_logs']) && check_admin_referer('astropress_clear_logs_action', 'astropress_clear_logs_nonce')) {
+            $this->core->cache->clear_webhook_logs();
+            set_transient('astropress_notice', array(
+                'type'    => 'success',
+                'message' => esc_html__('Webhook delivery logs cleared.', 'astropress'),
+            ), 30);
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=logs'));
+            exit;
+        }
+
         // Deactivate Legacy Plugins Action
         if (isset($_GET['astropress_deactivate_legacy']) && check_admin_referer('astropress_deactivate_legacy_nonce')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -2277,6 +2288,74 @@ WORDPRESS_API_URL=<?php echo esc_html(home_url()); ?>
 CDN_MEDIA_URL=https://<?php echo esc_html($custom_domain); ?>
 </code></pre>
             </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Tab: Webhook Delivery Audit Logs
+     */
+    private function render_tab_logs() {
+        $logs = $this->core->cache->get_webhook_logs(50);
+        ?>
+        <div class="astropress-card" style="max-width:1050px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div>
+                    <h2 style="margin:0;"><?php esc_html_e('Webhook Delivery & Invalidation Audit Log', 'astropress'); ?></h2>
+                    <p style="margin:5px 0 0 0; color:#64748b;"><?php esc_html_e('Inspect the last 50 revalidation events sent to your Astro frontend and Cloudflare Edge.', 'astropress'); ?></p>
+                </div>
+                <?php if (!empty($logs)): ?>
+                    <form method="post" action="" onsubmit="return confirm('Clear webhook delivery logs?');">
+                        <?php wp_nonce_field('astropress_clear_logs_action', 'astropress_clear_logs_nonce'); ?>
+                        <button type="submit" name="astropress_clear_logs" class="button button-secondary">
+                            <span class="dashicons dashicons-trash"></span> <?php esc_html_e('Clear Logs', 'astropress'); ?>
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+
+            <?php if (empty($logs)): ?>
+                <div class="notice notice-info inline" style="margin:20px 0;"><p><?php esc_html_e('No webhook events recorded yet. Save or publish a post/page to see live revalidation records here.', 'astropress'); ?></p></div>
+            <?php else: ?>
+                <table class="widefat striped astropress-table" style="margin-top:10px;">
+                    <thead>
+                        <tr>
+                            <th style="width:160px;"><?php esc_html_e('Timestamp', 'astropress'); ?></th>
+                            <th style="width:100px;"><?php esc_html_e('Event', 'astropress'); ?></th>
+                            <th style="width:100px;"><?php esc_html_e('Status', 'astropress'); ?></th>
+                            <th><?php esc_html_e('Purged Paths', 'astropress'); ?></th>
+                            <th style="width:180px;"><?php esc_html_e('Response Details', 'astropress'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($logs as $log): ?>
+                            <?php
+                            $is_ok = !empty($log['success']);
+                            $status_class = $is_ok ? 'astropress-badge-online' : 'astropress-badge-offline';
+                            $status_text  = $is_ok ? __('Dispatched', 'astropress') : __('Failed', 'astropress');
+                            ?>
+                            <tr>
+                                <td><small><code><?php echo esc_html($log['timestamp'] ?? ''); ?></code></small></td>
+                                <td><span class="astropress-pill"><?php echo esc_html($log['event'] ?? 'post_updated'); ?></span></td>
+                                <td><span class="astropress-badge <?php echo esc_attr($status_class); ?>"><span class="astropress-dot"></span> <?php echo esc_html($status_text); ?></span></td>
+                                <td>
+                                    <?php
+                                    $paths = (array) ($log['paths'] ?? array());
+                                    if (empty($paths)) {
+                                        echo '<em>' . esc_html__('Global Purge (All)', 'astropress') . '</em>';
+                                    } else {
+                                        echo '<code>' . esc_html(implode(', ', array_slice($paths, 0, 5))) . (count($paths) > 5 ? ' ... (+' . (count($paths) - 5) . ' more)' : '') . '</code>';
+                                    }
+                                    ?>
+                                </td>
+                                <td>
+                                    <small><?php echo esc_html($log['details'] ?? ($is_ok ? 'HTTP 200 OK' : 'Connection timeout/error')); ?></small>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </div>
         <?php
     }
