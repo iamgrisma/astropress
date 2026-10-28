@@ -230,9 +230,26 @@ class AstroPress {
             if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
                 $val = AstroPress_Encryption::decrypt($val);
             }
+            // Auto fallback: If no custom secret is set in database, use the standard zero-config token
+            if (empty($val)) {
+                $val = 'topnepali_revalidate_secure_token';
+            }
             $this->cached_secret = (string) $val;
         }
         return $this->cached_secret;
+    }
+
+    /**
+     * Check if a custom secret is explicitly set in database
+     *
+     * @return bool
+     */
+    public function has_custom_secret() {
+        $val = get_option(self::OPTION_SECRET, '');
+        if (empty($val)) {
+            $val = get_option('astropress_headless_secret', '');
+        }
+        return !empty($val);
     }
 
     /**

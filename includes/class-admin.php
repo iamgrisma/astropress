@@ -847,6 +847,16 @@ class AstroPress_Admin {
             update_option(AstroPress::OPTION_CF_ZONE_ID, sanitize_text_field(wp_unslash($_POST['cf_zone_id'] ?? '')));
             update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, esc_url_raw(trim(wp_unslash($_POST['cf_deploy_hook'] ?? ''))));
 
+            if (isset($_POST['revalidate_secret'])) {
+                $raw_secret = sanitize_text_field(trim(wp_unslash($_POST['revalidate_secret'])));
+                if (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {
+                    update_option(AstroPress::OPTION_SECRET, AstroPress_Encryption::encrypt($raw_secret));
+                } elseif (empty($raw_secret)) {
+                    delete_option(AstroPress::OPTION_SECRET);
+                    delete_option('astropress_headless_secret');
+                }
+            }
+
             $cf_token = trim(wp_unslash($_POST['cf_api_token'] ?? ''));
             if (!empty($cf_token) && strpos($cf_token, '••••') === false) {
                 update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($cf_token));
@@ -3379,6 +3389,13 @@ class AstroPress_Admin {
                             </div>
                             <p class="description"><?php esc_html_e('Optional: Trigger a static site build in Cloudflare Pages when a full cache purge is requested.', 'astropress'); ?></p>
                             <div id="astropress-deploy-status" style="margin-top:8px;"></div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="astropress_revalidate_secret"><?php esc_html_e('Astro Webhook Secret', 'astropress'); ?></label></th>
+                        <td>
+                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" />
+                            <p class="description"><?php esc_html_e('Optional: Zero-config default token is automatically active. Only enter a custom value if you explicitly defined REVALIDATE_SECRET in your Cloudflare Pages dashboard.', 'astropress'); ?></p>
                         </td>
                     </tr>
                 </table>
