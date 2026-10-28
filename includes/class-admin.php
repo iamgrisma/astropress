@@ -1213,6 +1213,7 @@ class AstroPress_Admin {
         wp_send_json_success(array(
             'total' => count($items),
             'items' => $items,
+            'urls'  => $items,
         ));
     }
 
@@ -1222,7 +1223,7 @@ class AstroPress_Admin {
     public function ajax_warm_batch() {
         $this->verify_admin_ajax();
 
-        $raw_batch = $_POST['batch'] ?? array();
+        $raw_batch = $_POST['batch'] ?? $_POST['urls'] ?? array();
         if (!is_array($raw_batch) || empty($raw_batch)) {
             wp_send_json_error(array('message' => 'Empty batch provided'), 400);
         }
@@ -1479,16 +1480,37 @@ class AstroPress_Admin {
                     }
                 }
 
+                $clean_rules = array();
+                foreach ($existing_rules as $r) {
+                    if (empty($r['expression']) || empty($r['action'])) {
+                        continue;
+                    }
+                    $cr = array(
+                        'expression'        => $r['expression'],
+                        'description'       => !empty($r['description']) ? $r['description'] : 'Cache Rule',
+                        'action'            => $r['action'],
+                        'action_parameters' => $r['action_parameters'] ?? array(),
+                        'enabled'           => isset($r['enabled']) ? (bool) $r['enabled'] : true,
+                    );
+                    if (!empty($r['id'])) {
+                        $cr['id'] = $r['id'];
+                    }
+                    if (!empty($r['ref'])) {
+                        $cr['ref'] = $r['ref'];
+                    }
+                    $clean_rules[] = $cr;
+                }
+
                 // Append new rule and update entrypoint
-                $existing_rules[] = $cache_rule_payload;
+                $clean_rules[] = $cache_rule_payload;
                 $put_rs = wp_remote_request($ruleset_entry_url, array(
                     'method'  => 'PUT',
-                    'timeout' => 12,
+                    'timeout' => 15,
                     'headers' => array(
                         'Authorization' => 'Bearer ' . $token,
                         'Content-Type'  => 'application/json',
                     ),
-                    'body'    => wp_json_encode(array('rules' => $existing_rules)),
+                    'body'    => wp_json_encode(array('rules' => $clean_rules)),
                 ));
 
                 if (!is_wp_error($put_rs) && in_array(wp_remote_retrieve_response_code($put_rs), array(200, 201), true)) {
@@ -2258,7 +2280,8 @@ class AstroPress_Admin {
         } elseif ($preset === 'r2_cdn') {
             $cdn_domain = sanitize_text_field(wp_unslash($_POST['cdn_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
             $parsed = wp_parse_url($cdn_domain);
-            $host = !empty($parsed['host']) ? $parsed['host'] : trim($cdn_domain, '/');
+            $host = !empty($parsed['host']) ? $parsed['host'] : trim(preg_replace('#^https?://#i', '', $cdn_domain), '/');
+            $host = explode('/', $host)[0];
             if (empty($host)) {
                 wp_send_json_error(array('message' => esc_html__('Please provide a valid CDN domain for R2.', 'astropress')));
             }
@@ -2275,14 +2298,37 @@ class AstroPress_Admin {
             );
         } elseif ($preset === 'astro_ssr') {
             $frontend_url = $this->core->get_frontend_url();
-            $host = wp_parse_url($frontend_url, PHP_URL_HOST) ?: $frontend_url;
+            $host = wp_parse_url($frontend_url, PHP_URL_HOST);
+            if (empty($host)) {
+                $host = trim(preg_replace('#^https?://#i', '', $frontend_url), '/');
+                $host = explode('/', $host)[0];
+            }
             $rule_to_add = array(
                 'expression'        => '(http.host eq "' . addslashes($host) . '")',
                 'description'       => 'AstroPress: Global Edge Cache (Respect Origin Headers)',
                 'action'            => 'set_cache_settings',
                 'action_parameters' => array(
-                    'cache'    => true,
-                    'edge_ttl' => array('mode' => 'respect_origin'),
+                    'cache'       => true,
+                    'edge_ttl'    => array('mode' => 'respect_origin'),
+                    'browser_ttl' => array('mode' => 'respect_origin'),
+                ),
+                'enabled'           => true,
+            );
+        } elseif ($preset === 'astro_edge_override') {
+            $frontend_url = $this->core->get_frontend_url();
+            $host = wp_parse_url($frontend_url, PHP_URL_HOST);
+            if (empty($host)) {
+                $host = trim(preg_replace('#^https?://#i', '', $frontend_url), '/');
+                $host = explode('/', $host)[0];
+            }
+            $rule_to_add = array(
+                'expression'        => '(http.host eq "' . addslashes($host) . '")',
+                'description'       => 'AstroPress: 1-Year Full Edge Cache (' . $host . ')',
+                'action'            => 'set_cache_settings',
+                'action_parameters' => array(
+                    'cache'       => true,
+                    'edge_ttl'    => array('mode' => 'override_origin', 'default' => 31536000),
+                    'browser_ttl' => array('mode' => 'override_origin', 'default' => 31536000),
                 ),
                 'enabled'           => true,
             );
@@ -2324,25 +2370,39 @@ class AstroPress_Admin {
             $existing_rules = $body['result']['rules'] ?? array();
         }
 
+        $clean_rules = array();
         $updated = false;
-        foreach ($existing_rules as $idx => $r) {
-            if (($r['expression'] ?? '') === $rule_to_add['expression']) {
-                $existing_rules[$idx]['enabled']           = true;
-                $existing_rules[$idx]['description']       = $rule_to_add['description'];
-                $existing_rules[$idx]['action_parameters'] = $rule_to_add['action_parameters'];
-                $updated = true;
-                break;
+
+        foreach ($existing_rules as $r) {
+            if (empty($r['expression']) || empty($r['action'])) {
+                continue;
             }
+            $item = array(
+                'expression'        => $r['expression'],
+                'description'       => $r['description'] ?? 'Cache Rule',
+                'action'            => $r['action'],
+                'action_parameters' => $r['action_parameters'] ?? array(),
+                'enabled'           => isset($r['enabled']) ? (bool) $r['enabled'] : true,
+            );
+            if (!empty($r['id'])) {
+                $item['id'] = $r['id'];
+            }
+            if (!empty($r['ref'])) {
+                $item['ref'] = $r['ref'];
+            }
+
+            if ($item['expression'] === $rule_to_add['expression']) {
+                $item['enabled']           = true;
+                $item['description']       = $rule_to_add['description'];
+                $item['action_parameters'] = $rule_to_add['action_parameters'];
+                $updated = true;
+            }
+            $clean_rules[] = $item;
         }
 
         if (!$updated) {
-            $existing_rules[] = $rule_to_add;
+            $clean_rules[] = $rule_to_add;
         }
-
-        foreach ($existing_rules as &$r) {
-            unset($r['last_updated'], $r['version']);
-        }
-        unset($r);
 
         $put_res = wp_remote_request($entry_url, array(
             'method'  => 'PUT',
@@ -2351,7 +2411,7 @@ class AstroPress_Admin {
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type'  => 'application/json',
             ),
-            'body'    => wp_json_encode(array('rules' => $existing_rules)),
+            'body'    => wp_json_encode(array('rules' => $clean_rules)),
         ));
 
         if (is_wp_error($put_res)) {
@@ -2399,16 +2459,33 @@ class AstroPress_Admin {
 
         $body = json_decode(wp_remote_retrieve_body($get_res), true);
         $rules = $body['result']['rules'] ?? array();
+        $clean_rules = array();
         $found = false;
 
-        foreach ($rules as &$r) {
+        foreach ($rules as $r) {
+            if (empty($r['expression']) || empty($r['action'])) {
+                continue;
+            }
+            $item = array(
+                'expression'        => $r['expression'],
+                'description'       => $r['description'] ?? 'Cache Rule',
+                'action'            => $r['action'],
+                'action_parameters' => $r['action_parameters'] ?? array(),
+                'enabled'           => isset($r['enabled']) ? (bool) $r['enabled'] : true,
+            );
+            if (!empty($r['id'])) {
+                $item['id'] = $r['id'];
+            }
+            if (!empty($r['ref'])) {
+                $item['ref'] = $r['ref'];
+            }
+
             if (($r['id'] ?? '') === $rule_id) {
-                $r['enabled'] = $enabled;
+                $item['enabled'] = $enabled;
                 $found = true;
             }
-            unset($r['last_updated'], $r['version']);
+            $clean_rules[] = $item;
         }
-        unset($r);
 
         if (!$found) {
             wp_send_json_error(array('message' => esc_html__('Rule ID not found in current ruleset.', 'astropress')));
@@ -2421,7 +2498,7 @@ class AstroPress_Admin {
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type'  => 'application/json',
             ),
-            'body'    => wp_json_encode(array('rules' => $rules)),
+            'body'    => wp_json_encode(array('rules' => $clean_rules)),
         ));
 
         if (!is_wp_error($put_res) && in_array(wp_remote_retrieve_response_code($put_res), array(200, 201), true)) {
@@ -2465,8 +2542,23 @@ class AstroPress_Admin {
 
         foreach ($rules as $r) {
             if (($r['id'] ?? '') !== $rule_id) {
-                unset($r['last_updated'], $r['version']);
-                $new_rules[] = $r;
+                if (empty($r['expression']) || empty($r['action'])) {
+                    continue;
+                }
+                $item = array(
+                    'expression'        => $r['expression'],
+                    'description'       => $r['description'] ?? 'Cache Rule',
+                    'action'            => $r['action'],
+                    'action_parameters' => $r['action_parameters'] ?? array(),
+                    'enabled'           => isset($r['enabled']) ? (bool) $r['enabled'] : true,
+                );
+                if (!empty($r['id'])) {
+                    $item['id'] = $r['id'];
+                }
+                if (!empty($r['ref'])) {
+                    $item['ref'] = $r['ref'];
+                }
+                $new_rules[] = $item;
             }
         }
 
@@ -2775,7 +2867,8 @@ class AstroPress_Admin {
                             <!-- Blueprint Table (Collapsible) -->
                             <div id="onboard-blueprint-wrap" style="display:none; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-top:12px;">
                                 <strong style="font-size:12px; color:#1e293b; display:block; margin-bottom:6px;"><?php esc_html_e('Required Token Scopes & Permissions:', 'astropress'); ?></strong>
-                                <table class="widefat striped" style="font-size:12px; margin-bottom:8px;">
+                                <div class="astropress-table-responsive">
+                                <table class="widefat striped" style="font-size:12px; margin-bottom:8px; min-width:540px;">
                                     <thead>
                                         <tr>
                                             <th><?php esc_html_e('Category', 'astropress'); ?></th>
@@ -2795,12 +2888,13 @@ class AstroPress_Admin {
                                         <?php endforeach; ?>
                                     </tbody>
                                 </table>
+                                </div>
                             </div>
 
                             <!-- Token Input Box -->
                             <div style="display:flex; gap:8px; align-items:center; margin-top:14px; flex-wrap:wrap;">
-                                <div style="flex:1; min-width:280px;">
-                                    <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" placeholder="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : 'Paste Cloudflare API Token here...'; ?>" class="regular-text" style="width:100%;" autocomplete="new-password" />
+                                <div style="flex:1; min-width:200px; width:100%; max-width:100%;">
+                                    <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" placeholder="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : 'Paste Cloudflare API Token here...'; ?>" class="regular-text" style="width:100%; max-width:100%; box-sizing:border-box;" autocomplete="new-password" />
                                 </div>
                                 <button type="button" class="button button-primary" id="onboard-quick-audit-btn">
                                     <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Auto-Discover & Verify Token', 'astropress'); ?>
@@ -2834,7 +2928,7 @@ class AstroPress_Admin {
                         </div>
 
                         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:650px;">
-                            <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" style="flex:1; min-width:240px;" required />
+                            <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" style="flex:1; min-width:200px; max-width:100%; box-sizing:border-box;" required />
                             <button type="button" class="button button-secondary" id="onboard-detect-frontend-btn">
                                 <span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> <?php esc_html_e('Ping & Verify Reachability', 'astropress'); ?>
                             </button>
@@ -3189,6 +3283,21 @@ class AstroPress_Admin {
                             <span class="dashicons dashicons-plus" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Preset', 'astropress'); ?>
                         </button>
                     </div>
+
+                    <!-- Preset 4: Astro Full 1-Year Edge Cache -->
+                    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#0f172a; margin-bottom:4px;">
+                                <?php esc_html_e('Astro Full 1-Year Edge Cache', 'astropress'); ?>
+                            </div>
+                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">
+                                Matches <code><?php echo esc_html($frontend_host); ?></code> and forces 1-year Cloudflare Edge Cache (fixes DYNAMIC status for instant speed).
+                            </p>
+                        </div>
+                        <button type="button" class="button button-primary button-small astropress-deploy-preset-btn" data-preset="astro_edge_override">
+                            <span class="dashicons dashicons-plus" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy 1-Year Cache', 'astropress'); ?>
+                        </button>
+                    </div>
                 </div>
                 <div id="astropress-preset-deploy-status" style="margin-top:10px; font-size:12px;"></div>
             </div>
@@ -3198,7 +3307,7 @@ class AstroPress_Admin {
                 <h3 style="margin:0 0 10px 0; font-size:14px; color:#1e293b;">
                     <?php esc_html_e('Active Cloudflare Ruleset Cache Rules:', 'astropress'); ?>
                 </h3>
-                <div id="astropress-rules-table-container">
+                <div id="astropress-rules-table-container" class="astropress-table-responsive">
                     <p style="color:#64748b; font-size:13px;">
                         <span class="spinner is-active" style="float:none; margin:0 6px 0 0;"></span>
                         <?php esc_html_e('Loading active cache rules from Cloudflare Ruleset API...', 'astropress'); ?>

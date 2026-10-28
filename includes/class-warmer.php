@@ -69,9 +69,12 @@ class AstroPress_Warmer {
             $clean_url = home_url('/' . ltrim($clean_url, '/'));
         }
 
-        $home_host = parse_url(home_url(), PHP_URL_HOST);
-        $req_host  = parse_url($clean_url, PHP_URL_HOST);
-        if ($home_host && $req_host && strtolower($home_host) !== strtolower($req_host)) {
+        $home_host     = parse_url(home_url(), PHP_URL_HOST);
+        $frontend_host = parse_url($this->core->get_frontend_url(), PHP_URL_HOST);
+        $req_host      = parse_url($clean_url, PHP_URL_HOST);
+
+        $allowed_hosts = array_filter(array(strtolower($home_host), strtolower($frontend_host)));
+        if (!empty($req_host) && !in_array(strtolower($req_host), $allowed_hosts, true)) {
             return false;
         }
 
@@ -86,6 +89,22 @@ class AstroPress_Warmer {
         ));
 
         if (is_wp_error($res) || wp_remote_retrieve_response_code($res) !== 200) {
+            // If failed on home_url, attempt on frontend_url
+            if (!empty($frontend_host) && strtolower($req_host) === strtolower($home_host)) {
+                $fe_url = rtrim($this->core->get_frontend_url(), '/') . '/' . ltrim(parse_url($clean_url, PHP_URL_PATH), '/');
+                $fe_res = wp_remote_get($fe_url, array(
+                    'timeout'             => 10,
+                    'sslverify'           => false,
+                    'headers'             => array(
+                        'User-Agent' => 'AstroPress-Sitemap-Crawler/1.0',
+                        'Accept'     => 'application/xml,text/xml,*/*',
+                    ),
+                ));
+                if (!is_wp_error($fe_res) && wp_remote_retrieve_response_code($fe_res) === 200) {
+                    $body = wp_remote_retrieve_body($fe_res);
+                    return (!empty($body) && strpos($body, '<loc>') !== false) ? $body : false;
+                }
+            }
             return false;
         }
 
@@ -286,7 +305,36 @@ class AstroPress_Warmer {
                 }
             }
 
-            return apply_filters('astropress_warmup_urls', $items, $preset);
+            if (empty($items)) {
+            $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+        }
+
+        return apply_filters('astropress_warmup_urls', $items, $preset);
+        }
+
+        if ($preset === 'tools_only') {
+            $tool_slugs = array('/tools', '/date-converter', '/unicode-converter', '/calendar', '/patro', '/nepali-date-converter', '/gold-silver-rate', '/forex');
+            foreach ($tool_slugs as $slug) {
+                if (!isset($seen[$slug])) {
+                    $seen[$slug] = true;
+                    $items[] = array('url' => $slug, 'title' => trim($slug, '/'), 'type' => 'Tool');
+                }
+            }
+            $tool_pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' AND (post_name LIKE '%tool%' OR post_name LIKE '%converter%' OR post_name LIKE '%calendar%') ORDER BY ID DESC");
+            if (!empty($tool_pages)) {
+                foreach ($tool_pages as $p) {
+                    $url = '/' . ltrim($p->post_name, '/');
+                    if (!isset($seen[$url])) {
+                        $seen[$url] = true;
+                        $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Tool');
+                    }
+                }
+            }
+            if (empty($items)) {
+            $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+        }
+
+        return apply_filters('astropress_warmup_urls', $items, $preset);
         }
 
         if ($preset === 'sitemap_files_only') {
@@ -328,6 +376,10 @@ class AstroPress_Warmer {
                 $seen[$url] = true;
                 $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Post');
             }
+        }
+
+        if (empty($items)) {
+            $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
         }
 
         return apply_filters('astropress_warmup_urls', $items, $preset);
@@ -641,6 +693,7 @@ class AstroPress_Warmer {
 
         wp_send_json_success(array(
             'total' => count($urls),
+            'items' => $urls,
             'urls'  => $urls,
         ));
     }
@@ -650,12 +703,12 @@ class AstroPress_Warmer {
             wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
         }
 
-        $urls = isset($_POST['urls']) ? (array) $_POST['urls'] : array();
-        if (empty($urls)) {
+        $raw_batch = $_POST['batch'] ?? $_POST['urls'] ?? array();
+        if (empty($raw_batch) || !is_array($raw_batch)) {
             wp_send_json_error(array('message' => 'No URLs provided in batch.'));
         }
 
-        $results = $this->warm_url_batch($urls);
+        $results = $this->warm_url_batch($raw_batch);
         wp_send_json_success(array('results' => $results));
     }
 

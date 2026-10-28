@@ -15,8 +15,30 @@
 
 .astropress-wrap {
   max-width: 1100px;
+  width: 100%;
   margin: 20px 20px 40px 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  overflow-x: hidden;
+}
+
+.astropress-table-responsive {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 12px 0;
+  box-sizing: border-box;
+}
+
+.astropress-table-responsive table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.astropress-wrap code,
+.astropress-wrap pre {
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Header */
@@ -803,20 +825,38 @@
 
 @media screen and (max-width: 782px) {
   .astropress-wrap {
-    margin: 10px 10px 20px 0;
-    max-width: 100%;
+    margin: 10px 0 20px 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  .astropress-card,
+  .astropress-wizard-wrap {
+    padding: 16px 14px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .astropress-header {
     flex-direction: column !important;
     align-items: flex-start !important;
-    gap: 14px !important;
-    padding: 16px 18px !important;
+    gap: 12px !important;
+    padding: 16px 14px !important;
+  }
+
+  .astropress-header-brand {
+    gap: 10px !important;
+  }
+
+  .astropress-header-brand h1 {
+    font-size: 19px !important;
   }
 
   .astropress-header-badges {
     flex-wrap: wrap !important;
-    gap: 8px !important;
+    gap: 6px !important;
   }
 
   .nav-tab-wrapper.astropress-nav-tabs {
@@ -824,12 +864,12 @@
     flex-wrap: wrap !important;
     gap: 4px !important;
     border-bottom: 1px solid #cbd5e1 !important;
-    padding-bottom: 0 !important;
+    padding-bottom: 4px !important;
   }
 
   .nav-tab-wrapper.astropress-nav-tabs .nav-tab {
     margin: 0 !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     padding: 6px 10px !important;
   }
 
@@ -874,12 +914,30 @@
     gap: 8px !important;
   }
 
-  .astropress-grid-2 {
+  .astropress-grid-2,
+  .r2g-stats-grid,
+  .astropress-mode-grid {
     grid-template-columns: 1fr !important;
   }
 
-  .r2g-stats-grid {
-    grid-template-columns: 1fr !important;
+  .topnepali-log-console,
+  .astropress-log-console {
+    max-height: 180px !important;
+    font-size: 10px !important;
+    padding: 8px !important;
+  }
+
+  .topnepali-log-entry,
+  .astropress-log-entry {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
+  .topnepali-log-path,
+  .astropress-log-path {
+    width: 100% !important;
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
   }
 
   .button, .button-primary, .button-secondary {

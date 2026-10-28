@@ -821,7 +821,8 @@
         return;
       }
 
-      if (!queueResponse.success || !queueResponse.data.items || !queueResponse.data.items.length) {
+      var items = (queueResponse && queueResponse.data && (queueResponse.data.items || queueResponse.data.urls)) || [];
+      if (!queueResponse || !queueResponse.success || !items.length) {
         appendWarmLog('topnepali-log-status-err', 'No URLs found for selected scope', 'Empty');
         $statusPill.text('EMPTY').css('background', '#64748b');
         $startWarmBtn.prop('disabled', false).css('opacity', 1);
@@ -830,8 +831,6 @@
         isWarming = false;
         return;
       }
-
-      var items = queueResponse.data.items;
       var total = items.length;
       $totalEl.text(total);
       appendWarmLog('topnepali-log-status-200', 'Queue loaded successfully', total + ' URLs ready');
@@ -1880,14 +1879,14 @@
       });
     });
 
-    // 6. Deploy Cache Rule from Setup Wizard (Delegated)
-    $(document).on('click', '#onboard-deploy-cache-rule-btn', function(e) {
+    // 6. Deploy Cache Rule from Setup Wizard / Audit (Delegated)
+    $(document).on('click', '#onboard-deploy-cache-rule-btn, #astropress-btn-deploy-cache-rule', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const cdnDomain = $('#onboard_r2_custom_domain').val().trim();
-      const token = $('#onboard_cf_api_token').val().trim();
-      const zoneId = $('#onboard_cf_zone_id').val().trim();
-      const $status = $('#onboard-cache-rule-status');
+      const cdnDomain = ($('#onboard_r2_custom_domain').val() || $('#r2g_custom_domain').val() || '').trim();
+      const token = ($('#onboard_cf_api_token').val() || '').trim();
+      const zoneId = ($('#onboard_cf_zone_id').val() || '').trim();
+      const $status = $('#onboard-cache-rule-status').length ? $('#onboard-cache-rule-status') : $('#onboard-attach-status');
 
       if (!cdnDomain) {
         alert('Please enter a Public CDN Domain first (e.g. media.example.com).');
@@ -2468,7 +2467,7 @@
               return;
             }
 
-            let tbl = '<table class="widefat striped" style="margin-top:6px;">';
+            let tbl = '<div class="astropress-table-responsive"><table class="widefat striped" style="margin-top:6px; min-width:680px;">';
             tbl += '<thead><tr>';
             tbl += '<th style="width:70px;">Active</th>';
             tbl += '<th>Description</th>';
@@ -2492,14 +2491,14 @@
               tbl += '<tr>';
               tbl += '<td><input type="checkbox" class="astropress-toggle-rule-switch" data-rule-id="' + r.id + '" ' + (isEnabled ? 'checked' : '') + ' /></td>';
               tbl += '<td><strong>' + (r.description || 'Custom Rule') + '</strong></td>';
-              tbl += '<td><code>' + (r.expression || '') + '</code></td>';
+              tbl += '<td><code style="word-break:break-all; white-space:pre-wrap; max-width:280px; display:inline-block;">' + (r.expression || '') + '</code></td>';
               tbl += '<td><span class="astropress-badge" style="background:#eff6ff; color:#1d4ed8;">' + edgeTtl + '</span></td>';
               tbl += '<td><span class="astropress-badge" style="background:#f0fdf4; color:#166534;">' + browserTtl + '</span></td>';
               tbl += '<td style="text-align:right;"><button type="button" class="button button-link-delete astropress-delete-rule-btn" data-rule-id="' + r.id + '"><span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span></button></td>';
               tbl += '</tr>';
             });
 
-            tbl += '</tbody></table>';
+            tbl += '</tbody></table></div>';
             $container.html(tbl);
           } else {
             $container.html('<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:12px; color:#991b1b; font-size:13px;"><strong>Failed to load rules:</strong> ' + (res.data ? res.data.message : 'Error') + '</div>');
