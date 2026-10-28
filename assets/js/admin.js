@@ -50,28 +50,17 @@
       return secret;
     }
 
-    $('#astropress-generate-secret').on('click', function(e) {
-      e.preventDefault();
-      const secret = generateRandomSecret();
-      $('#astropress_secret').attr('type', 'text').val(secret);
-      $('#astropress-toggle-secret').text('Hide');
-    });
-
     $('#onboard-gen-secret').on('click', function(e) {
       e.preventDefault();
       $('#onboard_secret').val(generateRandomSecret());
     });
 
     // ========================================================
-    // 2. Secret Key Handshake & Rotation Management
+    // 2. Secret Key Handshake Test
     // ========================================================
     const $testKeyBtn      = $('#astropress-test-key-btn');
-    const $changeKeyBtn    = $('#astropress-change-key-btn');
-    const $cancelKeyBtn    = $('#astropress-cancel-change-key-btn');
-    const $keyInputBox     = $('#astropress-key-input-container');
     const $keyStatusBadge  = $('#astropress-key-badge');
     const $keyFeedback     = $('#astropress-key-test-feedback');
-    const $keyStatusIcon   = $('#astropress-key-status-icon');
 
     // Revalidate Key Handshake
     $testKeyBtn.on('click', function(e) {
@@ -91,40 +80,19 @@
         success: function(res) {
           if (res.success) {
             $keyStatusBadge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
-            $keyStatusIcon.removeClass('dashicons-warning dashicons-dismiss').addClass('dashicons-shield-alt').css('color', '#059669');
             $keyFeedback.html('<div style="padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-yes-alt"></span> <strong>Key Verified:</strong> ' + res.data.message + ' (' + res.data.latency_ms + 'ms latency)</div>');
-            $keyInputBox.slideUp(150);
           } else {
             $keyStatusBadge.css({'background': '#fef2f2', 'color': '#991b1b', 'border-color': '#fecaca'}).text('Failed (HTTP ' + (res.data.code || 0) + ')');
-            $keyStatusIcon.removeClass('dashicons-shield-alt').addClass('dashicons-warning').css('color', '#dc2626');
-            $keyFeedback.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-warning"></span> <strong>Key Failed:</strong> ' + res.data.message + ' Please enter a new key below.</div>');
-            $keyInputBox.slideDown(200);
-            $('#astropress_secret').focus();
+            $keyFeedback.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-warning"></span> <strong>Handshake Failed:</strong> ' + res.data.message + ' <a href="admin.php?page=astropress&tab=onboarding" style="color:#b91c1c; text-decoration:underline; font-weight:600; margin-left:6px;">Update in Setup Wizard &rarr;</a></div>');
           }
         },
         error: function(xhr, status, err) {
           $keyFeedback.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> Server error while testing secret key: ' + err + '</div>');
-          $keyInputBox.slideDown(200);
         },
         complete: function() {
           $btn.prop('disabled', false).removeClass('updating-message');
         }
       });
-    });
-
-    $changeKeyBtn.on('click', function(e) {
-      e.preventDefault();
-      $keyInputBox.slideToggle(150, function() {
-        if ($keyInputBox.is(':visible')) {
-          $('#astropress_secret').focus();
-        }
-      });
-    });
-
-    $cancelKeyBtn.on('click', function(e) {
-      e.preventDefault();
-      $keyInputBox.slideUp(150);
-      $('#astropress_secret').val('');
     });
 
     // Cloudflare Token Change / Cancel
@@ -1863,38 +1831,7 @@
     // SETUP WIZARD & MASKED CREDENTIAL INTERACTION
     // ========================================================
 
-    // 1. Copy Revalidation Secret (Active input only - never stored concealed secrets)
-    $(document).on('click', '.onboard-copy-secret-btn', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const targetSel = $btn.data('target') || '#onboard_secret';
-      const val = $(targetSel).val()?.trim();
-      const $fb = $('#onboard-secret-copy-feedback');
-
-      if (!val) {
-        alert('Please enter or generate a secret first before copying.');
-        return;
-      }
-
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(val).then(function() {
-          $fb.html('<span class="astropress-copy-feedback"><span class="dashicons dashicons-yes"></span> Copied to clipboard! Set as REVALIDATE_SECRET in Cloudflare Pages.</span>').slideDown(150);
-          setTimeout(function() { $fb.fadeOut(400); }, 5000);
-        }).catch(function() {
-          $fb.html('<span class="astropress-copy-feedback">Copied: ' + val + '</span>').slideDown(150);
-        });
-      } else {
-        const $temp = $('<textarea>');
-        $('body').append($temp);
-        $temp.val(val).select();
-        document.execCommand('copy');
-        $temp.remove();
-        $fb.html('<span class="astropress-copy-feedback"><span class="dashicons dashicons-yes"></span> Copied to clipboard! Set as REVALIDATE_SECRET in Cloudflare Pages.</span>').slideDown(150);
-        setTimeout(function() { $fb.fadeOut(400); }, 5000);
-      }
-    });
-
-    // 2. Rotate / Change Revalidation Secret Toggle & Drawer
+    // 1. Rotate Revalidation Secret Toggle & Drawer
     $(document).on('click', '#onboard-rotate-secret-btn, #onboard-change-secret-btn', function(e) {
       e.preventDefault();
       const $wrap = $('#onboard-secret-input-wrap');
@@ -1909,22 +1846,6 @@
       e.preventDefault();
       $('#onboard-secret-input-wrap').slideUp(150);
       $('#onboard_secret').val('');
-    });
-
-    // 3. Password Eye Visibility Toggle
-    $(document).on('click', '.astropress-toggle-eye', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const targetSelector = $btn.data('target');
-      const $input = $(targetSelector);
-      const currentType = $input.attr('type');
-      if (currentType === 'password') {
-        $input.attr('type', 'text');
-        $btn.find('.dashicons').removeClass('dashicons-visibility').addClass('dashicons-hidden');
-      } else {
-        $input.attr('type', 'password');
-        $btn.find('.dashicons').removeClass('dashicons-hidden').addClass('dashicons-visibility');
-      }
     });
 
     // 4. Permission Blueprint Recipe Box Toggle & Copy

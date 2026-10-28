@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.9
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,11 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.3.0 =
+* Cloudflare Scoped Token Blueprint Fix: Fixed permissionGroupKeys URL template mapping for Cache Purge (type: "purge") and Cloudflare Pages (key: "page"), preventing Cloudflare dashboard from excluding them during token creation.
+* Complete Debloating of Revalidation Secret UX: Eliminated view/copy buttons, eye visibility toggles, and plain text secret exposures. Stored secrets remain masked as credentials with clean Test Connection and Rotate Secret flows.
+* Streamlined Headless Bridge Tab: Unified credential management exclusively into the Setup Wizard with read-only security status badge in the Bridge tab.
 
 = 1.2.9 =
 * Single Scoped Module Architecture: Centralized all credential input into the Setup Wizard. Completely removed redundant Cloudflare API Token and Zone ID input forms from Headless Bridge and Overview tabs.
