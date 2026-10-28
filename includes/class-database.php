@@ -95,7 +95,7 @@ class AstroPress_Database {
         if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $legacy_table)) === $legacy_table) {
             $current_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
             $legacy_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$legacy_table}");
-            if ($current_count === 0 && $legacy_count > 0) {
+            if ($legacy_count > 0) {
                 $wpdb->query("INSERT IGNORE INTO {$table} (attachment_id, r2_key, file_name, mime_type, file_size, original_size, status, has_local, thumb_count, synced_at, created_at, updated_at) SELECT attachment_id, r2_key, file_name, mime_type, file_size, original_size, status, has_local, thumb_count, synced_at, created_at, updated_at FROM {$legacy_table}");
             }
         }
@@ -440,7 +440,9 @@ class AstroPress_Database {
             }
         }
 
-        update_option('astropress_postmeta_migrated', '1');
+        if (empty($items) || count($items) < 200) {
+            update_option('astropress_postmeta_migrated', '1');
+        }
         return $migrated;
     }
 

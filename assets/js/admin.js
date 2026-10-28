@@ -12,6 +12,16 @@
 (function($) {
   'use strict';
 
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+
   $(document).ready(function() {
     const config = window.astropressConfig || {};
     const ajaxurl = config.ajaxUrl || window.ajaxurl || '/wp-admin/admin-ajax.php';
@@ -190,13 +200,13 @@
               $('#astropress-domain-hint').html('<strong style="color:#059669;">Auto-suggested:</strong> https://objects.topnepali.com (Connected to bucket ' + chosen + ')');
             }
 
-            $status.html('<span style="color:#059669;font-weight:600;">✓ Discovered ' + buckets.length + ' bucket(s). ' + (chosen ? 'Selected: <code>' + chosen + '</code>' : 'Please select a bucket from the dropdown.') + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Discovered ' + buckets.length + ' bucket(s). ' + (chosen ? 'Selected: <code>' + chosen + '</code>' : 'Please select a bucket from the dropdown.') + '</span>');
           } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || res.data?.error || 'Could not discover buckets. Verify credentials or create a bucket below.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || res.data?.error || 'Could not discover buckets. Verify credentials or create a bucket below.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Discovery failed: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Discovery failed: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-search" style="vertical-align:-2px;"></span> Discover Buckets');
@@ -297,7 +307,7 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
             const created = res.data.bucket || bucketName;
 
             // Add to dropdown and select it
@@ -311,11 +321,11 @@
               $('#astropress-create-bucket-wrap').slideUp(200);
             }, 1800);
           } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Bucket creation failed.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Bucket creation failed.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Request error: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).text('Create & Use Bucket');
@@ -402,7 +412,7 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
             const created = res.data.bucket || bucketName;
             const $select = $('#onboard_r2_bucket_select');
             $select.append('<option value="' + created + '" selected>' + created + '</option>');
@@ -414,11 +424,11 @@
               $('#onboard-create-bucket-wrap').slideUp(200);
             }, 1800);
           } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Bucket creation failed.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Bucket creation failed.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Request error: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).text('Create & Select');
@@ -534,13 +544,13 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + (res.data?.message || 'CDN Edge cache purged successfully!') + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'CDN Edge cache purged successfully!') + '</span>');
           } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Purge failed.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Purge failed.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Request error: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge CDN Cache');
@@ -567,12 +577,12 @@
 
       if (!isAllowed) {
         if ($hintContainer && $hintContainer.length) {
-          $hintContainer.html('<span style="color:#dc2626;font-weight:600;">⚠️ CDN Domain must be a subdomain of ' + allowedRoots.join(', ') + ' (e.g. media.' + allowedRoots[0] + ')</span>').show();
+          $hintContainer.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> CDN Domain must be a subdomain of ' + allowedRoots.join(', ') + ' (e.g. media.' + allowedRoots[0] + ')</span>').show();
         }
         return false;
       } else {
         if ($hintContainer && $hintContainer.length) {
-          $hintContainer.html('<span style="color:#059669;font-weight:600;">✓ Valid CDN subdomain for ' + allowedRoots[0] + '</span>').show();
+          $hintContainer.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Valid CDN subdomain for ' + allowedRoots[0] + '</span>').show();
         }
         return true;
       }
@@ -625,13 +635,13 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
           } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data.message || 'Connection test failed.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data.message || 'Connection test failed.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Connection error: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Connection error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Connection');
@@ -680,7 +690,7 @@
               <div class="astropress-preview-result-card">
                 <img src="${d.data_uri}" alt="Compressed Preview" class="astropress-preview-img" />
                 <div>
-                  <h4 style="margin:0 0 6px 0; color:#0f172a; font-size:15px;">✓ Compression Successful!</h4>
+                  <h4 style="margin:0 0 6px 0; color:#0f172a; font-size:15px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Compression Successful!</h4>
                   <table style="font-size:12px; line-height:1.6;">
                     <tr><td><strong>Original Size:</strong></td><td>${formatBytes(d.original_size)}</td></tr>
                     <tr><td><strong>Compressed Size:</strong></td><td>${formatBytes(d.compressed_size)}</td></tr>
@@ -692,11 +702,11 @@
             `;
             $result.html(html);
           } else {
-            $result.html('<p style="color:#e02424;">✗ ' + (res.data?.message || 'Compression failed.') + '</p>');
+            $result.html('<p style="color:#e02424;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Compression failed.') + '</p>');
           }
         },
         error: function(xhr, status, err) {
-          $result.html('<p style="color:#e02424;">✗ Request error: ' + err + '</p>');
+          $result.html('<p style="color:#e02424;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</p>');
         },
         complete: function() {
           $btn.prop('disabled', false).text('Test Image Compression');
@@ -1188,7 +1198,7 @@
                 $progText.text('Bulk sync completed. ' + failedIds.length + ' item(s) could not be synced. Check R2 permissions and click below to retry.');
                 $startBtn.show().text('Retry Failed Items (' + failedIds.length + ')');
               } else {
-                $progText.html('<strong style="color:#059669;">✓ All media successfully synced to Cloudflare R2! (0 remaining). Local copies preserved safely.</strong>');
+                $progText.html('<strong style="color:#059669;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> All media successfully synced to Cloudflare R2! (0 remaining). Local copies preserved safely.</strong>');
                 $startBtn.show().text('Sync Finished (Run Again)');
               }
               $pauseBtn.hide();
@@ -1297,7 +1307,7 @@
             if (res.data.done || remaining === 0) {
               $fill.css('width', '100%');
               $pct.text('100%');
-              $text.html('<strong style="color:#059669;">✓ Verified local cleanup complete! Web hosting disk space freed.</strong>');
+              $text.html('<strong style="color:#059669;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Verified local cleanup complete! Web hosting disk space freed.</strong>');
               $btn.prop('disabled', true);
               return;
             }
@@ -1333,7 +1343,7 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.css('color', '#059669').html('<strong>✓ ' + res.data.message + '</strong>');
+            $status.css('color', '#059669').html('<strong><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</strong>');
             if (res.data.stats) {
               $('#r2g-stat-synced').text(res.data.stats.synced || 0);
               $('#r2g-stat-cloud').text(res.data.stats.cloud_only || 0);
@@ -1370,7 +1380,7 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.css('color', '#059669').html('<strong>✓ ' + res.data.message + '</strong>');
+            $status.css('color', '#059669').html('<strong><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</strong>');
             if (res.data.stats) {
               $('#r2g-stat-synced').text(res.data.stats.synced || 0);
               $('#r2g-stat-cloud').text(res.data.stats.cloud_only || 0);
@@ -1427,9 +1437,9 @@
               }
 
               if (d.done || d.audited === 0) {
-                let msg = '✓ Audit complete! ' + totalVerified + ' healthy in R2.';
+                let msg = '<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Audit complete! ' + totalVerified + ' healthy in R2.';
                 if (totalMissingR2 > 0) {
-                  msg += ' ⚠ ' + totalMissingR2 + ' missing in R2 (marked as failed).';
+                  msg += ' <span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' + totalMissingR2 + ' missing in R2 (marked as failed).';
                 }
                 if (totalMissingLocal > 0) {
                   msg += ' ' + totalMissingLocal + ' cloud-only (no server copy).';
@@ -1527,7 +1537,7 @@
         },
         success: function(res) {
           if (res.success) {
-            let msg = '✓ Token verified! ';
+            let msg = '<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Token verified! ';
             if (res.data.matched_account) {
               msg += 'Account: ' + res.data.matched_account.name + '. ';
             }
@@ -1539,11 +1549,11 @@
             }
             $status.html('<span style="color:#057a55;font-weight:600;">' + msg + '</span>');
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Verification failed') + '</span>');
+            $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Verification failed') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;">✗ Request error: ' + err + '</span>');
+          $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).text('Test & Discover');
@@ -1571,13 +1581,13 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#057a55;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#057a55;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Purge failed') + '</span>');
+            $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Purge failed') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;">✗ Network error: ' + err + '</span>');
+          $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Network error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).text('Purge Edge Now');
@@ -1604,13 +1614,13 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#057a55;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#057a55;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Trigger failed') + '</span>');
+            $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Trigger failed') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;">✗ Network error: ' + err + '</span>');
+          $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Network error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).text('Trigger Deploy');
@@ -1719,7 +1729,7 @@
             if (res.success) {
               const data = res.data;
               let html = '<div class="astropress-quick-results-box">';
-              html += '<h4 style="margin:0 0 10px 0; color:#057a55;">✓ Cloudflare Resources Auto-Discovered:</h4>';
+              html += '<h4 style="margin:0 0 10px 0; color:#057a55;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Cloudflare Resources Auto-Discovered:</h4>';
               html += '<div class="astropress-cf-resource-grid">';
 
               if (data.matched_account) {
@@ -1737,6 +1747,21 @@
               }
 
               html += '</div>';
+
+              // 1-Click Remediation for Missing Cloudflare Scopes
+              if (!data.all_granted && data.fix_token_url) {
+                html += '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:14px; margin-top:14px;">';
+                html += '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">';
+                html += '<div>';
+                html += '<strong style="color:#b45309; font-size:13px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Missing Cloudflare Token Permissions Detected</strong>';
+                html += '<p style="margin:4px 0 0 0; font-size:12px; color:#92400e;">Your token is missing ' + (data.missing_scopes ? data.missing_scopes.length : 'required') + ' permission(s). Click below to re-generate your token with all missing scopes pre-selected in 1 click.</p>';
+                html += '</div>';
+                html += '<a href="' + data.fix_token_url + '" target="_blank" rel="noopener noreferrer" class="button button-primary" style="background:#d97706; border-color:#b45309;">';
+                html += '<span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> Re-Generate Token with Missing Scopes &rarr;';
+                html += '</a>';
+                html += '</div>';
+                html += '</div>';
+              }
 
               // Render Deep Abilities Audit
               if (data.abilities) {
@@ -1809,11 +1834,11 @@
                 }
               }
             } else {
-              $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;">✗ ' + (res.data?.message || 'Discovery failed') + '</span></div>');
+              $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Discovery failed') + '</span></div>');
             }
           },
           error: function(xhr, status, err) {
-            $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;">✗ Request error: ' + err + '</span></div>');
+            $results.html('<div class="astropress-quick-results-box" style="border-color:#fca5a5;background:#fff5f5;"><span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span></div>');
           },
           complete: function() {
             $btn.prop('disabled', false).html('<span class="dashicons dashicons-search"></span> Auto-Discover Resources');
@@ -1859,7 +1884,7 @@
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(recipe).then(function() {
           const $status = $('#onboard-blueprint-copy-status');
-          $status.html('✓ Blueprint recipe copied to clipboard! Paste into your notes or token creation form.').fadeIn(150);
+          $status.html('<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Blueprint recipe copied to clipboard! Paste into your notes or token creation form.').fadeIn(150);
           setTimeout(function() { $status.fadeOut(400); }, 5000);
         });
       }
@@ -1909,13 +1934,13 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;">✓ ' + res.data.message + '</span>');
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
           } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;">✗ ' + (res.data?.message || 'Deployment failed.') + '</span>');
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Deployment failed.') + '</span>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;">✗ Network error: ' + err + '</span>');
+          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Network error: ' + err + '</span>');
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> Deploy 1-Year Cache Rule');
@@ -2027,7 +2052,7 @@
 
             // Webhook route indicator
             if (d.webhook_reachable) {
-              html += '<span class="astropress-badge" style="background:#ecfdf5; color:#065f46; font-size:11px;">✓ Webhook /api/revalidate Active</span>';
+              html += '<span class="astropress-badge" style="background:#ecfdf5; color:#065f46; font-size:11px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Webhook /api/revalidate Active</span>';
             } else {
               html += '<span class="astropress-badge" style="background:#fffbeb; color:#b45309; font-size:11px;">ℹ Webhook Route Not Mounted (HTTP ' + d.webhook_status + ')</span>';
             }
@@ -2490,8 +2515,8 @@
 
               tbl += '<tr>';
               tbl += '<td><input type="checkbox" class="astropress-toggle-rule-switch" data-rule-id="' + r.id + '" ' + (isEnabled ? 'checked' : '') + ' /></td>';
-              tbl += '<td><strong>' + (r.description || 'Custom Rule') + '</strong></td>';
-              tbl += '<td><code style="word-break:break-all; white-space:pre-wrap; max-width:280px; display:inline-block;">' + (r.expression || '') + '</code></td>';
+              tbl += '<td><strong>' + escapeHtml(r.description || 'Custom Rule') + '</strong></td>';
+              tbl += '<td><code style="word-break:break-all; white-space:pre-wrap; max-width:280px; display:inline-block;">' + escapeHtml(r.expression || '') + '</code></td>';
               tbl += '<td><span class="astropress-badge" style="background:#eff6ff; color:#1d4ed8;">' + edgeTtl + '</span></td>';
               tbl += '<td><span class="astropress-badge" style="background:#f0fdf4; color:#166534;">' + browserTtl + '</span></td>';
               tbl += '<td style="text-align:right;"><button type="button" class="button button-link-delete astropress-delete-rule-btn" data-rule-id="' + r.id + '"><span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span></button></td>';

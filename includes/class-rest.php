@@ -272,6 +272,10 @@ class AstroPress_REST {
         }
 
         $post = $posts[0];
+        if (post_password_required($post) || !empty($post->post_password)) {
+            return new WP_Error('post_password_required', 'This content is password protected.', array('status' => 403));
+        }
+
         $head = $this->core->seo->get_rank_math_head(array('id' => $post->ID));
         $seo  = $this->core->seo->get_rank_math_seo_fields(array('id' => $post->ID));
 
@@ -354,18 +358,28 @@ class AstroPress_REST {
             return true;
         }
 
-        $token = $this->core->get_cf_api_token();
+        $token  = $this->core->get_cf_api_token();
+        $secret = $this->core->get_secret();
         $auth_header = $request->get_header('authorization');
-        if (!empty($token) && !empty($auth_header) && stripos($auth_header, 'Bearer ') === 0) {
+        $x_secret = $request->get_header('x-revalidate-secret') ?: $request->get_header('x-headless-secret');
+
+        if (!empty($secret) && !empty($x_secret) && hash_equals($secret, trim($x_secret))) {
+            return true;
+        }
+
+        if (!empty($auth_header) && stripos($auth_header, 'Bearer ') === 0) {
             $provided = trim(substr($auth_header, 7));
-            if (hash_equals($token, $provided)) {
+            if (!empty($secret) && hash_equals($secret, $provided)) {
+                return true;
+            }
+            if (!empty($token) && hash_equals($token, $provided)) {
                 return true;
             }
         }
 
         return new WP_Error(
             'rest_forbidden',
-            'Unauthorized: Administrator login or valid Cloudflare Bearer token required.',
+            'Unauthorized: Administrator login, AstroPress bridge secret, or valid Bearer token required.',
             array('status' => 403)
         );
     }
@@ -420,16 +434,19 @@ class AstroPress_REST {
 
         $search = $request->get_param('search');
         $where  = '';
+        $query_args = array();
+
         if (!empty($search)) {
             $search_like = '%' . $wpdb->esc_like($search) . '%';
             $search_clauses = array();
             foreach (array('uri', 'url', 'referer', 'referrer', 'user_agent') as $sc) {
                 if (in_array($sc, $cols, true)) {
-                    $search_clauses[] = $wpdb->prepare("{$sc} LIKE %s", $search_like);
+                    $search_clauses[] = "`{$sc}` LIKE %s";
+                    $query_args[] = $search_like;
                 }
             }
             if (!empty($search_clauses)) {
-                $where = ' WHERE ' . implode(' OR ', $search_clauses);
+                $where = ' WHERE (' . implode(' OR ', $search_clauses) . ')';
             }
         }
 
@@ -437,13 +454,22 @@ class AstroPress_REST {
         $escaped_orderby = '`' . str_replace('`', '``', $orderby) . '`';
         $order           = ($order === 'ASC') ? 'ASC' : 'DESC';
 
-        $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$escaped_table}{$where}");
-
-        $query = $wpdb->prepare(
-            "SELECT * FROM {$escaped_table}{$where} ORDER BY {$escaped_orderby} {$order} LIMIT %d OFFSET %d",
-            $per_page,
-            $offset
-        );
+        if (!empty($query_args)) {
+            $total = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$escaped_table}{$where}", ...$query_args));
+            $query_args[] = $per_page;
+            $query_args[] = $offset;
+            $query = $wpdb->prepare(
+                "SELECT * FROM {$escaped_table}{$where} ORDER BY {$escaped_orderby} {$order} LIMIT %d OFFSET %d",
+                ...$query_args
+            );
+        } else {
+            $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$escaped_table}");
+            $query = $wpdb->prepare(
+                "SELECT * FROM {$escaped_table} ORDER BY {$escaped_orderby} {$order} LIMIT %d OFFSET %d",
+                $per_page,
+                $offset
+            );
+        }
         $rows = $wpdb->get_results($query, ARRAY_A);
 
         return rest_ensure_response(array(

@@ -47,25 +47,9 @@ class AstroPress_Admin {
             add_action('wp_enqueue_media', array($this, 'on_wp_enqueue_media'));
             add_filter('wp_client_side_media_processing_enabled', array($this, 'filter_core_client_side_media_processing'), 100);
 
-            // AJAX Handlers for Headless & Cache Warmer
+            // AJAX Handlers for Headless & Cache Warmer (warmer hooks delegated to AstroPress_Warmer)
             add_action('wp_ajax_astropress_test_key', array($this, 'ajax_test_key'));
             add_action('wp_ajax_topnepali_test_key', array($this, 'ajax_test_key'));
-            add_action('wp_ajax_astropress_get_warmup_urls', array($this, 'ajax_get_warmup_urls'));
-            add_action('wp_ajax_topnepali_get_warmup_urls', array($this, 'ajax_get_warmup_urls'));
-            add_action('wp_ajax_astropress_warm_batch', array($this, 'ajax_warm_batch'));
-            add_action('wp_ajax_topnepali_warm_batch', array($this, 'ajax_warm_batch'));
-            add_action('wp_ajax_astropress_start_bg_warm', array($this, 'ajax_start_bg_warm'));
-            add_action('wp_ajax_topnepali_start_bg_warm', array($this, 'ajax_start_bg_warm'));
-            add_action('wp_ajax_astropress_get_bg_warm_status', array($this, 'ajax_get_bg_warm_status'));
-            add_action('wp_ajax_topnepali_get_bg_warm_status', array($this, 'ajax_get_bg_warm_status'));
-            add_action('wp_ajax_astropress_pause_bg_warm', array($this, 'ajax_pause_bg_warm'));
-            add_action('wp_ajax_topnepali_pause_bg_warm', array($this, 'ajax_pause_bg_warm'));
-            add_action('wp_ajax_astropress_resume_bg_warm', array($this, 'ajax_resume_bg_warm'));
-            add_action('wp_ajax_topnepali_resume_bg_warm', array($this, 'ajax_resume_bg_warm'));
-            add_action('wp_ajax_astropress_cancel_bg_warm', array($this, 'ajax_cancel_bg_warm'));
-            add_action('wp_ajax_topnepali_cancel_bg_warm', array($this, 'ajax_cancel_bg_warm'));
-            add_action('wp_ajax_astropress_clear_bg_warm', array($this, 'ajax_clear_bg_warm'));
-            add_action('wp_ajax_topnepali_clear_bg_warm', array($this, 'ajax_clear_bg_warm'));
 
             // AJAX Handlers for Cloudflare R2 & Image Compression
             add_action('wp_ajax_astropress_test_connection', array($this, 'ajax_test_connection'));
@@ -490,18 +474,34 @@ class AstroPress_Admin {
      *
      * @return string
      */
-    public function get_cf_token_template_url() {
-        $permissions = array(
-            array('key' => 'cache_purge',      'type' => 'purge'),
-            array('key' => 'cache_rules',      'type' => 'edit'),
-            array('key' => 'dns',              'type' => 'edit'),
-            array('key' => 'zone',             'type' => 'read'),
-            array('key' => 'workers_r2',       'type' => 'edit'),
-            array('key' => 'page',             'type' => 'edit'),
-            array('key' => 'account_settings', 'type' => 'read'),
+    public function get_cf_token_template_url(array $target_keys = array()) {
+        $all_permissions = array(
+            'cache_purge'      => array('key' => 'cache_purge',      'type' => 'purge'),
+            'cache_rules'      => array('key' => 'cache_rules',      'type' => 'edit'),
+            'dns'              => array('key' => 'dns',              'type' => 'edit'),
+            'zone'             => array('key' => 'zone',             'type' => 'read'),
+            'workers_r2'       => array('key' => 'workers_r2',       'type' => 'edit'),
+            'page'             => array('key' => 'page',             'type' => 'edit'),
+            'account_settings' => array('key' => 'account_settings', 'type' => 'read'),
         );
 
-        return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' . rawurlencode(wp_json_encode($permissions)) . '&accountId=*&zoneId=all&name=' . rawurlencode('AstroPress Universal Bridge');
+        if (!empty($target_keys)) {
+            $permissions = array();
+            foreach ($target_keys as $k) {
+                if (isset($all_permissions[$k])) {
+                    $permissions[] = $all_permissions[$k];
+                }
+            }
+            if (empty($permissions)) {
+                $permissions = array_values($all_permissions);
+            }
+        } else {
+            $permissions = array_values($all_permissions);
+        }
+
+        $token_name = !empty($target_keys) ? 'AstroPress Token (Remediated Scopes)' : 'AstroPress Universal Bridge';
+
+        return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' . rawurlencode(wp_json_encode($permissions)) . '&accountId=*&zoneId=all&name=' . rawurlencode($token_name);
     }
 
     /**
@@ -992,19 +992,21 @@ class AstroPress_Admin {
 
             update_option(AstroPress::OPTION_MEDIA_MODE, $media_mode);
 
+            // Cloudflare Account ID (Always persist if discovered)
+            $account_id = sanitize_text_field(wp_unslash($_POST['onboard_r2_account_id'] ?? ''));
+            if (!empty($account_id)) {
+                update_option('r2g_account_id', $account_id);
+                update_option('astropress_r2_account_id', $account_id);
+            }
+
             // R2 Object Storage
             if ($media_mode === 'r2') {
-                $account_id    = sanitize_text_field(wp_unslash($_POST['onboard_r2_account_id'] ?? ''));
-                $bucket        = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket'] ?? ''));
+                $bucket = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket'] ?? ''));
                 if (!empty($_POST['onboard_r2_bucket_select'])) {
                     $bucket = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket_select']));
                 }
                 $custom_domain = sanitize_text_field(wp_unslash($_POST['onboard_r2_custom_domain'] ?? ''));
 
-                if (!empty($account_id)) {
-                    update_option('r2g_account_id', $account_id);
-                    update_option('astropress_r2_account_id', $account_id);
-                }
                 if (!empty($bucket)) {
                     update_option('r2g_bucket', $bucket);
                     update_option('astropress_r2_bucket', $bucket);
@@ -2147,6 +2149,33 @@ class AstroPress_Admin {
             ),
         );
 
+        // Evaluate missing scopes and compute dynamic remediation URL
+        $missing_scope_keys = array();
+        if (!$can_purge) {
+            $missing_scope_keys[] = 'cache_purge';
+        }
+        if (!$can_cache_rules) {
+            $missing_scope_keys[] = 'cache_rules';
+        }
+        if (!$can_dns) {
+            $missing_scope_keys[] = 'dns';
+        }
+        if (empty($zones)) {
+            $missing_scope_keys[] = 'zone';
+        }
+        if (!$can_r2) {
+            $missing_scope_keys[] = 'workers_r2';
+        }
+        if (!$can_pages) {
+            $missing_scope_keys[] = 'page';
+        }
+        if (empty($accounts)) {
+            $missing_scope_keys[] = 'account_settings';
+        }
+
+        $all_granted   = empty($missing_scope_keys);
+        $fix_token_url = $all_granted ? '' : $this->get_cf_token_template_url($missing_scope_keys);
+
         // Auto-save if user checked "Apply Discovered Settings"
         $applied = false;
         if (!empty($_POST['apply'])) {
@@ -2188,6 +2217,9 @@ class AstroPress_Admin {
             'can_r2'          => $can_r2,
             'can_dns'         => $can_dns,
             'can_cache_rules' => $can_cache_rules,
+            'all_granted'     => $all_granted,
+            'missing_scopes'  => $missing_scope_keys,
+            'fix_token_url'   => $fix_token_url,
             'applied'         => $applied,
         ));
     }
@@ -2278,7 +2310,7 @@ class AstroPress_Admin {
                 'enabled'           => true,
             );
         } elseif ($preset === 'r2_cdn') {
-            $cdn_domain = sanitize_text_field(wp_unslash($_POST['cdn_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
+            $cdn_domain = sanitize_text_field(wp_unslash($_POST['cdn_domain'] ?? '')) ?: get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', ''));
             $parsed = wp_parse_url($cdn_domain);
             $host = !empty($parsed['host']) ? $parsed['host'] : trim(preg_replace('#^https?://#i', '', $cdn_domain), '/');
             $host = explode('/', $host)[0];
@@ -2303,6 +2335,9 @@ class AstroPress_Admin {
                 $host = trim(preg_replace('#^https?://#i', '', $frontend_url), '/');
                 $host = explode('/', $host)[0];
             }
+            if (empty($host)) {
+                wp_send_json_error(array('message' => esc_html__('Frontend host could not be determined. Please configure Frontend URL first.', 'astropress')));
+            }
             $rule_to_add = array(
                 'expression'        => '(http.host eq "' . addslashes($host) . '")',
                 'description'       => 'AstroPress: Global Edge Cache (Respect Origin Headers)',
@@ -2320,6 +2355,9 @@ class AstroPress_Admin {
             if (empty($host)) {
                 $host = trim(preg_replace('#^https?://#i', '', $frontend_url), '/');
                 $host = explode('/', $host)[0];
+            }
+            if (empty($host)) {
+                wp_send_json_error(array('message' => esc_html__('Frontend host could not be determined. Please configure Frontend URL first.', 'astropress')));
             }
             $rule_to_add = array(
                 'expression'        => '(http.host eq "' . addslashes($host) . '")',
@@ -2364,10 +2402,22 @@ class AstroPress_Admin {
             ),
         ));
 
+        if (is_wp_error($get_res)) {
+            wp_send_json_error(array('message' => 'Cloudflare API connection error: ' . $get_res->get_error_message()));
+        }
+
+        $get_code = wp_remote_retrieve_response_code($get_res);
         $existing_rules = array();
-        if (!is_wp_error($get_res) && wp_remote_retrieve_response_code($get_res) === 200) {
+        if ($get_code === 200) {
             $body = json_decode(wp_remote_retrieve_body($get_res), true);
             $existing_rules = $body['result']['rules'] ?? array();
+        } elseif ($get_code === 404) {
+            // Ruleset does not exist yet; Cloudflare automatically creates entrypoint on PUT
+            $existing_rules = array();
+        } else {
+            $body = json_decode(wp_remote_retrieve_body($get_res), true);
+            $err_msg = $body['errors'][0]['message'] ?? ('HTTP ' . $get_code);
+            wp_send_json_error(array('message' => 'Could not fetch existing cache rules from Cloudflare: ' . $err_msg));
         }
 
         $clean_rules = array();
@@ -2509,7 +2559,9 @@ class AstroPress_Admin {
             ));
         }
 
-        wp_send_json_error(array('message' => esc_html__('Failed to update cache rule state on Cloudflare.', 'astropress')));
+        $put_body = !is_wp_error($put_res) ? json_decode(wp_remote_retrieve_body($put_res), true) : array();
+        $err_msg  = $put_body['errors'][0]['message'] ?? (!is_wp_error($put_res) ? ('HTTP ' . wp_remote_retrieve_response_code($put_res)) : $put_res->get_error_message());
+        wp_send_json_error(array('message' => sprintf(esc_html__('Failed to update cache rule state on Cloudflare: %s', 'astropress'), $err_msg)));
     }
 
     /**
@@ -2576,7 +2628,9 @@ class AstroPress_Admin {
             wp_send_json_success(array('message' => esc_html__('Cache rule deleted from Cloudflare Ruleset Engine.', 'astropress')));
         }
 
-        wp_send_json_error(array('message' => esc_html__('Failed to delete cache rule on Cloudflare.', 'astropress')));
+        $put_body = !is_wp_error($put_res) ? json_decode(wp_remote_retrieve_body($put_res), true) : array();
+        $err_msg  = $put_body['errors'][0]['message'] ?? (!is_wp_error($put_res) ? ('HTTP ' . wp_remote_retrieve_response_code($put_res)) : $put_res->get_error_message());
+        wp_send_json_error(array('message' => sprintf(esc_html__('Failed to delete cache rule on Cloudflare: %s', 'astropress'), $err_msg)));
     }
 
     /**
@@ -2594,6 +2648,11 @@ class AstroPress_Admin {
             AstroPress::OPTION_CF_API_TOKEN,
             AstroPress::OPTION_CF_ZONE_ID,
             AstroPress::OPTION_CF_DIRECT_PURGE,
+            AstroPress::OPTION_SUBDOMAIN_SHIELD,
+            AstroPress::OPTION_SUBDOMAIN_NOINDEX,
+            AstroPress::OPTION_REWRITE_LINKS,
+            AstroPress::OPTION_PURGE_ON_SAVE,
+            AstroPress::OPTION_CF_DEPLOY_HOOK,
             'astropress_setup_mode',
             'astropress_cf_pages_project',
             'astropress_r2_account_id',
@@ -2601,16 +2660,27 @@ class AstroPress_Admin {
             'astropress_r2_secret_key',
             'astropress_r2_bucket',
             'astropress_r2_custom_domain',
+            'astropress_headless_frontend_url',
+            'astropress_headless_secret',
+            'astropress_headless_rewrite_links',
+            'astropress_headless_subdomain_shield',
+            'astropress_headless_subdomain_noindex',
             'topnepali_headless_frontend_url',
             'topnepali_headless_secret',
             'topnepali_headless_connected',
             'topnepali_headless_cf_api_token',
             'topnepali_headless_cf_zone_id',
+            'topnepali_headless_subdomain_shield',
+            'topnepali_headless_subdomain_noindex',
+            'topnepali_headless_rewrite_links',
             'r2g_account_id',
             'r2g_access_key',
             'r2g_secret_key',
             'r2g_bucket',
             'r2g_custom_domain',
+            'astropress_webhook_logs',
+            'astropress_warm_bg_job',
+            'topnepali_warm_bg_job',
         );
 
         foreach ($options_to_delete as $opt) {
@@ -2618,6 +2688,8 @@ class AstroPress_Admin {
         }
 
         delete_transient('astropress_cf_discovery_cache');
+        wp_clear_scheduled_hook('astropress_warm_bg_worker');
+        wp_clear_scheduled_hook('topnepali_warm_bg_worker');
 
         update_option(AstroPress::OPTION_SETUP_COMPLETED, '0');
         update_option(AstroPress::OPTION_CONNECTED, '0');
@@ -2820,7 +2892,7 @@ class AstroPress_Admin {
                         <?php foreach ($checks as $k => $c): ?>
                             <div class="astropress-preflight-item astropress-status-<?php echo esc_attr($c['status']); ?>">
                                 <span class="astropress-preflight-badge">
-                                    <?php echo ($c['status'] === 'pass') ? '✓' : (($c['status'] === 'fail') ? '✗' : 'ℹ'); ?>
+                                    <?php echo ($c['status'] === 'pass') ? '<span class="dashicons dashicons-yes-alt" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>' : (($c['status'] === 'fail') ? '<span class="dashicons dashicons-dismiss" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>' : '<span class="dashicons dashicons-info" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>'); ?>
                                 </span>
                                 <div>
                                     <strong><?php echo esc_html($c['label']); ?>:</strong> <?php echo esc_html($c['value']); ?>
@@ -3238,7 +3310,7 @@ class AstroPress_Admin {
                     <span class="dashicons dashicons-superhero" style="color:#2563eb;"></span>
                     <?php esc_html_e('1-Click Cache Rule Presets', 'astropress'); ?>
                 </h3>
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
+                <div class="astropress-preset-grid">
                     <!-- Preset 1: Astro Static Assets -->
                     <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;">
                         <div>
@@ -3734,7 +3806,7 @@ class AstroPress_Admin {
                 </p>
             </div>
 
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom: 20px;">
+            <div class="astropress-preset-grid" style="gap:16px; margin-bottom:20px;">
                 <div>
                     <label for="topnepali-warm-preset" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
                         <?php esc_html_e('Select Warming Scope / XML Sitemap:', 'astropress'); ?>
@@ -4293,44 +4365,46 @@ export function getWordPressApiUrl(request?: Request): string {
             <?php if (empty($logs)): ?>
                 <div class="notice notice-info inline" style="margin:20px 0;"><p><?php esc_html_e('No webhook events recorded yet. Save or publish a post/page to see live revalidation records here.', 'astropress'); ?></p></div>
             <?php else: ?>
-                <table class="widefat striped astropress-table" style="margin-top:10px;">
-                    <thead>
-                        <tr>
-                            <th style="width:160px;"><?php esc_html_e('Timestamp', 'astropress'); ?></th>
-                            <th style="width:100px;"><?php esc_html_e('Event', 'astropress'); ?></th>
-                            <th style="width:100px;"><?php esc_html_e('Status', 'astropress'); ?></th>
-                            <th><?php esc_html_e('Purged Paths', 'astropress'); ?></th>
-                            <th style="width:180px;"><?php esc_html_e('Response Details', 'astropress'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($logs as $log): ?>
-                            <?php
-                            $is_ok = !empty($log['success']);
-                            $status_class = $is_ok ? 'astropress-badge-online' : 'astropress-badge-offline';
-                            $status_text  = $is_ok ? __('Dispatched', 'astropress') : __('Failed', 'astropress');
-                            ?>
+                <div class="astropress-table-responsive">
+                    <table class="widefat striped astropress-table" style="margin-top:10px;">
+                        <thead>
                             <tr>
-                                <td><small><code><?php echo esc_html($log['timestamp'] ?? ''); ?></code></small></td>
-                                <td><span class="astropress-pill"><?php echo esc_html($log['event'] ?? 'post_updated'); ?></span></td>
-                                <td><span class="astropress-badge <?php echo esc_attr($status_class); ?>"><span class="astropress-dot"></span> <?php echo esc_html($status_text); ?></span></td>
-                                <td>
-                                    <?php
-                                    $paths = (array) ($log['paths'] ?? array());
-                                    if (empty($paths)) {
-                                        echo '<em>' . esc_html__('Global Purge (All)', 'astropress') . '</em>';
-                                    } else {
-                                        echo '<code>' . esc_html(implode(', ', array_slice($paths, 0, 5))) . (count($paths) > 5 ? ' ... (+' . (count($paths) - 5) . ' more)' : '') . '</code>';
-                                    }
-                                    ?>
-                                </td>
-                                <td>
-                                    <small><?php echo esc_html($log['details'] ?? ($is_ok ? 'HTTP 200 OK' : 'Connection timeout/error')); ?></small>
-                                </td>
+                                <th style="width:160px;"><?php esc_html_e('Timestamp', 'astropress'); ?></th>
+                                <th style="width:100px;"><?php esc_html_e('Event', 'astropress'); ?></th>
+                                <th style="width:100px;"><?php esc_html_e('Status', 'astropress'); ?></th>
+                                <th><?php esc_html_e('Purged Paths', 'astropress'); ?></th>
+                                <th style="width:180px;"><?php esc_html_e('Response Details', 'astropress'); ?></th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($logs as $log): ?>
+                                <?php
+                                $is_ok = !empty($log['success']);
+                                $status_class = $is_ok ? 'astropress-badge-online' : 'astropress-badge-offline';
+                                $status_text  = $is_ok ? __('Dispatched', 'astropress') : __('Failed', 'astropress');
+                                ?>
+                                <tr>
+                                    <td><small><code><?php echo esc_html($log['timestamp'] ?? ''); ?></code></small></td>
+                                    <td><span class="astropress-pill"><?php echo esc_html($log['event'] ?? 'post_updated'); ?></span></td>
+                                    <td><span class="astropress-badge <?php echo esc_attr($status_class); ?>"><span class="astropress-dot"></span> <?php echo esc_html($status_text); ?></span></td>
+                                    <td>
+                                        <?php
+                                        $paths = (array) ($log['paths'] ?? array());
+                                        if (empty($paths)) {
+                                            echo '<em>' . esc_html__('Global Purge (All)', 'astropress') . '</em>';
+                                        } else {
+                                            echo '<code>' . esc_html(implode(', ', array_slice($paths, 0, 5))) . (count($paths) > 5 ? ' ... (+' . (count($paths) - 5) . ' more)' : '') . '</code>';
+                                        }
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <small><?php echo esc_html($log['details'] ?? ($is_ok ? 'HTTP 200 OK' : 'Connection timeout/error')); ?></small>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endif; ?>
         </div>
         <?php

@@ -603,12 +603,28 @@ class AstroPress_Updater {
      * Handle manual force check from admin button
      */
     public function handle_manual_check() {
-        if ((isset($_GET['astropress_check_updates']) || isset($_GET['r2g_check_updates'])) &&
-            (check_admin_referer('astropress_manual_check_nonce') || check_admin_referer('r2g_manual_check_nonce'))
-        ) {
-            if (!current_user_can('update_plugins')) {
-                wp_die(esc_html__('Unauthorized.', 'astropress'));
-            }
+        $is_astropress = isset($_GET['astropress_check_updates']);
+        $is_r2g        = isset($_GET['r2g_check_updates']);
+
+        if (!$is_astropress && !$is_r2g) {
+            return;
+        }
+
+        $nonce = sanitize_text_field(wp_unslash($_GET['_wpnonce'] ?? ''));
+        $nonce_verified = false;
+        if ($is_astropress && !empty($nonce) && wp_verify_nonce($nonce, 'astropress_manual_check_nonce')) {
+            $nonce_verified = true;
+        } elseif ($is_r2g && !empty($nonce) && wp_verify_nonce($nonce, 'r2g_manual_check_nonce')) {
+            $nonce_verified = true;
+        }
+
+        if (!$nonce_verified) {
+            wp_die(esc_html__('Invalid update verification security token (nonce).', 'astropress'));
+        }
+
+        if (!current_user_can('update_plugins')) {
+            wp_die(esc_html__('Unauthorized.', 'astropress'));
+        }
 
             delete_transient(self::TRANSIENT_LATEST);
             delete_transient(self::TRANSIENT_RELEASES);
@@ -625,7 +641,6 @@ class AstroPress_Updater {
 
             wp_safe_redirect(remove_query_arg(array('astropress_check_updates', 'r2g_check_updates', '_wpnonce')));
             exit;
-        }
     }
 
     /**

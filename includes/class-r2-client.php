@@ -637,7 +637,7 @@ class AstroPress_R2_Client {
             $clean_segments = array_map('rawurlencode', explode('/', ltrim(preg_replace('#/+#', '/', $r2_key), '/')));
             $clean_key = implode('/', $clean_segments);
             $endpoint  = "r2/buckets/" . rawurlencode($this->bucket) . "/objects/" . $clean_key;
-            $res = $this->cf_rest_request('GET', $endpoint);
+            $res = $this->cf_rest_request('HEAD', $endpoint);
             return ($res['code'] === 200);
         }
 

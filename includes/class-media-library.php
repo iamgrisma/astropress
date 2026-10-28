@@ -110,7 +110,7 @@ class AstroPress_Media_Library {
 
         if ($is_webp_or_avif || $is_optimized) {
             $format_label = strtoupper($ext ?: 'WebP');
-            echo '<span class="astropress-badge astropress-badge-both" style="margin-bottom:4px;" title="' . esc_attr__('Optimized format with lightweight footprint', 'astropress') . '">✓ Optimal (' . esc_html($format_label) . ')</span>';
+            echo '<span class="astropress-badge astropress-badge-both" style="margin-bottom:4px;" title="' . esc_attr__('Optimized format with lightweight footprint', 'astropress') . '"><span class="dashicons dashicons-yes" style="font-size:12px; width:12px; height:12px; line-height:12px;"></span> Optimal (' . esc_html($format_label) . ')</span>';
 
             if (is_array($opt_info) && !empty($opt_info['engine_used'])) {
                 $orig = (int) ($opt_info['orig_bytes'] ?? 0);
@@ -367,7 +367,7 @@ class AstroPress_Media_Library {
         $is_synced = $record && $record->status === 'synced';
 
         $status_html = $is_synced
-            ? '<span style="color:#059669; font-weight:600;">✓ ' . esc_html__('Synced on Cloudflare R2', 'astropress') . '</span>'
+            ? '<span style="color:#059669; font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' . esc_html__('Synced on Cloudflare R2', 'astropress') . '</span>'
             : '<span style="color:#64748b;">' . esc_html__('Local Only (Not Synced)', 'astropress') . '</span>';
 
         $form_fields['astropress_status'] = array(

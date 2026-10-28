@@ -719,6 +719,9 @@ class AstroPress_Media_Handler {
         }
 
         $cdn_base = rtrim($custom_domain, '/');
+        if (!preg_match('#^https?://#i', $cdn_base)) {
+            $cdn_base = 'https://' . $cdn_base;
+        }
         $expected_mime = (string) get_post_mime_type($attachment_id);
 
         $remote_url = $cdn_base . '/' . ltrim($main_key, '/');

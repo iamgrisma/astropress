@@ -39,6 +39,12 @@
 .astropress-wrap pre {
   word-break: break-word;
   overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.astropress-wrap pre {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Header */
@@ -861,16 +867,54 @@
 
   .nav-tab-wrapper.astropress-nav-tabs {
     display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 4px !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    gap: 6px !important;
+    padding: 4px 0 8px 0 !important;
     border-bottom: 1px solid #cbd5e1 !important;
-    padding-bottom: 4px !important;
+  }
+
+  .nav-tab-wrapper.astropress-nav-tabs::-webkit-scrollbar {
+    display: none !important;
   }
 
   .nav-tab-wrapper.astropress-nav-tabs .nav-tab {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
     margin: 0 !important;
-    font-size: 11px !important;
-    padding: 6px 10px !important;
+    font-size: 12px !important;
+    padding: 6px 12px !important;
+  }
+
+  .astropress-status-table,
+  .astropress-status-table tbody,
+  .astropress-status-table tr,
+  .astropress-status-table td {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .astropress-status-table td {
+    padding: 4px 0 !important;
+  }
+
+  .astropress-status-table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .astropress-wrap input[type="text"],
+  .astropress-wrap input[type="password"],
+  .astropress-wrap input[type="url"],
+  .astropress-wrap input[type="number"],
+  .astropress-wrap select,
+  .astropress-wrap textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
   }
 
   .astropress-card .form-table,
@@ -895,16 +939,6 @@
     padding-bottom: 12px !important;
   }
 
-  .astropress-card .form-table td input[type="text"],
-  .astropress-card .form-table td input[type="password"],
-  .astropress-card .form-table td input[type="url"],
-  .astropress-card .form-table td select,
-  .astropress-card .form-table td textarea {
-    width: 100% !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
   .astropress-inline-form,
   .astropress-warmer-controls,
   .astropress-wizard-footer,
@@ -916,8 +950,41 @@
 
   .astropress-grid-2,
   .r2g-stats-grid,
-  .astropress-mode-grid {
+  .astropress-mode-grid,
+  .astropress-metrics,
+  .astropress-preflight-grid,
+  .astropress-abilities-grid,
+  .astropress-preset-grid,
+  .astropress-cf-resource-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  .astropress-preview-result-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .astropress-preview-img {
+    max-width: 100% !important;
+    max-height: 180px !important;
+  }
+
+  .astropress-onboarding-banner {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+    padding: 16px 14px !important;
+  }
+
+  .astropress-onboarding-banner-action {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  .astropress-onboarding-banner-action .button {
+    width: 100% !important;
+    text-align: center;
   }
 
   .topnepali-log-console,
@@ -1009,6 +1076,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #93c5fd;
+  min-width: 0;
+  flex: 1;
 }
 
 .topnepali-log-meta,
@@ -1230,4 +1299,99 @@
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 4px;
+}
+
+/* Preset Cards Grid */
+.astropress-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+/* Upload Interceptor Modal */
+.r2g-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.r2g-modal-overlay.r2g-modal-active {
+  display: flex;
+}
+
+.r2g-modal-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 620px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.r2g-modal-header {
+  padding: 16px 20px;
+  background: #0f172a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.r2g-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.r2g-modal-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.r2g-modal-close:hover {
+  color: #ffffff;
+}
+
+.r2g-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+.r2g-modal-footer {
+  padding: 14px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media screen and (max-width: 782px) {
+  .r2g-modal-card {
+    max-height: 95vh;
+  }
+  .r2g-modal-footer button {
+    width: 100%;
+  }
 }

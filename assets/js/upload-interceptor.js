@@ -455,11 +455,11 @@
     adaptButtonsAfterPreview: function() {
       const $btn = $('#r2g-btn-preview-compress');
       $btn.prop('disabled', false);
-      $btn.find('.r2g-preview-btn-text').text('✓ Re-test Preview');
+      $btn.find('.r2g-preview-btn-text').text('Re-test Preview');
       $btn.addClass('r2g-recompress');
 
       $('#r2g-btn-modal-proceed').addClass('r2g-ready-upload');
-      $('#r2g-proceed-label').text('✓ Upload Now');
+      $('#r2g-proceed-label').text('Upload Now');
     },
 
     showInterceptorModal: function(files, onProceed, onCancel) {

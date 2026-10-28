@@ -122,7 +122,7 @@ class AstroPress_Warmer {
         } elseif ($sitemap_type === 'sitemap_categories') {
             $candidate_paths = array('/category-sitemap.xml', '/wp-sitemap-taxonomies-category-1.xml');
         } else {
-            $candidate_paths = array('/sitemap_index.xml', '/sitemap.xml', '/wp-sitemap.xml');
+            $candidate_paths = array('/sitemap_index.xml', '/sitemap.xml', '/sitemap-index.xml', '/sitemap-0.xml', '/wp-sitemap.xml');
         }
 
         $xml_content = '';
@@ -217,7 +217,11 @@ class AstroPress_Warmer {
             }
         }
 
-        return $items;
+        if (empty($items)) {
+            $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+        }
+
+        return apply_filters('astropress_warmup_urls', $items, $sitemap_type);
     }
 
     public function get_warmup_urls($preset = 'standard') {
@@ -234,19 +238,31 @@ class AstroPress_Warmer {
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Post');
                 }
             }
-            return $items;
+            if (empty($items)) {
+                $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+            }
+            return apply_filters('astropress_warmup_urls', $items, $preset);
         }
 
         if ($preset === 'all_pages') {
+            $front_page_id = (int) get_option('page_on_front');
             $pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC");
             foreach ($pages as $p) {
-                $url = '/' . ltrim($p->post_name, '/');
+                if ((int) $p->ID === $front_page_id) {
+                    $url = '/';
+                } else {
+                    $uri = get_page_uri($p->ID);
+                    $url = '/' . ltrim($uri, '/');
+                }
                 if (!isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Page');
                 }
             }
-            return $items;
+            if (empty($items)) {
+                $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+            }
+            return apply_filters('astropress_warmup_urls', $items, $preset);
         }
 
         if ($preset === 'all_taxonomies') {
@@ -266,7 +282,10 @@ class AstroPress_Warmer {
                     $items[] = array('url' => $url, 'title' => $t->name . ' (Tag)', 'type' => 'Tag');
                 }
             }
-            return $items;
+            if (empty($items)) {
+                $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+            }
+            return apply_filters('astropress_warmup_urls', $items, $preset);
         }
 
         if ($preset === 'entire_site') {
@@ -278,9 +297,15 @@ class AstroPress_Warmer {
             $items[] = array('url' => '/sitemap.xml', 'title' => 'Sitemap Index', 'type' => 'SEO');
             $seen['/'] = $seen['/blogs'] = $seen['/blog'] = $seen['/rss.xml'] = $seen['/feed.xml'] = $seen['/sitemap.xml'] = true;
 
+            $front_page_id = (int) get_option('page_on_front');
             $pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC");
             foreach ($pages as $p) {
-                $url = '/' . ltrim($p->post_name, '/');
+                if ((int) $p->ID === $front_page_id) {
+                    $url = '/';
+                } else {
+                    $uri = get_page_uri($p->ID);
+                    $url = '/' . ltrim($uri, '/');
+                }
                 if (!isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Page');
@@ -296,6 +321,15 @@ class AstroPress_Warmer {
                 }
             }
 
+            $tags = get_tags(array('hide_empty' => true));
+            foreach ($tags as $t) {
+                $url = '/tag/' . ltrim($t->slug, '/');
+                if (!isset($seen[$url])) {
+                    $seen[$url] = true;
+                    $items[] = array('url' => $url, 'title' => $t->name . ' (Tag)', 'type' => 'Tag');
+                }
+            }
+
             $posts = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC");
             foreach ($posts as $p) {
                 $url = '/' . ltrim($p->post_name, '/');
@@ -306,10 +340,10 @@ class AstroPress_Warmer {
             }
 
             if (empty($items)) {
-            $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
-        }
+                $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+            }
 
-        return apply_filters('astropress_warmup_urls', $items, $preset);
+            return apply_filters('astropress_warmup_urls', $items, $preset);
         }
 
         if ($preset === 'tools_only') {
@@ -414,9 +448,11 @@ class AstroPress_Warmer {
                     'url'         => $path,
                     'full_url'    => $full_url,
                     'code'        => 0,
+                    'status'      => 0,
                     'duration_ms' => $duration,
                     'cf_cache'    => 'ERR',
                     'success'     => false,
+                    'ok'          => false,
                     'message'     => $response->get_error_message(),
                 );
             } else {
@@ -449,9 +485,11 @@ class AstroPress_Warmer {
                     'url'         => $path,
                     'full_url'    => $full_url,
                     'code'        => $code,
+                    'status'      => $code,
                     'duration_ms' => $duration,
                     'cf_cache'    => strtoupper($cf_cache),
                     'success'     => ($code >= 200 && $code < 400),
+                    'ok'          => ($code >= 200 && $code < 400),
                     'message'     => ($code === 404)
                         ? "404 NOT FOUND ({$duration}ms) [CF: {$cf_cache}]"
                         : "Status: {$code} ({$duration}ms) [CF: {$cf_cache}]",
@@ -505,78 +543,88 @@ class AstroPress_Warmer {
     }
 
     public function run_background_worker() {
-        $job = get_option(self::OPTION_BG_JOB, null);
-        if (empty($job)) {
-            $job = get_option(self::LEGACY_OPTION_BG_JOB, array());
-        }
-
-        if (empty($job) || !is_array($job) || empty($job['status']) || $job['status'] !== 'running') {
+        $lock_key = 'astropress_warmer_lock';
+        if (get_transient($lock_key)) {
             return;
         }
+        set_transient($lock_key, time(), 30);
 
-        $batch_size = max(1, min(10, (int)($job['batch_size'] ?? 2)));
-        $queue      = !empty($job['queue']) && is_array($job['queue']) ? $job['queue'] : array();
+        try {
+            $job = get_option(self::OPTION_BG_JOB, null);
+            if (empty($job)) {
+                $job = get_option(self::LEGACY_OPTION_BG_JOB, array());
+            }
 
-        if (empty($queue)) {
-            $job['status']       = 'completed';
-            $job['completed_at'] = current_time('mysql');
-            $job['updated_at']   = current_time('mysql');
-            $job['log'][] = array(
-                'time'    => current_time('H:i:s'),
-                'url'     => '— All Batches Finished Successfully —',
-                'meta'    => 'Total: ' . ($job['processed'] ?? 0) . ' URLs pre-warmed',
-                'success' => true,
-            );
-            update_option(self::OPTION_BG_JOB, $job);
-            update_option(self::LEGACY_OPTION_BG_JOB, $job);
-            return;
-        }
+            if (empty($job) || !is_array($job) || empty($job['status']) || $job['status'] !== 'running') {
+                return;
+            }
 
-        $batch = array_splice($queue, 0, $batch_size);
-        $job['queue'] = $queue;
+            $batch_size = max(1, min(10, (int)($job['batch_size'] ?? 2)));
+            $queue      = !empty($job['queue']) && is_array($job['queue']) ? $job['queue'] : array();
 
-        $results = $this->warm_url_batch($batch);
+            if (empty($queue)) {
+                $job['status']       = 'completed';
+                $job['completed_at'] = current_time('mysql');
+                $job['updated_at']   = current_time('mysql');
+                $job['log'][] = array(
+                    'time'    => current_time('H:i:s'),
+                    'url'     => '— All Batches Finished Successfully —',
+                    'meta'    => 'Total: ' . ($job['processed'] ?? 0) . ' URLs pre-warmed',
+                    'success' => true,
+                );
+                update_option(self::OPTION_BG_JOB, $job, false);
+                update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
+                return;
+            }
 
-        foreach ($results as $res) {
-            $job['processed'] = ($job['processed'] ?? 0) + 1;
-            if (!empty($res['success'])) {
-                $job['succeeded'] = ($job['succeeded'] ?? 0) + 1;
+            $batch = array_splice($queue, 0, $batch_size);
+            $job['queue'] = $queue;
+
+            $results = $this->warm_url_batch($batch);
+
+            foreach ($results as $res) {
+                $job['processed'] = ($job['processed'] ?? 0) + 1;
+                if (!empty($res['success'])) {
+                    $job['succeeded'] = ($job['succeeded'] ?? 0) + 1;
+                } else {
+                    $job['failed'] = ($job['failed'] ?? 0) + 1;
+                }
+                $job['log'][] = array(
+                    'time'    => current_time('H:i:s'),
+                    'url'     => $res['url'],
+                    'meta'    => ($res['code'] ?: 'ERR') . ' (' . $res['duration_ms'] . 'ms) [CF: ' . ($res['cf_cache'] ?: 'NONE') . ']',
+                    'success' => !empty($res['success']),
+                );
+            }
+
+            if (count($job['log']) > 100) {
+                $job['log'] = array_slice($job['log'], -100);
+            }
+
+            $job['updated_at'] = current_time('mysql');
+
+            if (empty($job['queue']) || $job['processed'] >= $job['total']) {
+                $job['status']       = 'completed';
+                $job['completed_at'] = current_time('mysql');
+                $job['log'][] = array(
+                    'time'    => current_time('H:i:s'),
+                    'url'     => '— All Batches Finished Successfully —',
+                    'meta'    => 'Total: ' . $job['processed'] . ' URLs pre-warmed',
+                    'success' => true,
+                );
+                update_option(self::OPTION_BG_JOB, $job, false);
+                update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
             } else {
-                $job['failed'] = ($job['failed'] ?? 0) + 1;
+                update_option(self::OPTION_BG_JOB, $job, false);
+                update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
+                $delay_seconds = max(1, (int) ceil(($job['delay_ms'] ?? 1000) / 1000));
+                wp_schedule_single_event(time() + $delay_seconds, 'astropress_warm_bg_worker');
+                if (function_exists('spawn_cron')) {
+                    spawn_cron();
+                }
             }
-            $job['log'][] = array(
-                'time'    => current_time('H:i:s'),
-                'url'     => $res['url'],
-                'meta'    => ($res['code'] ?: 'ERR') . ' (' . $res['duration_ms'] . 'ms) [CF: ' . ($res['cf_cache'] ?: 'NONE') . ']',
-                'success' => !empty($res['success']),
-            );
-        }
-
-        if (count($job['log']) > 100) {
-            $job['log'] = array_slice($job['log'], -100);
-        }
-
-        $job['updated_at'] = current_time('mysql');
-
-        if (empty($job['queue']) || $job['processed'] >= $job['total']) {
-            $job['status']       = 'completed';
-            $job['completed_at'] = current_time('mysql');
-            $job['log'][] = array(
-                'time'    => current_time('H:i:s'),
-                'url'     => '— All Batches Finished Successfully —',
-                'meta'    => 'Total: ' . $job['processed'] . ' URLs pre-warmed',
-                'success' => true,
-            );
-            update_option(self::OPTION_BG_JOB, $job);
-            update_option(self::LEGACY_OPTION_BG_JOB, $job);
-        } else {
-            update_option(self::OPTION_BG_JOB, $job);
-            update_option(self::LEGACY_OPTION_BG_JOB, $job);
-            $delay_seconds = max(1, (int) ceil(($job['delay_ms'] ?? 1000) / 1000));
-            wp_schedule_single_event(time() + $delay_seconds, 'astropress_warm_bg_worker');
-            if (function_exists('spawn_cron')) {
-                spawn_cron();
-            }
+        } finally {
+            delete_transient($lock_key);
         }
     }
 
@@ -589,10 +637,15 @@ class AstroPress_Warmer {
             return null;
         }
 
+        $status = $job['status'] ?? 'idle';
+        $is_active = in_array($status, array('running', 'paused'), true);
+
         return array(
-            'status'     => $job['status'] ?? 'idle',
+            'active'     => $is_active,
+            'status'     => $status,
             'scope'      => $job['scope'] ?? '',
             'total'      => (int) ($job['total'] ?? 0),
+            'current'    => (int) ($job['processed'] ?? 0),
             'processed'  => (int) ($job['processed'] ?? 0),
             'succeeded'  => (int) ($job['succeeded'] ?? 0),
             'failed'     => (int) ($job['failed'] ?? 0),
@@ -718,7 +771,7 @@ class AstroPress_Warmer {
         }
 
         $preset     = sanitize_key($_POST['preset'] ?? 'standard');
-        $delay_ms   = max(200, (int) ($_POST['delay_ms'] ?? 1000));
+        $delay_ms   = max(200, (int) ($_POST['delay_ms'] ?? $_POST['delay'] ?? 1000));
         $batch_size = max(1, min(10, (int) ($_POST['batch_size'] ?? 2)));
 
         $res = $this->start_background_job($preset, $delay_ms, $batch_size);
@@ -726,7 +779,7 @@ class AstroPress_Warmer {
             wp_send_json_error(array('message' => $res->get_error_message()));
         }
 
-        wp_send_json_success($this->get_background_job_status());
+        wp_send_json_success(array('job' => $this->get_background_job_status()));
     }
 
     public function ajax_get_bg_warm_status() {
@@ -735,7 +788,7 @@ class AstroPress_Warmer {
         }
 
         $status = $this->get_background_job_status();
-        wp_send_json_success($status ?: array('status' => 'idle'));
+        wp_send_json_success(array('job' => $status ?: array('status' => 'idle', 'active' => false)));
     }
 
     public function ajax_pause_bg_warm() {
@@ -743,7 +796,7 @@ class AstroPress_Warmer {
             wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
         }
         $this->pause_background_job();
-        wp_send_json_success($this->get_background_job_status());
+        wp_send_json_success(array('job' => $this->get_background_job_status()));
     }
 
     public function ajax_resume_bg_warm() {
@@ -751,7 +804,7 @@ class AstroPress_Warmer {
             wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
         }
         $this->resume_background_job();
-        wp_send_json_success($this->get_background_job_status());
+        wp_send_json_success(array('job' => $this->get_background_job_status()));
     }
 
     public function ajax_cancel_bg_warm() {
@@ -759,7 +812,7 @@ class AstroPress_Warmer {
             wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
         }
         $this->cancel_background_job();
-        wp_send_json_success($this->get_background_job_status());
+        wp_send_json_success(array('job' => $this->get_background_job_status()));
     }
 
     public function ajax_clear_bg_warm() {
@@ -767,6 +820,6 @@ class AstroPress_Warmer {
             wp_send_json_error(array('message' => 'Unauthorized permissions.'), 403);
         }
         $this->clear_background_job();
-        wp_send_json_success(array('status' => 'idle'));
+        wp_send_json_success(array('job' => null, 'status' => 'idle'));
     }
 }

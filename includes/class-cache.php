@@ -58,16 +58,17 @@ class AstroPress_Cache {
 
         // Content Lifecycle Hooks: Granular automatic cache purging
         add_action('save_post', array($this, 'on_save_post'), 10, 3);
+        add_action('transition_post_status', array($this, 'on_post_status_transition'), 10, 3);
         add_action('wp_trash_post', array($this, 'on_trash_post'));
         add_action('untrash_post', array($this, 'on_trash_post'));
 
         // Taxonomy Lifecycle Hooks
         add_action('create_category', array($this, 'on_taxonomy_change'));
         add_action('edited_category', array($this, 'on_taxonomy_change'));
-        add_action('delete_category', array($this, 'on_taxonomy_change'));
+        add_action('delete_category', array($this, 'on_term_delete'), 10, 3);
         add_action('create_post_tag', array($this, 'on_taxonomy_change'));
         add_action('edited_post_tag', array($this, 'on_taxonomy_change'));
-        add_action('delete_post_tag', array($this, 'on_taxonomy_change'));
+        add_action('delete_post_tag', array($this, 'on_term_delete'), 10, 3);
 
         // Navigation Menu Updates
         add_action('wp_update_nav_menu', array($this, 'on_menu_change'));
@@ -165,6 +166,14 @@ class AstroPress_Cache {
         $action = (count($events) === 1) ? $events[0]['action'] : 'update';
         $slug   = (count($unique_slugs) === 1) ? $unique_slugs[0] : null;
 
+        // Ensure all queued slugs are merged into $unique_urls so none are lost during batch updates
+        foreach ($unique_slugs as $s) {
+            $formatted_slug = '/' . ltrim($s, '/');
+            if (!in_array($formatted_slug, $unique_urls, true)) {
+                $unique_urls[] = $formatted_slug;
+            }
+        }
+
         $extra_data = array();
         foreach ($events as $ev) {
             if (!empty($ev['data']) && is_array($ev['data'])) {
@@ -204,23 +213,65 @@ class AstroPress_Cache {
             if ($is_purge_all) {
                 $results['cloudflare_api'] = $this->purge_cloudflare_zone(array(), true);
             } else {
-                // Build full absolute URLs for Cloudflare API files array
+                // Build full absolute URLs for Cloudflare API files array with dual trailing-slash normalization
                 $full_urls = array();
                 $base = !empty($frontend_url) ? rtrim($frontend_url, '/') : rtrim(home_url(), '/');
 
+                $all_paths = $clean_urls;
                 if (!empty($slug)) {
-                    $full_urls[] = $base . '/' . ltrim($slug, '/');
+                    $all_paths[] = '/' . ltrim($slug, '/');
                 }
-                foreach ($clean_urls as $u) {
-                    if (strpos($u, 'http') === 0) {
-                        $full_urls[] = $u;
+
+                foreach ($all_paths as $p) {
+                    if (strpos($p, 'http') === 0) {
+                        $full_urls[] = $p;
+                        $url_path = wp_parse_url($p, PHP_URL_PATH);
+                        if (!empty($url_path) && $url_path !== '/') {
+                            $has_slash = (substr($p, -1) === '/');
+                            $full_urls[] = $has_slash ? rtrim($p, '/') : ($p . '/');
+                        }
                     } else {
-                        $full_urls[] = $base . '/' . ltrim($u, '/');
+                        $clean_p = '/' . ltrim($p, '/');
+                        if ($clean_p === '/') {
+                            $full_urls[] = $base . '/';
+                            $full_urls[] = $base;
+                        } else {
+                            $clean_no_slash = rtrim($clean_p, '/');
+                            $full_urls[] = $base . $clean_no_slash;
+                            $full_urls[] = $base . $clean_no_slash . '/';
+                        }
                     }
                 }
                 $full_urls = array_values(array_unique(array_filter($full_urls)));
                 if (!empty($full_urls)) {
                     $results['cloudflare_api'] = $this->purge_cloudflare_zone($full_urls, false);
+                }
+
+                // Dual Invalidation: Ping Astro Cloudflare Worker (/api/revalidate)
+                // to flush internal caches.default and worker isolate RAM micro-caches!
+                if (!empty($frontend_url)) {
+                    $revalidate_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
+                    $revalidate_secret   = $this->core->get_secret();
+                    $payload = array(
+                        'slug'      => $slug,
+                        'type'      => $type,
+                        'action'    => $action,
+                        'urls'      => $clean_urls,
+                        'full_urls' => $full_urls,
+                        'timestamp' => time(),
+                    );
+                    $headers = array('Content-Type' => 'application/json');
+                    if (!empty($revalidate_secret)) {
+                        $headers['x-revalidate-secret'] = $revalidate_secret;
+                        $headers['Authorization']       = 'Bearer ' . $revalidate_secret;
+                    }
+                    wp_remote_post($revalidate_endpoint, array(
+                        'timeout'   => 5,
+                        'blocking'  => false,
+                        'sslverify' => true,
+                        'headers'   => $headers,
+                        'body'      => wp_json_encode($payload),
+                    ));
                 }
             }
         }
@@ -294,8 +345,25 @@ class AstroPress_Cache {
             return $success;
         }
 
+        $base = !empty($this->core->get_frontend_url()) ? rtrim($this->core->get_frontend_url(), '/') : rtrim(home_url(), '/');
+        $normalized_urls = array();
+        foreach ($urls as $u) {
+            $u = trim((string)$u);
+            if (empty($u)) continue;
+            if (strpos($u, 'http://') === 0 || strpos($u, 'https://') === 0) {
+                $normalized_urls[] = $u;
+            } else {
+                $normalized_urls[] = $base . '/' . ltrim($u, '/');
+            }
+        }
+        $normalized_urls = array_values(array_unique(array_filter($normalized_urls)));
+
+        if (count($normalized_urls) > 60) {
+            return $this->purge_cloudflare_zone(array(), true, $override_token, $override_zone_id);
+        }
+
         // Chunk URLs into groups of 30 (Cloudflare API restriction)
-        $url_chunks = array_chunk(array_values(array_unique(array_filter($urls))), 30);
+        $url_chunks = array_chunk($normalized_urls, 30);
         $all_success = true;
 
         foreach ($url_chunks as $chunk) {
@@ -405,7 +473,7 @@ class AstroPress_Cache {
 
         if (!$this->core->should_purge_on_save()) return;
 
-        $extra_urls = array();
+        $extra_urls = array('/'); // Root homepage always reflects latest posts stream
         if ($post->post_type === 'post') {
             // Category archives
             $categories = get_the_category($post_id);
@@ -439,30 +507,26 @@ class AstroPress_Cache {
             $extra_urls[] = '/blog';
         }
 
-        $extra_data = array();
-        if ($post->post_type === 'post') {
-            if (class_exists('WP_REST_Request') && class_exists('WP_REST_Posts_Controller')) {
-                $req = new WP_REST_Request('GET', '/wp/v2/posts/' . $post_id);
-                $req->set_param('context', 'view');
-                $req->set_param('_embed', true);
-                $res = rest_do_request($req);
-                if (!$res->is_error()) {
-                    $extra_data['post'] = $res->get_data();
-                }
-            }
-        } elseif ($post->post_type === 'page') {
-            if (class_exists('WP_REST_Request') && class_exists('WP_REST_Posts_Controller')) {
-                $req = new WP_REST_Request('GET', '/wp/v2/pages/' . $post_id);
-                $req->set_param('context', 'view');
-                $req->set_param('_embed', true);
-                $res = rest_do_request($req);
-                if (!$res->is_error()) {
-                    $extra_data['page'] = $res->get_data();
-                }
-            }
-        }
+        $slug = ($post->post_type === 'page') ? get_page_uri($post_id) : $post->post_name;
+        $this->queue_invalidation($slug, $post->post_type, $update ? 'update' : 'publish', array_unique(array_filter($extra_urls)));
+    }
 
-        $this->queue_invalidation($post->post_name, $post->post_type, $update ? 'update' : 'publish', array_unique(array_filter($extra_urls)), $extra_data);
+    /**
+     * Hook: On Post Status Transition (e.g. Publish -> Draft/Private)
+     */
+    public function on_post_status_transition($new_status, $old_status, $post) {
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+        if (wp_is_post_revision($post->ID)) return;
+        if (!in_array($post->post_type, array('post', 'page'), true)) return;
+
+        // If an existing published post transitions to draft, private, or trash, purge its edge cache
+        if ($old_status === 'publish' && $new_status !== 'publish') {
+            delete_post_meta($post->ID, '_astropress_rm_head');
+            delete_post_meta($post->ID, '_headless_rm_head');
+            $slug = ($post->post_type === 'page') ? get_page_uri($post->ID) : $post->post_name;
+            $extra_urls = array('/', '/blogs', '/blog', '/rss.xml', '/sitemap.xml');
+            $this->queue_invalidation($slug, $post->post_type, 'unpublish', $extra_urls);
+        }
     }
 
     /**
@@ -476,7 +540,7 @@ class AstroPress_Cache {
         if (!$post) return;
         if (!$this->core->should_purge_on_save()) return;
 
-        $extra_urls = array();
+        $extra_urls = array('/');
         if ($post->post_type === 'post') {
             $categories = get_the_category($post_id);
             if (!empty($categories) && !is_wp_error($categories)) {
@@ -501,7 +565,8 @@ class AstroPress_Cache {
             $extra_urls[] = '/blog';
         }
 
-        $this->queue_invalidation($post->post_name, $post->post_type, 'delete', array_unique(array_filter($extra_urls)));
+        $slug = ($post->post_type === 'page') ? get_page_uri($post_id) : $post->post_name;
+        $this->queue_invalidation($slug, $post->post_type, 'delete', array_unique(array_filter($extra_urls)));
     }
 
     /**
@@ -516,6 +581,30 @@ class AstroPress_Cache {
         $path = $this->get_term_path($term);
         $this->queue_invalidation(null, 'taxonomy', 'update', array_filter(array(
             $path,
+            '/',
+            '/blogs',
+            '/blog',
+            '/sitemap.xml',
+            '/sitemap_index.xml',
+            '/rss.xml',
+            '/feed.xml',
+        )));
+    }
+
+    /**
+     * Hook: On Taxonomy Term Deletion (Receives deleted term object before row removal)
+     */
+    public function on_term_delete($term_id, $tt_id, $deleted_term) {
+        if (!$this->core->should_purge_taxonomy()) return;
+
+        $path = '';
+        if ($deleted_term && !is_wp_error($deleted_term)) {
+            $path = $this->get_term_path($deleted_term);
+        }
+
+        $this->queue_invalidation(null, 'taxonomy', 'delete', array_filter(array(
+            $path,
+            '/',
             '/blogs',
             '/blog',
             '/sitemap.xml',
@@ -1045,11 +1134,26 @@ class AstroPress_Cache {
             return array('success' => false, 'message' => esc_html__('Missing required parameters to attach R2 custom domain.', 'astropress'));
         }
 
+        if (empty($zone_name)) {
+            $zone_info_res = wp_remote_get("https://api.cloudflare.com/client/v4/zones/{$zone_id}", array(
+                'timeout' => 8,
+                'headers' => array('Authorization' => 'Bearer ' . $token),
+            ));
+            if (!is_wp_error($zone_info_res)) {
+                $zi_body = json_decode(wp_remote_retrieve_body($zone_info_res), true);
+                $zone_name = $zi_body['result']['name'] ?? '';
+            }
+            if (empty($zone_name)) {
+                $parts = explode('.', $host);
+                $zone_name = (count($parts) >= 2) ? implode('.', array_slice($parts, -2)) : $host;
+            }
+        }
+
         $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
         $payload = array(
             'domain'   => $host,
             'zoneId'   => $zone_id,
-            'zoneName' => $zone_name ?: $host,
+            'zoneName' => $zone_name,
             'minTLS'   => '1.2',
         );
 
