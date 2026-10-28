@@ -333,9 +333,9 @@ class AstroPress_Cache {
      * @param bool $purge_everything Whether to purge the entire zone cache
      * @return bool True on success, false on error
      */
-    public function purge_cloudflare_zone($urls = array(), $purge_everything = false) {
-        $token   = $this->core->get_cf_api_token();
-        $zone_id = $this->core->get_cf_zone_id();
+    public function purge_cloudflare_zone($urls = array(), $purge_everything = false, $override_token = '', $override_zone_id = '') {
+        $token   = !empty($override_token) ? $override_token : $this->core->get_cf_api_token();
+        $zone_id = !empty($override_zone_id) ? $override_zone_id : $this->core->get_cf_zone_id();
 
         if (empty($token) || empty($zone_id)) {
             return false;
@@ -1024,40 +1024,70 @@ class AstroPress_Cache {
             }
         }
 
-        // C. Check Cache Rules / Page Rules
+        // C. Check Modern Cloudflare Cache Rules (Ruleset Engine) & Legacy Page Rules
         $pattern = "*{$host}/*";
         $rule_status = 'missing';
         $rule_id = '';
         $rule_desc = '';
-        $rules_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/pagerules?status=active&per_page=50";
-        $rules_res = wp_remote_get($rules_url, array('timeout' => 8, 'headers' => $headers));
-        if (!is_wp_error($rules_res) && wp_remote_retrieve_response_code($rules_res) === 200) {
-            $rules_body = json_decode(wp_remote_retrieve_body($rules_res), true);
-            if (!empty($rules_body['result']) && is_array($rules_body['result'])) {
-                foreach ($rules_body['result'] as $r) {
-                    $val = $r['targets'][0]['constraint']['value'] ?? '';
-                    if ($val === $pattern || strpos($val, $host) !== false) {
-                        $rule_id = $r['id'] ?? '';
-                        $is_cache_everything = false;
-                        $has_long_ttl = false;
-                        if (!empty($r['actions']) && is_array($r['actions'])) {
-                            foreach ($r['actions'] as $act) {
-                                if ($act['id'] === 'cache_level' && $act['value'] === 'cache_everything') {
-                                    $is_cache_everything = true;
-                                }
-                                if ($act['id'] === 'edge_cache_ttl' && $act['value'] >= 86400) {
-                                    $has_long_ttl = true;
-                                }
-                            }
-                        }
-                        if ($is_cache_everything && $has_long_ttl) {
+
+        // C1. Check Modern Cache Rules (Phase: http_request_cache_settings)
+        $ruleset_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/rulesets/phases/http_request_cache_settings/entrypoint";
+        $ruleset_res = wp_remote_get($ruleset_url, array('timeout' => 8, 'headers' => $headers));
+        if (!is_wp_error($ruleset_res) && wp_remote_retrieve_response_code($ruleset_res) === 200) {
+            $rs_body = json_decode(wp_remote_retrieve_body($ruleset_res), true);
+            if (!empty($rs_body['result']['rules']) && is_array($rs_body['result']['rules'])) {
+                foreach ($rs_body['result']['rules'] as $rule) {
+                    $expr = $rule['expression'] ?? '';
+                    if (strpos($expr, $host) !== false) {
+                        $rule_id = $rule['id'] ?? '';
+                        $act_params = $rule['action_parameters'] ?? array();
+                        $has_cache = !empty($act_params['cache']);
+                        $has_edge_ttl = !empty($act_params['edge_ttl']);
+                        if ($has_cache && $has_edge_ttl) {
                             $rule_status = 'optimal';
-                            $rule_desc = '1-Year Cache Everything Active';
+                            $rule_desc = '1-Year Cache Everything Active (Cloudflare Cache Rule)';
                         } else {
                             $rule_status = 'suboptimal';
-                            $rule_desc = 'Rule exists but lacks 1-year Cache Everything setting';
+                            $rule_desc = 'Cache Rule exists for domain but lacks 1-year Edge TTL';
                         }
                         break;
+                    }
+                }
+            }
+        }
+
+        // C2. Fallback: Check Legacy Page Rules if not matched in Ruleset Engine
+        if ($rule_status === 'missing') {
+            $rules_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/pagerules?status=active&per_page=50";
+            $rules_res = wp_remote_get($rules_url, array('timeout' => 8, 'headers' => $headers));
+            if (!is_wp_error($rules_res) && wp_remote_retrieve_response_code($rules_res) === 200) {
+                $rules_body = json_decode(wp_remote_retrieve_body($rules_res), true);
+                if (!empty($rules_body['result']) && is_array($rules_body['result'])) {
+                    foreach ($rules_body['result'] as $r) {
+                        $val = $r['targets'][0]['constraint']['value'] ?? '';
+                        if ($val === $pattern || strpos($val, $host) !== false) {
+                            $rule_id = $r['id'] ?? '';
+                            $is_cache_everything = false;
+                            $has_long_ttl = false;
+                            if (!empty($r['actions']) && is_array($r['actions'])) {
+                                foreach ($r['actions'] as $act) {
+                                    if ($act['id'] === 'cache_level' && $act['value'] === 'cache_everything') {
+                                        $is_cache_everything = true;
+                                    }
+                                    if ($act['id'] === 'edge_cache_ttl' && $act['value'] >= 86400) {
+                                        $has_long_ttl = true;
+                                    }
+                                }
+                            }
+                            if ($is_cache_everything && $has_long_ttl) {
+                                $rule_status = 'optimal';
+                                $rule_desc = '1-Year Cache Everything Active (Page Rule)';
+                            } else {
+                                $rule_status = 'suboptimal';
+                                $rule_desc = 'Page Rule exists but lacks 1-year Cache Everything setting';
+                            }
+                            break;
+                        }
                     }
                 }
             }

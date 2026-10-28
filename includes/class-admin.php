@@ -485,6 +485,7 @@ class AstroPress_Admin {
     public function get_cf_token_template_url() {
         $permissions = array(
             array('key' => 'cache_purge', 'type' => 'edit'),
+            array('key' => 'cache_rules', 'type' => 'edit'),
             array('key' => 'page_rules', 'type' => 'edit'),
             array('key' => 'dns', 'type' => 'edit'),
             array('key' => 'zone', 'type' => 'read'),
@@ -507,13 +508,19 @@ class AstroPress_Admin {
                 'category' => 'Zone',
                 'name'     => 'Cache Purge',
                 'access'   => 'Purge',
-                'desc'     => 'Real-time cache invalidation on post/page publish',
+                'desc'     => 'Real-time cache invalidation on post/page publish & 1-click CDN edge purge',
             ),
             array(
                 'category' => 'Zone',
-                'name'     => 'Page Rules / Cache Rules',
+                'name'     => 'Cache Rules',
                 'access'   => 'Edit',
-                'desc'     => '1-click deployment of 1-year Edge Cache Everything rule',
+                'desc'     => 'Modern Cloudflare Cache Rules deployment (1-year Edge & Browser TTL)',
+            ),
+            array(
+                'category' => 'Zone',
+                'name'     => 'Page Rules',
+                'access'   => 'Edit',
+                'desc'     => 'Fallback deployment of 1-year Cache Everything page rules',
             ),
             array(
                 'category' => 'Zone',
@@ -554,7 +561,7 @@ class AstroPress_Admin {
      * @return string
      */
     public function get_cf_permissions_recipe_text() {
-        return "Token Name: AstroPress Universal Bridge\n\nPermissions:\n1. Zone > Cache Purge > Purge\n2. Zone > Page Rules > Edit\n3. Zone > DNS > Edit\n4. Zone > Zone > Read\n5. Account > Workers R2 Storage > Edit\n6. Account > Cloudflare Pages > Edit\n7. Account > Account Settings > Read\n\nAccount Resources: Include > All accounts (or your account)\nZone Resources: Include > All zones (or your domain)";
+        return "Token Name: AstroPress Universal Bridge\n\nPermissions:\n1. Zone > Cache Purge > Purge\n2. Zone > Cache Rules > Edit\n3. Zone > Page Rules > Edit\n4. Zone > DNS > Edit\n5. Zone > Zone > Read\n6. Account > Workers R2 Storage > Edit\n7. Account > Cloudflare Pages > Edit\n8. Account > Account Settings > Read\n\nAccount Resources: Include > All accounts (or your account)\nZone Resources: Include > All zones (or your domain)";
     }
 
     /**
@@ -1327,23 +1334,72 @@ class AstroPress_Admin {
             wp_send_json_error(array('message' => esc_html__('Please enter a valid Custom CDN Domain (e.g. media.example.com).', 'astropress')));
         }
 
-        // STEP 1: Pre-Audit Token Permissions for Zone Rules
-        $audit_res = wp_remote_get("https://api.cloudflare.com/client/v4/zones/{$zone_id}/pagerules?per_page=1", array(
-            'timeout' => 8,
+        // STEP 1: Attempt Modern Cloudflare Cache Rules (Rulesets API)
+        $ruleset_entry_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/rulesets/phases/http_request_cache_settings/entrypoint";
+        $get_rs = wp_remote_get($ruleset_entry_url, array(
+            'timeout' => 10,
             'headers' => array('Authorization' => 'Bearer ' . $token),
         ));
 
-        if (!is_wp_error($audit_res)) {
-            $audit_code = wp_remote_retrieve_response_code($audit_res);
-            if ($audit_code === 403) {
-                wp_send_json_error(array(
-                    'message'      => esc_html__('Token Permission Denied: Your Cloudflare API Token lacks rule editing permission for this zone. Required scope: "Zone > Page Rules: Edit" (or "Zone > Cache Rules: Edit"). Please edit your token in Cloudflare Dashboard.', 'astropress'),
-                    'scope_needed' => 'Zone > Page Rules: Edit',
+        $cache_rule_payload = array(
+            'expression'        => '(http.host eq "' . addslashes($host) . '")',
+            'description'       => 'AstroPress 1-Year Cache Everything for R2 CDN (' . $host . ')',
+            'action'            => 'set_cache_settings',
+            'action_parameters' => array(
+                'edge_ttl' => array(
+                    'mode'    => 'override_origin',
+                    'default' => 31536000,
+                ),
+                'browser_ttl' => array(
+                    'mode'    => 'override_origin',
+                    'default' => 31536000,
+                ),
+                'cache' => true,
+            ),
+            'enabled' => true,
+        );
+
+        if (!is_wp_error($get_rs)) {
+            $get_code = wp_remote_retrieve_response_code($get_rs);
+            if ($get_code === 200 || $get_code === 404) {
+                $existing_rules = array();
+                if ($get_code === 200) {
+                    $rs_data = json_decode(wp_remote_retrieve_body($get_rs), true);
+                    $existing_rules = $rs_data['result']['rules'] ?? array();
+
+                    // Check if already in rules
+                    foreach ($existing_rules as $r) {
+                        if (strpos($r['expression'] ?? '', $host) !== false) {
+                            wp_send_json_success(array(
+                                'message'        => sprintf(esc_html__('Modern Cloudflare Cache Rule is already active for %s!', 'astropress'), $host),
+                                'already_exists' => true,
+                            ));
+                        }
+                    }
+                }
+
+                // Append new rule and update entrypoint
+                $existing_rules[] = $cache_rule_payload;
+                $put_rs = wp_remote_request($ruleset_entry_url, array(
+                    'method'  => 'PUT',
+                    'timeout' => 12,
+                    'headers' => array(
+                        'Authorization' => 'Bearer ' . $token,
+                        'Content-Type'  => 'application/json',
+                    ),
+                    'body'    => wp_json_encode(array('rules' => $existing_rules)),
                 ));
+
+                if (!is_wp_error($put_rs) && in_array(wp_remote_retrieve_response_code($put_rs), array(200, 201), true)) {
+                    wp_send_json_success(array(
+                        'message' => sprintf(esc_html__('Successfully deployed Cloudflare Cache Rule with 1-Year Edge TTL for %s (Ruleset Engine)!', 'astropress'), $host),
+                        'type'    => 'cache_rule',
+                    ));
+                }
             }
         }
 
-        // STEP 2: Check if rule already exists on Edge
+        // STEP 2: Fallback to Cloudflare Page Rules (Legacy)
         $rule_pattern = "*{$host}/*";
         $list_res = wp_remote_get("https://api.cloudflare.com/client/v4/zones/{$zone_id}/pagerules?status=active&per_page=50", array(
             'timeout' => 10,
@@ -1356,7 +1412,7 @@ class AstroPress_Admin {
                 foreach ($list_body['result'] as $existing_rule) {
                     if (!empty($existing_rule['targets'][0]['constraint']['value']) && $existing_rule['targets'][0]['constraint']['value'] === $rule_pattern) {
                         wp_send_json_success(array(
-                            'message'        => sprintf(esc_html__('Cloudflare "Cache Everything" rule is already active on Edge for %s (Rule ID: %s)!', 'astropress'), $rule_pattern, $existing_rule['id']),
+                            'message'        => sprintf(esc_html__('Cloudflare "Cache Everything" Page Rule is already active for %s (Rule ID: %s)!', 'astropress'), $rule_pattern, $existing_rule['id']),
                             'rule_id'        => $existing_rule['id'],
                             'already_exists' => true,
                         ));
@@ -1365,7 +1421,6 @@ class AstroPress_Admin {
             }
         }
 
-        // STEP 3: Deploy Page Rule
         $page_rule_payload = array(
             'targets' => array(
                 array(
@@ -1393,57 +1448,22 @@ class AstroPress_Admin {
             'body' => wp_json_encode($page_rule_payload),
         ));
 
-        if (is_wp_error($res)) {
-            wp_send_json_error(array('message' => 'Could not connect to Cloudflare: ' . $res->get_error_message()));
-        }
-
-        $body = json_decode(wp_remote_retrieve_body($res), true);
-        if (!empty($body['success'])) {
-            wp_send_json_success(array(
-                'message' => sprintf(esc_html__('Successfully deployed Cloudflare "Cache Everything" rule with 1-year Edge TTL for %s!', 'astropress'), $rule_pattern),
-                'rule_id' => $body['result']['id'] ?? '',
-            ));
-        }
-
-        $error_msg = !empty($body['errors'][0]['message']) ? $body['errors'][0]['message'] : esc_html__('Failed to deploy page rule.', 'astropress');
-
-        // Fallback: Attempt Modern Cache Rules (Rulesets API)
-        $ruleset_res = wp_remote_post("https://api.cloudflare.com/client/v4/zones/{$zone_id}/rulesets/phases/http_request_cache_settings/entrypoint", array(
-            'timeout' => 12,
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type'  => 'application/json',
-            ),
-            'body' => wp_json_encode(array(
-                'rules' => array(
-                    array(
-                        'expression' => '(http.host eq "' . addslashes($host) . '")',
-                        'description' => 'AstroPress Cache Everything for R2 CDN',
-                        'action' => 'set_cache_settings',
-                        'action_parameters' => array(
-                            'edge_ttl' => array(
-                                'mode' => 'override_origin',
-                                'default' => 31536000,
-                            ),
-                            'cache' => true,
-                        ),
-                        'enabled' => true,
-                    ),
-                ),
-            )),
-        ));
-
-        if (!is_wp_error($ruleset_res)) {
-            $rs_body = json_decode(wp_remote_retrieve_body($ruleset_res), true);
-            if (!empty($rs_body['success'])) {
+        if (!is_wp_error($res)) {
+            $body = json_decode(wp_remote_retrieve_body($res), true);
+            if (!empty($body['success'])) {
                 wp_send_json_success(array(
-                    'message' => sprintf(esc_html__('Successfully deployed Modern Cache Rule with 1-year Edge TTL for %s via Cloudflare Rulesets API!', 'astropress'), $host),
-                    'ruleset' => true,
+                    'message' => sprintf(esc_html__('Successfully deployed Cloudflare "Cache Everything" Page Rule with 1-Year Edge TTL for %s!', 'astropress'), $rule_pattern),
+                    'rule_id' => $body['result']['id'] ?? '',
                 ));
             }
         }
 
-        wp_send_json_error(array('message' => $error_msg));
+        wp_send_json_error(array(
+            'message' => sprintf(
+                esc_html__('Failed to deploy Edge Cache Rule for "%s". Ensure your Cloudflare API Token has "Zone > Cache Rules: Edit" and "Zone > Page Rules: Edit" scopes.', 'astropress'),
+                $host
+            ),
+        ));
     }
 
     /**
@@ -1571,15 +1591,25 @@ class AstroPress_Admin {
     public function ajax_purge_cf_zone() {
         $this->verify_admin_ajax();
 
+        $token   = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
+        if (empty($token) || strpos($token, '••••') !== false) {
+            $token = $this->core->get_cf_api_token();
+        }
+        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
+
         $purge_everything = !empty($_POST['purge_everything']);
         $urls_raw         = $_POST['urls'] ?? array();
         $urls             = is_array($urls_raw) ? array_map('sanitize_text_field', $urls_raw) : array();
 
-        $success = $this->core->cache->purge_cloudflare_zone($urls, $purge_everything);
+        if (empty($token) || empty($zone_id)) {
+            wp_send_json_error(array('message' => esc_html__('Cloudflare API Token and Zone ID must be provided or configured.', 'astropress')));
+        }
+
+        $success = $this->core->cache->purge_cloudflare_zone($urls, $purge_everything, $token, $zone_id);
         if ($success) {
-            wp_send_json_success(array('message' => esc_html__('Cloudflare Zone Cache purged successfully.', 'astropress')));
+            wp_send_json_success(array('message' => esc_html__('Cloudflare Zone & CDN Edge cache purged successfully.', 'astropress')));
         } else {
-            wp_send_json_error(array('message' => esc_html__('Cloudflare Zone purge failed. Check your API Token and Zone ID.', 'astropress')));
+            wp_send_json_error(array('message' => esc_html__('Cloudflare Edge purge failed. Verify your API Token has "Zone > Cache Purge: Purge" scope and Zone ID is valid.', 'astropress')));
         }
     }
 
@@ -1848,17 +1878,32 @@ class AstroPress_Admin {
             }
         }
 
-        // 6. Test Page Rules / Cache Rules permission on Zone
+        // 6. Test Modern Cache Rules or Page Rules permission on Zone
         $can_cache_rules = false;
         if ($matched_zone && !empty($matched_zone['id'])) {
-            $rules_test_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones/' . rawurlencode($matched_zone['id']) . '/pagerules?per_page=1', array(
+            // Check Modern Ruleset Engine entrypoint
+            $ruleset_test = wp_remote_get('https://api.cloudflare.com/client/v4/zones/' . rawurlencode($matched_zone['id']) . '/rulesets/phases/http_request_cache_settings/entrypoint', array(
                 'timeout' => 8,
                 'headers' => array('Authorization' => 'Bearer ' . $token),
             ));
-            if (!is_wp_error($rules_test_res)) {
-                $r_code = wp_remote_retrieve_response_code($rules_test_res);
-                if ($r_code === 200) {
+            if (!is_wp_error($ruleset_test)) {
+                $rs_code = wp_remote_retrieve_response_code($ruleset_test);
+                if (in_array($rs_code, array(200, 404), true)) {
                     $can_cache_rules = true;
+                }
+            }
+
+            // Fallback test Page Rules
+            if (!$can_cache_rules) {
+                $rules_test_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones/' . rawurlencode($matched_zone['id']) . '/pagerules?per_page=1', array(
+                    'timeout' => 8,
+                    'headers' => array('Authorization' => 'Bearer ' . $token),
+                ));
+                if (!is_wp_error($rules_test_res)) {
+                    $r_code = wp_remote_retrieve_response_code($rules_test_res);
+                    if ($r_code === 200) {
+                        $can_cache_rules = true;
+                    }
                 }
             }
         }
@@ -1910,12 +1955,12 @@ class AstroPress_Admin {
                     : esc_html__('Missing scope: "Zone > Cache Purge: Purge". Real-time Zone cache invalidation requires this scope.', 'astropress'),
             ),
             'cache_rules' => array(
-                'scope'       => 'Zone > Page Rules: Edit / Cache Rules',
+                'scope'       => 'Zone > Cache Rules: Edit / Page Rules: Edit',
                 'granted'     => $can_cache_rules,
-                'label'       => esc_html__('1-Year Cache Everything Rule', 'astropress'),
+                'label'       => esc_html__('1-Year Edge Cache Rule Deployment', 'astropress'),
                 'description' => $can_cache_rules
-                    ? esc_html__('Granted: Token is authorized to deploy Edge cache rules.', 'astropress')
-                    : esc_html__('Missing scope: "Zone > Page Rules: Edit". Rule deployment requires this scope.', 'astropress'),
+                    ? esc_html__('Granted: Token is authorized to deploy 1-year Edge & Browser Cache Rules (Ruleset Engine & Page Rules).', 'astropress')
+                    : esc_html__('Missing scope: "Zone > Cache Rules: Edit" (or "Zone > Page Rules: Edit"). Rule deployment requires this scope.', 'astropress'),
             ),
             'dns' => array(
                 'scope'       => 'Zone > DNS: Edit',
@@ -2522,6 +2567,9 @@ class AstroPress_Admin {
                                                 <button type="button" class="button button-secondary" id="onboard-deploy-cache-rule-btn">
                                                     <span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> <?php esc_html_e('Deploy Cache Rule', 'astropress'); ?>
                                                 </button>
+                                                <button type="button" class="button button-secondary" id="onboard-purge-cdn-btn" title="<?php esc_attr_e('Purge Cloudflare Edge cache for this CDN domain / zone', 'astropress'); ?>">
+                                                    <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge CDN Cache', 'astropress'); ?>
+                                                </button>
                                             </div>
                                             <p class="description"><?php esc_html_e('Your public custom domain hooked to the R2 bucket (e.g. media.example.com).', 'astropress'); ?></p>
 
@@ -2705,32 +2753,59 @@ class AstroPress_Admin {
             </div>
         </div>
 
-        <div class="astropress-card astropress-cf-connect-card" style="margin-top:20px;">
+        <?php
+        $cf_token      = $this->core->get_cf_api_token();
+        $zone_id       = $this->core->get_cf_zone_id();
+        $r2_bucket     = get_option('r2g_bucket', '');
+        $is_configured = (!empty($cf_token) && !empty($frontend_url));
+        ?>
+        <div class="astropress-card" style="margin-top:20px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:15px;">
                 <div style="display:flex; gap:12px; align-items:flex-start;">
-                    <span class="dashicons dashicons-cloud" style="font-size:32px; width:32px; height:32px; color:#f6821f; margin-top:2px;"></span>
+                    <span class="dashicons dashicons-cloud" style="font-size:32px; width:32px; height:32px; color:<?php echo $is_configured ? '#059669' : '#f6821f'; ?>; margin-top:2px;"></span>
                     <div>
-                        <h3 style="margin:0 0 4px 0;"><?php esc_html_e('Cloudflare 1-Click Quick Connect Assistant', 'astropress'); ?></h3>
-                        <p style="margin:0; color:#64748b;"><?php esc_html_e('Auto-discover your Account ID, matching Zone ID, and R2 Buckets directly from your Cloudflare Scoped API Token.', 'astropress'); ?></p>
+                        <h3 style="margin:0 0 4px 0;">
+                            <?php echo $is_configured ? esc_html__('Cloudflare & Astro Architecture Status', 'astropress') : esc_html__('Setup & Architecture Incomplete', 'astropress'); ?>
+                        </h3>
+                        <p style="margin:0; color:#64748b;">
+                            <?php if ($is_configured): ?>
+                                <?php esc_html_e('Your headless WordPress instance is unified with Cloudflare Edge and Astro. Manage all credentials and pipeline settings via the Setup Wizard.', 'astropress'); ?>
+                            <?php else: ?>
+                                <?php esc_html_e('Configure your single Cloudflare Scoped API Token, Astro frontend sync, and R2 media offloading through the unified Setup Wizard.', 'astropress'); ?>
+                            <?php endif; ?>
+                        </p>
                     </div>
                 </div>
-                <div class="astropress-btn-group">
+                <div class="astropress-btn-group" style="display:flex; gap:8px; align-items:center;">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-primary">
+                        <span class="dashicons dashicons-admin-settings" style="vertical-align:-2px;"></span> <?php echo $is_configured ? esc_html__('Configure in Setup Wizard', 'astropress') : esc_html__('Launch Setup Wizard &rarr;', 'astropress'); ?>
+                    </a>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="button button-secondary">
-                        <span class="dashicons dashicons-list-view"></span> <?php esc_html_e('View Webhook Logs', 'astropress'); ?>
+                        <span class="dashicons dashicons-list-view" style="vertical-align:-2px;"></span> <?php esc_html_e('Webhook Logs', 'astropress'); ?>
                     </a>
                 </div>
             </div>
 
-            <div style="margin-top:15px;" class="astropress-inline-form">
-                <input type="password" id="astropress_quick_cf_token" class="regular-text" placeholder="Paste Cloudflare API Token..." autocomplete="off" style="min-width:320px;" />
-                <button type="button" class="button button-primary" id="astropress-quick-connect-btn">
-                    <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Discover Resources', 'astropress'); ?>
-                </button>
-                <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
-                    <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('1-Click Pre-Configured Token', 'astropress'); ?> &rarr;
-                </a>
-            </div>
-            <div id="astropress-quick-connect-results" style="margin-top:15px; display:none;"></div>
+            <?php if ($is_configured): ?>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-top:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px;">
+                    <div>
+                        <strong style="font-size:11px; text-transform:uppercase; color:#64748b; display:block;"><?php esc_html_e('Astro Frontend', 'astropress'); ?></strong>
+                        <span style="font-size:13px; color:#0f172a; word-break:break-all;"><?php echo esc_html($frontend_url); ?></span>
+                    </div>
+                    <div>
+                        <strong style="font-size:11px; text-transform:uppercase; color:#64748b; display:block;"><?php esc_html_e('Cloudflare Zone ID', 'astropress'); ?></strong>
+                        <span style="font-size:13px; color:#0f172a;"><?php echo !empty($zone_id) ? esc_html(substr($zone_id, 0, 10) . '••••') : esc_html__('Not Configured', 'astropress'); ?></span>
+                    </div>
+                    <div>
+                        <strong style="font-size:11px; text-transform:uppercase; color:#64748b; display:block;"><?php esc_html_e('R2 Bucket', 'astropress'); ?></strong>
+                        <span style="font-size:13px; color:#0f172a;"><?php echo !empty($r2_bucket) ? esc_html($r2_bucket) : esc_html__('Local Only (Not Enabled)', 'astropress'); ?></span>
+                    </div>
+                    <div>
+                        <strong style="font-size:11px; text-transform:uppercase; color:#64748b; display:block;"><?php esc_html_e('Cloudflare Scoped Token', 'astropress'); ?></strong>
+                        <span style="font-size:13px; color:#059669; font-weight:600;"><span class="dashicons dashicons-shield-alt" style="font-size:15px; width:15px; height:15px; vertical-align:-2px;"></span> <?php esc_html_e('Connected & Masked', 'astropress'); ?></span>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
         <?php
     }
@@ -2973,24 +3048,28 @@ class AstroPress_Admin {
         $custom_domain = get_option('r2g_custom_domain', '');
         $storage_mode  = get_option('r2g_storage_mode', 'both');
         ?>
-        <div class="astropress-card astropress-cf-connect-card" style="max-width:850px; margin-bottom:20px;">
-            <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-                <span class="dashicons dashicons-admin-plugins" style="font-size:28px; width:28px; height:28px; color:#f6821f;"></span>
-                <div>
-                    <h3 style="margin:0;"><?php esc_html_e('Cloudflare Quick Connect Assistant', 'astropress'); ?></h3>
-                    <p style="margin:2px 0 0 0; color:#64748b;"><?php esc_html_e('Paste your Cloudflare API Token to automatically populate Account ID, match Zone ID, and discover R2 Buckets.', 'astropress'); ?></p>
+        <?php
+        $cf_token = $this->core->get_cf_api_token();
+        ?>
+        <div class="astropress-card" style="max-width:850px; margin-bottom:20px; background:#f8fafc; border-left:4px solid #f6821f;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <span class="dashicons dashicons-cloud" style="font-size:28px; width:28px; height:28px; color:#f6821f;"></span>
+                    <div>
+                        <h4 style="margin:0; font-size:14px;"><?php esc_html_e('Unified Cloudflare Token Pipeline', 'astropress'); ?></h4>
+                        <p style="margin:2px 0 0 0; color:#64748b; font-size:12px;">
+                            <?php if (!empty($cf_token)): ?>
+                                <?php esc_html_e('Cloudflare Scoped Token is active. Buckets, Custom CDN Domains, and Cache Rules are managed directly in the Setup Wizard.', 'astropress'); ?>
+                            <?php else: ?>
+                                <?php esc_html_e('To connect R2 automatically using a single Cloudflare Scoped Token without entering manual S3 keys, use the Setup Wizard.', 'astropress'); ?>
+                            <?php endif; ?>
+                        </p>
+                    </div>
                 </div>
-            </div>
-            <div class="astropress-inline-form">
-                <input type="password" id="astropress_quick_cf_token_r2" class="regular-text" placeholder="Paste Cloudflare API Token..." autocomplete="off" style="min-width:320px;" />
-                <button type="button" class="button button-primary" id="astropress-quick-connect-btn-r2">
-                    <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Discover Resources', 'astropress'); ?>
-                </button>
-                <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary">
-                    <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('1-Click Pre-Configured Token', 'astropress'); ?> &rarr;
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-secondary">
+                    <span class="dashicons dashicons-admin-settings" style="vertical-align:-2px;"></span> <?php esc_html_e('Manage in Setup Wizard &rarr;', 'astropress'); ?>
                 </a>
             </div>
-            <div id="astropress-quick-connect-results-r2" style="margin-top:12px; display:none;"></div>
         </div>
 
         <div class="astropress-card" style="max-width:850px;">

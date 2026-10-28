@@ -1735,8 +1735,8 @@
       });
     }
 
-    handleQuickConnect('#astropress_quick_cf_token', '#astropress-quick-connect-results', '#astropress-quick-connect-btn');
-    handleQuickConnect('#astropress_quick_cf_token_r2', '#astropress-quick-connect-results-r2', '#astropress-quick-connect-btn-r2');
+    // handleQuickConnect('#astropress_quick_cf_token', '#astropress-quick-connect-results', '#astropress-quick-connect-btn');
+    // handleQuickConnect('#astropress_quick_cf_token_r2', '#astropress-quick-connect-results-r2', '#astropress-quick-connect-btn-r2');
     handleQuickConnect('#onboard_cf_api_token', '#onboard-audit-results', '#onboard-quick-audit-btn');
 
     // ========================================================
@@ -1839,8 +1839,8 @@
       });
     });
 
-    // 6. Deploy Cache Rule from Setup Wizard
-    $('#onboard-deploy-cache-rule-btn').on('click', function(e) {
+    // 6. Deploy Cache Rule from Setup Wizard (Delegated)
+    $(document).on('click', '#onboard-deploy-cache-rule-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
       const cdnDomain = $('#onboard_r2_custom_domain').val().trim();
@@ -1879,6 +1879,47 @@
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> Deploy 1-Year Cache Rule');
+        }
+      });
+    });
+
+    // 6b. Purge CDN Edge Cache from Setup Wizard (Delegated)
+    $(document).on('click', '#onboard-purge-cdn-btn', function(e) {
+      e.preventDefault();
+      if (!confirm('Purge all cached CDN assets on Cloudflare Edge for this zone?')) {
+        return;
+      }
+      const $btn = $(this);
+      const token = $('#onboard_cf_api_token').val().trim();
+      const zoneId = $('#onboard_cf_zone_id').val().trim();
+      const $status = $('#onboard-cache-rule-status');
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Purging...');
+      $status.html('<span style="color:#64748b;">Purging Cloudflare Edge cache...</span>').show();
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_purge_cf_zone',
+          purge_everything: 1,
+          cf_api_token: token,
+          zone_id: zoneId,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes"></span> ' + (res.data?.message || 'CDN Edge cache purged successfully!') + '</span>');
+          } else {
+            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data?.message || 'Purge failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#dc2626;font-weight:600;">Request error: ' + err + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge CDN Cache');
         }
       });
     });
@@ -2148,6 +2189,12 @@
             } else {
               html += '<button type="button" class="button button-secondary button-small" id="onboard-deploy-cache-rule-btn">Deploy / Upgrade Cache Rule</button>';
             }
+            html += '</div>';
+
+            // Edge Cache Purge Row
+            html += '<div class="astropress-cdn-audit-row">';
+            html += '<div><strong>CDN Edge Cache:</strong> Instant Cloudflare Zone & CDN Purge</div>';
+            html += '<button type="button" class="button button-secondary button-small" id="onboard-purge-cdn-btn"><span class="dashicons dashicons-trash" style="vertical-align:-2px;font-size:13px;width:13px;height:13px;"></span> Purge CDN Cache</button>';
             html += '</div>';
 
             html += '</div>';

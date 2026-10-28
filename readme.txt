@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.7
+Stable tag: 1.2.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.8 =
+* Modern Cloudflare Cache Rules: Integrated modern Cloudflare Ruleset Engine (`http_request_cache_settings`), creating and verifying 1-year Edge and Browser TTL rules with automatic fallback to Page Rules.
+* 1-Click Purge CDN Edge Cache: Added instantaneous zone & CDN edge purging from both the Setup Wizard and live CDN Domain Audit cards.
+* Consolidated Single Pipeline: Eliminated duplicate token input forms from Dashboard/Overview and R2 tabs, standardizing the Setup Wizard as the sole canonical onboarding and credentials hub.
+* Scoped Token Audit & Blueprint: Added `Zone > Cache Rules: Edit` scope to the pre-configured token template URL, clipboard recipe, and real-time permission healthcheck.
+* Delegated Event Listeners: Ensured dynamic buttons (Deploy Cache Rule, Purge CDN Cache, Attach R2 Domain) work seamlessly within async audit containers.
 
 = 1.2.7 =
 * Push-Based Snapshot Updates: Automatically serializes and embeds full REST post and page payloads (`/wp/v2/posts/:id` and `/wp/v2/pages/:id` with `_embed=true`) directly in revalidation webhook payloads, feeding Astro SSR in-memory snapshot caches even when edge subrequests are firewalled.
