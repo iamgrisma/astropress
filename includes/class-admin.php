@@ -191,6 +191,15 @@ class AstroPress_Admin {
 
         add_submenu_page(
             'astropress',
+            'SEO & Security — AstroPress',
+            'SEO & Security',
+            'manage_options',
+            'astropress&tab=seo',
+            array($this, 'render_settings_page')
+        );
+
+        add_submenu_page(
+            'astropress',
             'Code & Snippets — AstroPress',
             'Astro Snippets',
             'manage_options',
@@ -617,6 +626,31 @@ class AstroPress_Admin {
             exit;
         }
 
+        // Save Dedicated SEO & Security Settings
+        if ((isset($_POST['astropress_save_seo']) && check_admin_referer('astropress_seo_action', 'astropress_seo_nonce')) ||
+            (isset($_POST['topnepali_save_seo']) && check_admin_referer('topnepali_seo_action', 'topnepali_seo_nonce'))) {
+            $rewrite_links     = isset($_POST['rewrite_links']) ? '1' : '0';
+            $subdomain_shield  = isset($_POST['subdomain_shield']) ? '1' : '0';
+            $subdomain_noindex = isset($_POST['subdomain_noindex']) ? '1' : '0';
+
+            update_option(AstroPress::OPTION_REWRITE_LINKS, $rewrite_links);
+            update_option('topnepali_headless_rewrite_links', $rewrite_links);
+
+            update_option(AstroPress::OPTION_SUBDOMAIN_SHIELD, $subdomain_shield);
+            update_option('topnepali_headless_subdomain_shield', $subdomain_shield);
+
+            update_option(AstroPress::OPTION_SUBDOMAIN_NOINDEX, $subdomain_noindex);
+            update_option('topnepali_headless_subdomain_noindex', $subdomain_noindex);
+
+            set_transient('astropress_notice', array(
+                'type'    => 'success',
+                'message' => esc_html__('SEO & Security settings saved successfully.', 'astropress'),
+            ), 30);
+
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=seo'));
+            exit;
+        }
+
         // 3. Save Cloudflare R2 Credentials & CDN Options
         if (isset($_POST['astropress_save_r2']) && check_admin_referer('astropress_r2_action', 'astropress_r2_nonce')) {
             $account_id    = sanitize_text_field(wp_unslash($_POST['r2_account_id'] ?? ($_POST['r2g_account_id'] ?? '')));
@@ -906,13 +940,25 @@ class AstroPress_Admin {
     }
 
     /**
+     * Resilient AJAX Security Verification (supports current and legacy nonces)
+     */
+    private function verify_admin_ajax() {
+        $nonce = $_POST['nonce'] ?? $_REQUEST['nonce'] ?? '';
+        if (!wp_verify_nonce($nonce, 'astropress_admin_nonce') &&
+            !wp_verify_nonce($nonce, 'topnepali_admin_nonce') &&
+            !wp_verify_nonce($nonce, 'r2g_admin_nonce')) {
+            wp_send_json_error(array('message' => esc_html__('Invalid security token (nonce).', 'astropress')), 403);
+        }
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+    }
+
+    /**
      * AJAX: Get structured list of URLs to warm
      */
     public function ajax_get_warmup_urls() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $preset = sanitize_text_field($_POST['preset'] ?? 'standard');
         $items = $this->core->cache->get_warmup_urls($preset);
@@ -927,10 +973,7 @@ class AstroPress_Admin {
      * AJAX: Warm a small batch of URLs sequentially with live metrics
      */
     public function ajax_warm_batch() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $raw_batch = $_POST['batch'] ?? array();
         if (!is_array($raw_batch) || empty($raw_batch)) {
@@ -961,10 +1004,7 @@ class AstroPress_Admin {
      * AJAX: Start asynchronous background warming job
      */
     public function ajax_start_bg_warm() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $preset     = sanitize_text_field($_POST['preset'] ?? 'standard');
         $delay_ms   = absint($_POST['delay'] ?? 1000);
@@ -982,10 +1022,7 @@ class AstroPress_Admin {
      * AJAX: Query background warming job progress
      */
     public function ajax_get_bg_warm_status() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $status = $this->core->cache->get_background_job_status();
         wp_send_json_success(array('job' => $status));
@@ -995,10 +1032,7 @@ class AstroPress_Admin {
      * AJAX: Pause background job
      */
     public function ajax_pause_bg_warm() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $ok = $this->core->cache->pause_background_job();
         wp_send_json_success(array('paused' => $ok));
@@ -1008,10 +1042,7 @@ class AstroPress_Admin {
      * AJAX: Resume background job
      */
     public function ajax_resume_bg_warm() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $ok = $this->core->cache->resume_background_job();
         wp_send_json_success(array('resumed' => $ok));
@@ -1021,10 +1052,7 @@ class AstroPress_Admin {
      * AJAX: Cancel background job
      */
     public function ajax_cancel_bg_warm() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $ok = $this->core->cache->cancel_background_job();
         wp_send_json_success(array('cancelled' => $ok));
@@ -1034,10 +1062,7 @@ class AstroPress_Admin {
      * AJAX: Clear finished/cancelled background job
      */
     public function ajax_clear_bg_warm() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'), 403);
-        }
+        $this->verify_admin_ajax();
 
         $this->core->cache->clear_background_job();
         wp_send_json_success(array('cleared' => true));
@@ -1626,6 +1651,9 @@ class AstroPress_Admin {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=warmer')); ?>" class="nav-tab <?php echo ($active_tab === 'warmer') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-performance"></span> <?php esc_html_e('Cache Warmer', 'astropress'); ?>
                 </a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=seo')); ?>" class="nav-tab <?php echo ($active_tab === 'seo') ? 'nav-tab-active' : ''; ?>">
+                    <span class="dashicons dashicons-shield"></span> <?php esc_html_e('SEO & Security', 'astropress'); ?>
+                </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="nav-tab <?php echo ($active_tab === 'logs') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-list-view"></span> <?php esc_html_e('Webhook Logs', 'astropress'); ?>
                 </a>
@@ -1639,38 +1667,50 @@ class AstroPress_Admin {
 
             <div class="astropress-content">
                 <?php
-                switch ($active_tab) {
-                    case 'onboarding':
-                        $this->render_tab_onboarding($frontend_url, $is_connected);
-                        break;
-                    case 'bridge':
-                        $this->render_tab_bridge($frontend_url, $is_connected);
-                        break;
-                    case 'r2':
-                        $this->render_tab_r2();
-                        break;
-                    case 'optimizer':
-                        $this->render_tab_optimizer();
-                        break;
-                    case 'warmer':
-                        $this->render_tab_warmer();
-                        break;
-                    case 'logs':
-                        $this->render_tab_logs();
-                        break;
-                    case 'sync':
-                        $this->render_tab_sync($stats);
-                        break;
-                    case 'integration':
-                        $this->render_tab_integration($frontend_url);
-                        break;
-                    case 'updates':
-                        $this->render_tab_updates();
-                        break;
-                    case 'dashboard':
-                    default:
-                        $this->render_tab_dashboard($frontend_url, $is_connected, $stats);
-                        break;
+                try {
+                    switch ($active_tab) {
+                        case 'onboarding':
+                            $this->render_tab_onboarding($frontend_url, $is_connected);
+                            break;
+                        case 'bridge':
+                            $this->render_tab_bridge($frontend_url, $is_connected);
+                            break;
+                        case 'r2':
+                            $this->render_tab_r2();
+                            break;
+                        case 'optimizer':
+                            $this->render_tab_optimizer();
+                            break;
+                        case 'warmer':
+                            $this->render_tab_warmer();
+                            break;
+                        case 'seo':
+                            $this->render_tab_seo();
+                            break;
+                        case 'logs':
+                            $this->render_tab_logs();
+                            break;
+                        case 'sync':
+                            $this->render_tab_sync($stats);
+                            break;
+                        case 'integration':
+                            $this->render_tab_integration($frontend_url);
+                            break;
+                        case 'updates':
+                            $this->render_tab_updates();
+                            break;
+                        case 'dashboard':
+                        default:
+                            $this->render_tab_dashboard($frontend_url, $is_connected, $stats);
+                            break;
+                    }
+                } catch (\Throwable $e) {
+                    echo '<div class="notice notice-error" style="padding:16px; margin:20px 0; border-left:4px solid #dc2626; background:#fef2f2;">';
+                    echo '<h3 style="margin-top:0; color:#b91c1c; font-size:14px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' . esc_html__('AstroPress Tab Error', 'astropress') . '</h3>';
+                    echo '<p style="color:#7f1d1d; font-size:13px; margin:6px 0;"><strong>' . esc_html($e->getMessage()) . '</strong></p>';
+                    echo '<div style="font-size:11px; color:#991b1b; margin-top:8px;"><strong>File:</strong> ' . esc_html($e->getFile()) . ' : line ' . esc_html($e->getLine()) . '</div>';
+                    echo '<pre style="background:#fff; border:1px solid #fecaca; padding:10px; border-radius:4px; max-height:220px; overflow:auto; font-size:11px; margin-top:8px;">' . esc_html($e->getTraceAsString()) . '</pre>';
+                    echo '</div>';
                 }
                 ?>
             </div>
@@ -1854,10 +1894,10 @@ class AstroPress_Admin {
      * Tab: Dashboard & Overview
      */
     private function render_tab_dashboard($frontend_url, $is_connected, $stats) {
-        $total_media = $stats['total'] ?? 0;
-        $offloaded   = $stats['offloaded'] ?? 0;
+        $total_media = $stats['total_wp'] ?? ($stats['total'] ?? 0);
+        $offloaded   = $stats['synced'] ?? ($stats['offloaded'] ?? 0);
         $percentage  = ($total_media > 0) ? round(($offloaded / $total_media) * 100, 1) : 0;
-        $saved_space = size_format($stats['saved_bytes'] ?? 0, 2);
+        $saved_space = size_format($stats['savings_bytes'] ?? ($stats['saved_bytes'] ?? 0), 2);
         ?>
         <div class="astropress-grid-2">
             <div class="astropress-card">
@@ -2476,41 +2516,237 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: Cache Warmer
+     * Tab: Edge Cache Warmer (Full Feature Parity: Presets, WP-Cron Background Worker, Live Console)
      */
     private function render_tab_warmer() {
         ?>
-        <div class="astropress-card" style="max-width:850px;">
-            <h2><?php esc_html_e('Edge Cache Warmer', 'astropress'); ?></h2>
-            <p><?php esc_html_e('Pre-warm your Cloudflare Edge caches so that first-time visitors experience instantaneous 20ms page loads instead of SSR cold boots.', 'astropress'); ?></p>
+        <div class="astropress-card" style="max-width:920px;">
+            <div class="astropress-card-header">
+                <h2><span class="dashicons dashicons-cloud"></span> <?php esc_html_e('Live Edge Cache Warmer & Sitemap Crawler', 'astropress'); ?></h2>
+                <span class="astropress-badge astropress-badge-online"><?php esc_html_e('Zero Edge Latency', 'astropress'); ?></span>
+            </div>
+            <p style="color: #64748b; font-size: 13px; margin-top: 0;">
+                <?php esc_html_e('Pre-warms Cloudflare Edge CDN POPs in polite, throttled batches so visitors receive instant sub-15ms cache HITs without cold-start latency.', 'astropress'); ?>
+            </p>
 
-            <div class="astropress-warmer-controls">
-                <label for="astropress-warmer-preset"><strong><?php esc_html_e('Warmup Scope:', 'astropress'); ?></strong></label>
-                <select id="astropress-warmer-preset">
-                    <option value="standard"><?php esc_html_e('Standard (Homepage, Top Posts & Categories)', 'astropress'); ?></option>
-                    <option value="recent"><?php esc_html_e('Recent (Latest 50 Posts & Pages)', 'astropress'); ?></option>
-                    <option value="full"><?php esc_html_e('Full (All Published Posts, Pages & Categories)', 'astropress'); ?></option>
-                </select>
+            <!-- Server Resource & Capacity Advisory -->
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:6px; margin-bottom:18px;">
+                <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#92400e;">
+                    <span class="dashicons dashicons-warning" style="font-size:18px; width:18px; height:18px;"></span>
+                    <?php esc_html_e('Server Capacity & Resource Advisory', 'astropress'); ?>
+                </div>
+                <p style="margin:4px 0 0 0; font-size:12px; color:#78350f; line-height:1.5;">
+                    <?php esc_html_e('Edge warming issues continuous HTTP requests to your Astro frontend and origin WordPress. If your hosting environment is running on shared CPU/RAM or has limited PHP workers, please select a gentle request gap (1,500ms – 3,000ms) and low batch size (1–2), or click Run in Background to run politely via WP-Cron without keeping your browser open.', 'astropress'); ?>
+                </p>
+            </div>
 
-                <button type="button" class="button button-primary" id="astropress-start-warmer">
-                    <span class="dashicons dashicons-controls-play"></span> <?php esc_html_e('Start Interactive Warmer', 'astropress'); ?>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom: 20px;">
+                <div>
+                    <label for="topnepali-warm-preset" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
+                        <?php esc_html_e('Select Warming Scope / XML Sitemap:', 'astropress'); ?>
+                    </label>
+                    <select id="topnepali-warm-preset" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
+                        <optgroup label="<?php esc_attr_e('Standard Presets', 'astropress'); ?>">
+                            <option value="standard" selected><?php esc_html_e('Standard (Core Pages + Top Categories + Top 20 Posts ~ 35 URLs)', 'astropress'); ?></option>
+                            <option value="deep"><?php esc_html_e('Comprehensive Deep (Core Pages + Top Categories + Top 50 Posts ~ 80 URLs)', 'astropress'); ?></option>
+                            <option value="tools_only"><?php esc_html_e('Interactive Web Tools Only', 'astropress'); ?></option>
+                        </optgroup>
+                        <optgroup label="<?php esc_attr_e('Complete Database Content (100% Coverage)', 'astropress'); ?>">
+                            <option value="all_posts"><?php esc_html_e('All Published Posts (100% Complete from Database)', 'astropress'); ?></option>
+                            <option value="all_pages"><?php esc_html_e('All Published Pages (100% Complete from Database)', 'astropress'); ?></option>
+                            <option value="all_taxonomies"><?php esc_html_e('All Categories & Tags', 'astropress'); ?></option>
+                            <option value="entire_site"><?php esc_html_e('Entire Website (All Posts, Pages, Categories, Tags & Core Pages)', 'astropress'); ?></option>
+                        </optgroup>
+                        <optgroup label="<?php esc_attr_e('XML Sitemaps (Deep Crawl & XML Files)', 'astropress'); ?>">
+                            <option value="sitemap_crawler"><?php esc_html_e('Deep Sitemap Crawler (Extract & Warm ALL Page URLs inside XML Sitemaps)', 'astropress'); ?></option>
+                            <option value="sitemap_files_only"><?php esc_html_e('XML Sitemap Files Only (Refresh XML Index & Sub-Sitemaps on Edge)', 'astropress'); ?></option>
+                            <option value="sitemap_posts"><?php esc_html_e('Posts Sitemap (/post-sitemap.xml)', 'astropress'); ?></option>
+                            <option value="sitemap_pages"><?php esc_html_e('Pages Sitemap (/page-sitemap.xml)', 'astropress'); ?></option>
+                            <option value="sitemap_categories"><?php esc_html_e('Categories Sitemap (/category-sitemap.xml)', 'astropress'); ?></option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="topnepali-warm-delay" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
+                        <?php esc_html_e('Gap Between Requests:', 'astropress'); ?>
+                    </label>
+                    <select id="topnepali-warm-delay" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
+                        <option value="500"><?php esc_html_e('500ms (0.5s - Aggressive / Fast Server)', 'astropress'); ?></option>
+                        <option value="1000" selected><?php esc_html_e('1,000ms (1.0s - Recommended Balanced)', 'astropress'); ?></option>
+                        <option value="1500"><?php esc_html_e('1,500ms (1.5s - Moderate Shared Host)', 'astropress'); ?></option>
+                        <option value="2000"><?php esc_html_e('2,000ms (2.0s - Low Impact Server)', 'astropress'); ?></option>
+                        <option value="3000"><?php esc_html_e('3,000ms (3.0s - Conservative Safe)', 'astropress'); ?></option>
+                        <option value="5000"><?php esc_html_e('5,000ms (5.0s - Ultra Gentle)', 'astropress'); ?></option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Action Buttons Row -->
+            <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
+                <button type="button" id="topnepali-start-warm-btn" class="button button-primary button-hero" style="display:inline-flex; align-items:center; gap:6px;">
+                    <span class="dashicons dashicons-controls-play" style="vertical-align:-2px;"></span> <?php esc_html_e('Start Interactive Warmer (Browser Mode)', 'astropress'); ?>
                 </button>
-                <button type="button" class="button button-secondary" id="astropress-pause-warmer" style="display:none;">
-                    <span class="dashicons dashicons-controls-pause"></span> <?php esc_html_e('Pause', 'astropress'); ?>
+                <button type="button" id="topnepali-start-bg-warm-btn" class="button button-secondary" style="display:inline-flex; align-items:center; gap:6px;">
+                    <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Run in Background (WP-Cron)', 'astropress'); ?>
                 </button>
-                <button type="button" class="button button-link-delete" id="astropress-cancel-warmer" style="display:none;">
-                    <?php esc_html_e('Cancel', 'astropress'); ?>
+                <button type="button" id="topnepali-cancel-warm-btn" class="button button-link-delete" style="display:none; padding:8px 14px;">
+                    <span class="dashicons dashicons-controls-pause" style="vertical-align:-2px;"></span> <?php esc_html_e('Pause / Cancel', 'astropress'); ?>
                 </button>
             </div>
 
-            <div id="astropress-warmer-progress-container" style="display:none; margin-top:20px;">
-                <div class="astropress-progress-bar-wrap">
-                    <div class="astropress-progress-bar" id="astropress-warmer-progress-bar" style="width:0%;"></div>
+            <!-- Persistent Background Job Box -->
+            <div id="topnepali-bg-warm-box" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; padding:16px; border-radius:8px; margin-bottom:18px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                    <span style="font-size:13px; font-weight:700; color:#15803d;">
+                        <span class="dashicons dashicons-admin-generic" style="vertical-align:text-bottom;"></span>
+                        <?php esc_html_e('Background Warmer Job (WP-Cron):', 'astropress'); ?> <span id="topnepali-bg-warm-current">0</span> / <span id="topnepali-bg-warm-total">0</span>
+                    </span>
+                    <span id="topnepali-bg-warm-status-pill" class="astropress-badge astropress-badge-online" style="font-size:11px;">RUNNING</span>
                 </div>
-                <div class="astropress-progress-stats" id="astropress-warmer-progress-text">
-                    0 / 0 URLs (0%)
+                <div class="topnepali-progress-bar-bg" style="background:#dcfce7;">
+                    <div id="topnepali-bg-progress-bar-fill" class="topnepali-progress-bar-fill" style="width: 0%; background:#16a34a;"></div>
                 </div>
-                <div class="astropress-log-box" id="astropress-warmer-log"></div>
+                <div id="topnepali-bg-warm-meta" style="font-size:12px; color:#166534; margin:8px 0;">
+                    <?php esc_html_e('Job active in background. You may safely close this browser window.', 'astropress'); ?>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                    <button type="button" id="topnepali-pause-bg-btn" class="button button-secondary button-small">
+                        <span class="dashicons dashicons-controls-pause"></span> <?php esc_html_e('Pause Job', 'astropress'); ?>
+                    </button>
+                    <button type="button" id="topnepali-resume-bg-btn" class="button button-secondary button-small" style="display:none;">
+                        <span class="dashicons dashicons-controls-play"></span> <?php esc_html_e('Resume Job', 'astropress'); ?>
+                    </button>
+                    <button type="button" id="topnepali-cancel-bg-btn" class="button button-link-delete button-small">
+                        <span class="dashicons dashicons-dismiss"></span> <?php esc_html_e('Cancel Job', 'astropress'); ?>
+                    </button>
+                    <button type="button" id="topnepali-clear-bg-btn" class="button button-secondary button-small" style="display:none;">
+                        <span class="dashicons dashicons-trash"></span> <?php esc_html_e('Dismiss Job', 'astropress'); ?>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Real-time Progress Display -->
+            <div id="topnepali-warm-progress-box" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:16px; border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:13px; font-weight:600; color:#334155; flex-wrap:wrap; gap:8px;">
+                    <span><?php esc_html_e('Warming Progress:', 'astropress'); ?> <span id="topnepali-warm-current">0</span> / <span id="topnepali-warm-total">0</span></span>
+                    <span id="topnepali-warm-percent" style="color:#0284c7; font-weight:700;">0%</span>
+                </div>
+
+                <div class="topnepali-progress-bar-bg">
+                    <div id="topnepali-progress-bar-fill" class="topnepali-progress-bar-fill" style="width: 0%;"></div>
+                </div>
+
+                <div id="topnepali-warm-current-url" style="font-size:12px; color:#64748b; margin:10px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    <?php esc_html_e('Initializing queue...', 'astropress'); ?>
+                </div>
+
+                <div style="margin:12px 0 6px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <strong style="font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:0.5px;">
+                        <?php esc_html_e('Live Cloudflare Edge Activity Console:', 'astropress'); ?>
+                    </strong>
+                    <span id="topnepali-warm-status-pill" class="astropress-badge" style="background:#0284c7; color:#fff; font-size:10px;">IDLE</span>
+                </div>
+                <div id="topnepali-warm-log" class="topnepali-log-console"></div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Tab: Rank Math SEO Bridge & Subdomain Protection Shield
+     */
+    private function render_tab_seo() {
+        $rewrite_links    = $this->core->should_rewrite_links();
+        $subdomain_shield = $this->core->should_shield_subdomain();
+        $subdomain_noindex= $this->core->should_noindex_backend();
+        $rank_math_active = class_exists('RankMath');
+        $rank_math_pro    = defined('RANK_MATH_PRO_VERSION');
+        ?>
+        <div style="max-width:920px;">
+            <div class="astropress-card">
+                <div class="astropress-card-header">
+                    <h2><span class="dashicons dashicons-shield"></span> <?php esc_html_e('Rank Math SEO & Subdomain Protection Shield', 'astropress'); ?></h2>
+                    <span class="astropress-badge astropress-badge-online">
+                        <span class="astropress-dot"></span> <?php echo $rank_math_active ? ($rank_math_pro ? 'Rank Math Pro Active' : 'Rank Math Active') : 'SEO Bridge Ready'; ?>
+                    </span>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-top: 0;">
+                    <?php esc_html_e('Manage search engine indexation, Rank Math JSON-LD schema bridge, preview/view permalink rewrites, and origin subdomain shield.', 'astropress'); ?>
+                </p>
+
+                <form method="post" action="">
+                    <?php wp_nonce_field('astropress_seo_action', 'astropress_seo_nonce'); ?>
+
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Preview & View Links', 'astropress'); ?></th>
+                            <td>
+                                <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" name="rewrite_links" id="seo_rewrite_links" value="1" <?php checked($rewrite_links); ?> style="margin-top:3px;" />
+                                    <div>
+                                        <strong><?php esc_html_e('Rewrite Preview & View Links to Astro Frontend', 'astropress'); ?></strong>
+                                        <p class="description"><?php esc_html_e('Points "View Post", post previews, taxonomy links, and author archives directly to your canonical Astro frontend domain instead of the WordPress backend.', 'astropress'); ?></p>
+                                    </div>
+                                </label>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Subdomain 301 Shield', 'astropress'); ?></th>
+                            <td>
+                                <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" name="subdomain_shield" id="seo_subdomain_shield" value="1" <?php checked($subdomain_shield); ?> style="margin-top:3px;" />
+                                    <div>
+                                        <strong><?php esc_html_e('Subdomain 301 Protection Shield', 'astropress'); ?></strong>
+                                        <p class="description"><?php esc_html_e('Automatically issues an HTTP 301 Moved Permanently redirect for public human visitors from the WordPress origin subdomain (e.g. wp.topnepali.com) to the production Astro website (topnepali.com). Excludes WP-Admin, REST API endpoints, Cron jobs, and webhooks.', 'astropress'); ?></p>
+                                    </div>
+                                </label>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Search Engine Noindex', 'astropress'); ?></th>
+                            <td>
+                                <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" name="subdomain_noindex" id="seo_subdomain_noindex" value="1" <?php checked($subdomain_noindex); ?> style="margin-top:3px;" />
+                                    <div>
+                                        <strong><?php esc_html_e('Backend Noindex HTTP Headers', 'astropress'); ?></strong>
+                                        <p class="description"><?php esc_html_e('Emits X-Robots-Tag: noindex, nofollow on the WordPress backend to prevent duplicate content indexing by Google, Bing, and other crawlers.', 'astropress'); ?></p>
+                                    </div>
+                                </label>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <div style="margin-top:20px;">
+                        <button type="submit" name="astropress_save_seo" class="button button-primary">
+                            <span class="dashicons dashicons-saved"></span> <?php esc_html_e('Save SEO & Security Settings', 'astropress'); ?>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- SEO Architecture Blueprint & REST Bridge Card -->
+            <div class="astropress-card" style="margin-top:20px;">
+                <div class="astropress-card-header">
+                    <h2><span class="dashicons dashicons-rest-api"></span> <?php esc_html_e('Rank Math Schema & REST API Integration', 'astropress'); ?></h2>
+                </div>
+                <p style="font-size:13px; color:#475569; line-height:1.6;">
+                    <?php esc_html_e('AstroPress automatically registers deep Rank Math SEO fields into the WordPress REST API responses for Posts, Pages, Categories, and Tags. Your Astro templates can extract and render rich metadata and Google-compliant JSON-LD structured data without any complex plugins.', 'astropress'); ?>
+                </p>
+
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:14px; margin-top:12px;">
+                    <h4 style="margin:0 0 8px 0; font-size:13px; color:#0f172a;"><?php esc_html_e('Exposed REST API Fields:', 'astropress'); ?></h4>
+                    <ul style="margin:0; padding-left:18px; font-size:12px; color:#334155; line-height:1.8;">
+                        <li><code>rank_math_seo.title</code> &mdash; <?php esc_html_e('Custom SEO Title with fallback to post title', 'astropress'); ?></li>
+                        <li><code>rank_math_seo.description</code> &mdash; <?php esc_html_e('Custom Meta Description with fallback to excerpt', 'astropress'); ?></li>
+                        <li><code>rank_math_seo.canonical_url</code> &mdash; <?php esc_html_e('Canonical production frontend URL', 'astropress'); ?></li>
+                        <li><code>rank_math_seo.og_image</code> &mdash; <?php esc_html_e('OpenGraph social card image URL (via Cloudflare R2 CDN)', 'astropress'); ?></li>
+                        <li><code>rank_math_seo.json_ld</code> &mdash; <?php esc_html_e('Rich Article, BreadcrumbList, and Organization schema graph', 'astropress'); ?></li>
+                        <li><code>rank_math_seo.robots</code> &mdash; <?php esc_html_e('Robots indexing directives (index, follow, noindex)', 'astropress'); ?></li>
+                    </ul>
+                </div>
             </div>
         </div>
         <?php

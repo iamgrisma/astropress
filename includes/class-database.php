@@ -279,6 +279,11 @@ class AstroPress_Database {
         global $wpdb;
         $table = self::table();
 
+        // Ensure table exists
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+            self::create_table();
+        }
+
         // Total media in WordPress
         $total_wp = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_status != 'trash'"

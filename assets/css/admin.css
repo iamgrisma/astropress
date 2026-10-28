@@ -17,7 +17,6 @@
   max-width: 1100px;
   margin: 20px 20px 40px 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
-  overflow-x: hidden;
 }
 
 /* Header */
@@ -803,14 +802,187 @@
 }
 
 @media screen and (max-width: 782px) {
-  .astropress-card .form-table th {
-    width: auto;
-    padding-bottom: 4px;
+  .astropress-wrap {
+    margin: 10px 10px 20px 0;
+    max-width: 100%;
   }
+
+  .astropress-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 14px !important;
+    padding: 16px 18px !important;
+  }
+
+  .astropress-header-badges {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .nav-tab-wrapper.astropress-nav-tabs {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .nav-tab-wrapper.astropress-nav-tabs .nav-tab {
+    margin: 0 !important;
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+  }
+
+  .astropress-card .form-table,
+  .astropress-card .form-table tbody,
+  .astropress-card .form-table tr,
+  .astropress-card .form-table th,
   .astropress-card .form-table td {
-    padding-top: 4px;
+    display: block !important;
+    width: 100% !important;
+    padding: 6px 0 !important;
+    box-sizing: border-box !important;
   }
+
+  .astropress-card .form-table th {
+    width: auto !important;
+    padding-bottom: 4px !important;
+    font-weight: 600;
+  }
+
+  .astropress-card .form-table td {
+    padding-top: 2px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .astropress-card .form-table td input[type="text"],
+  .astropress-card .form-table td input[type="password"],
+  .astropress-card .form-table td input[type="url"],
+  .astropress-card .form-table td select,
+  .astropress-card .form-table td textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .astropress-inline-form,
+  .astropress-warmer-controls,
+  .astropress-wizard-footer,
+  .astropress-card-header,
+  .r2g-action-bar {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .astropress-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
   .r2g-stats-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr !important;
   }
+
+  .button, .button-primary, .button-secondary {
+    white-space: normal !important;
+    height: auto !important;
+    min-height: 32px !important;
+    line-height: 1.4 !important;
+    padding: 6px 12px !important;
+  }
+}
+
+/* ========================================================
+   Live Edge Cache Warmer Console & Background Job Styles
+   ======================================================== */
+.topnepali-progress-bar-bg,
+.astropress-progress-bar-bg {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.topnepali-progress-bar-fill,
+.astropress-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 999px;
+}
+
+.topnepali-log-console,
+.astropress-log-console {
+  max-height: 220px;
+  overflow-y: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid #1e293b;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.topnepali-log-entry,
+.astropress-log-entry {
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-bottom: 2px;
+}
+
+.topnepali-log-entry:last-child,
+.astropress-log-entry:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.topnepali-log-path,
+.astropress-log-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #93c5fd;
+}
+
+.topnepali-log-meta,
+.astropress-log-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.topnepali-log-status-200,
+.astropress-log-status-200 {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.topnepali-log-status-redirect,
+.astropress-log-status-redirect {
+  color: #facc15;
+  font-weight: 600;
+}
+
+.topnepali-log-status-err,
+.astropress-log-status-err {
+  color: #f87171;
+  font-weight: 600;
+}
+
+@keyframes astropress-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: astropress-spin 1s linear infinite;
+  display: inline-block;
 }

@@ -314,6 +314,22 @@ class AstroPress_Encryption {
         return strpos($stored, self::PREFIX_OPENSSL) !== 0 && strpos($stored, self::PREFIX_SODIUM) !== 0;
     }
 
+    /**
+     * Check whether a value is prefixed with an encryption signature.
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    public static function is_encrypted($value) {
+        if (!is_string($value) || empty($value)) {
+            return false;
+        }
+        return strpos($value, self::PREFIX_OPENSSL) === 0
+            || strpos($value, self::PREFIX_SODIUM) === 0
+            || strpos($value, self::PREFIX_LEGACY) === 0
+            || strpos($value, self::PREFIX_BASE64) === 0;
+    }
+
     public static function maybe_upgrade_option($option_name) {
         $stored = get_option($option_name, '');
         if (!self::needs_upgrade($stored)) {

@@ -640,126 +640,356 @@
     });
 
     // ========================================================
-    // 6. Interactive Edge Cache Warmer
+    // 6. Interactive Batched Edge Cache Warmer & WP-Cron Background Worker
     // ========================================================
-    let warmerUrls = [];
-    let warmerIndex = 0;
-    let warmerActive = false;
-    let warmerPaused = false;
+    var isWarming = false;
+    var cancelRequested = false;
+    var bgPollTimer = null;
 
-    $('#astropress-start-warmer').on('click', function(e) {
+    var $startWarmBtn   = $('#topnepali-start-warm-btn, #astropress-start-warmer');
+    var $startBgWarmBtn = $('#topnepali-start-bg-warm-btn, #astropress-start-bg-warmer');
+    var $cancelWarmBtn  = $('#topnepali-cancel-warm-btn, #astropress-cancel-warmer');
+    var $progressBox    = $('#topnepali-warm-progress-box, #astropress-warmer-progress-container');
+    var $countEl        = $('#topnepali-warm-current, #astropress-warmer-progress-count');
+    var $totalEl        = $('#topnepali-warm-total, #astropress-warmer-progress-total');
+    var $percentEl      = $('#topnepali-warm-percent, #astropress-warmer-progress-percent');
+    var $barFill        = $('#topnepali-progress-bar-fill, #astropress-warmer-progress-bar');
+    var $currentUrl     = $('#topnepali-warm-current-url, #astropress-warmer-progress-text');
+    var $statusPill     = $('#topnepali-warm-status-pill, #astropress-warmer-status-pill');
+    var $logConsole     = $('#topnepali-warm-log, #astropress-warmer-log');
+    var $presetSelect   = $('#topnepali-warm-preset, #astropress-warmer-preset');
+    var $delaySelect    = $('#topnepali-warm-delay, #astropress-warmer-delay');
+
+    // Background Job UI Elements
+    var $bgBox         = $('#topnepali-bg-warm-box');
+    var $bgCurrent     = $('#topnepali-bg-warm-current');
+    var $bgTotal       = $('#topnepali-bg-warm-total');
+    var $bgBarFill     = $('#topnepali-bg-progress-bar-fill');
+    var $bgStatusPill  = $('#topnepali-bg-warm-status-pill');
+    var $bgMeta        = $('#topnepali-bg-warm-meta');
+    var $pauseBgBtn    = $('#topnepali-pause-bg-btn');
+    var $resumeBgBtn   = $('#topnepali-resume-bg-btn');
+    var $cancelBgBtn   = $('#topnepali-cancel-bg-btn');
+    var $clearBgBtn    = $('#topnepali-clear-bg-btn');
+
+    function appendWarmLog(statusClass, path, metaText) {
+      var $entry = $('<div class="topnepali-log-entry"></div>');
+      var $pathSpan = $('<span class="topnepali-log-path"></span>').text(path);
+      var $metaSpan = $('<span class="topnepali-log-meta ' + statusClass + '"></span>').text(metaText);
+      $entry.append($pathSpan).append($metaSpan);
+      $logConsole.append($entry);
+      if ($logConsole[0]) {
+        $logConsole.scrollTop($logConsole[0].scrollHeight);
+      }
+    }
+
+    // --- 6.1 BROWSER-BASED LIVE WARMER ---
+    $startWarmBtn.on('click', async function(e) {
       e.preventDefault();
-      const preset = $('#astropress-warmer-preset').val() || 'standard';
-      const $btn = $(this);
+      if (isWarming) return;
 
-      $btn.prop('disabled', true).text('Fetching URLs...');
-      $('#astropress-warmer-progress-container').show();
-      $('#astropress-warmer-log').empty();
+      var preset = $presetSelect.val() || 'standard';
+      var throttleMs = parseInt($delaySelect.val(), 10) || 1000;
+      var batchSize = config.defaultBatch || 2;
+      if (batchSize < 1) batchSize = 1;
 
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_get_warmup_urls',
-          preset: preset,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success && res.data?.items && res.data.items.length > 0) {
-            warmerUrls = res.data.items;
-            warmerIndex = 0;
-            warmerActive = true;
-            warmerPaused = false;
+      isWarming = true;
+      cancelRequested = false;
 
-            $btn.hide();
-            $('#astropress-pause-warmer').show();
-            $('#astropress-cancel-warmer').show();
+      // UI Initial State
+      $startWarmBtn.prop('disabled', true).css('opacity', 0.6);
+      $startBgWarmBtn.prop('disabled', true).css('opacity', 0.6);
+      $cancelWarmBtn.show().prop('disabled', false);
+      $progressBox.slideDown(200);
+      $logConsole.empty();
+      $barFill.css('width', '0%');
+      $percentEl.text('0%');
+      $countEl.text('0');
+      $statusPill.text('FETCHING QUEUE...').css('background', '#0284c7');
+      $currentUrl.text('Querying URLs to warm from WordPress / XML Sitemap...');
 
-            processWarmerBatch();
-          } else {
-            alert('No URLs found for selected preset.');
-            $btn.prop('disabled', false).html('<span class="dashicons dashicons-controls-play"></span> Start Interactive Warmer');
+      appendWarmLog('topnepali-log-status-200', '— System Initialized —', 'Scope: ' + preset + ' | Gap: ' + throttleMs + 'ms');
+
+      // Step 1: Fetch list of URLs to warm
+      var queueResponse;
+      try {
+        queueResponse = await $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_get_warmup_urls',
+            nonce: nonce,
+            preset: preset
           }
-        },
-        error: function(xhr, status, err) {
-          alert('Failed to get warmup URLs: ' + err);
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-controls-play"></span> Start Interactive Warmer');
+        });
+      } catch (err) {
+        appendWarmLog('topnepali-log-status-err', 'Failed to fetch warmup list', err.statusText || 'Error');
+        $statusPill.text('ERROR').css('background', '#ef4444');
+        $startWarmBtn.prop('disabled', false).css('opacity', 1);
+        $startBgWarmBtn.prop('disabled', false).css('opacity', 1);
+        $cancelWarmBtn.hide();
+        isWarming = false;
+        return;
+      }
+
+      if (!queueResponse.success || !queueResponse.data.items || !queueResponse.data.items.length) {
+        appendWarmLog('topnepali-log-status-err', 'No URLs found for selected scope', 'Empty');
+        $statusPill.text('EMPTY').css('background', '#64748b');
+        $startWarmBtn.prop('disabled', false).css('opacity', 1);
+        $startBgWarmBtn.prop('disabled', false).css('opacity', 1);
+        $cancelWarmBtn.hide();
+        isWarming = false;
+        return;
+      }
+
+      var items = queueResponse.data.items;
+      var total = items.length;
+      $totalEl.text(total);
+      appendWarmLog('topnepali-log-status-200', 'Queue loaded successfully', total + ' URLs ready');
+
+      var current = 0;
+      $statusPill.text('WARMING (' + batchSize + '/batch)...').css('background', '#059669');
+
+      // Step 2: Warm in polite sequential batches with user-defined delay
+      for (var i = 0; i < items.length; i += batchSize) {
+        if (cancelRequested) {
+          appendWarmLog('topnepali-log-status-redirect', '— Warming process stopped by user —', 'Cancelled');
+          $statusPill.text('CANCELLED').css('background', '#d97706');
+          break;
         }
-      });
+
+        var batch = items.slice(i, i + batchSize);
+        var firstItem = batch[0];
+        $currentUrl.text('Warming: ' + (firstItem.url || firstItem));
+
+        try {
+          var batchRes = await $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            dataType: 'json',
+            data: {
+              action: 'astropress_warm_batch',
+              nonce: nonce,
+              batch: batch
+            }
+          });
+
+          if (batchRes.success && batchRes.data.results) {
+            batchRes.data.results.forEach(function(r) {
+              var statusClass = 'topnepali-log-status-200';
+              if (r.status >= 300 && r.status < 400) statusClass = 'topnepali-log-status-redirect';
+              else if (r.status >= 400 || !r.ok) statusClass = 'topnepali-log-status-err';
+
+              var metaStr = 'HTTP ' + r.status + ' | ' + (r.cf_cache || 'MISS') + ' | ' + r.duration_ms + 'ms';
+              appendWarmLog(statusClass, r.url, metaStr);
+            });
+          }
+        } catch (bErr) {
+          appendWarmLog('topnepali-log-status-err', 'Batch network error', bErr.statusText || 'Error');
+        }
+
+        current = Math.min(total, i + batch.length);
+        var percent = Math.round((current / total) * 100);
+
+        $countEl.text(current);
+        $percentEl.text(percent + '%');
+        $barFill.css('width', percent + '%');
+
+        if (i + batchSize < items.length && !cancelRequested) {
+          await new Promise(function(resolve) { setTimeout(resolve, throttleMs); });
+        }
+      }
+
+      // Step 3: Complete or Clean up
+      if (!cancelRequested) {
+        $statusPill.text('COMPLETED').css('background', '#059669');
+        $currentUrl.text('All ' + total + ' edge cache URLs successfully refreshed and warmed!');
+        appendWarmLog('topnepali-log-status-200', '— Process Finished —', '100% Pre-warmed');
+      }
+
+      $startWarmBtn.prop('disabled', false).css('opacity', 1);
+      $startBgWarmBtn.prop('disabled', false).css('opacity', 1);
+      $cancelWarmBtn.hide();
+      isWarming = false;
     });
 
-    function processWarmerBatch() {
-      if (!warmerActive || warmerPaused || warmerIndex >= warmerUrls.length) {
-        if (warmerIndex >= warmerUrls.length && warmerUrls.length > 0) {
-          $('#astropress-warmer-log').append('✓ Cache warming finished successfully!\n');
-          finishWarmer();
+    $cancelWarmBtn.on('click', function(e) {
+      e.preventDefault();
+      cancelRequested = true;
+      $(this).prop('disabled', true).text('Cancelling...');
+    });
+
+    // --- 6.2 WP-CRON BACKGROUND ASYNC WARMER ---
+    $startBgWarmBtn.on('click', async function(e) {
+      e.preventDefault();
+      if ($startBgWarmBtn.prop('disabled')) return;
+
+      var preset = $presetSelect.val() || 'standard';
+      var throttleMs = parseInt($delaySelect.val(), 10) || 1000;
+      var batchSize = config.defaultBatch || 2;
+
+      $startBgWarmBtn.prop('disabled', true).addClass('updating-message');
+
+      try {
+        var res = await $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_start_bg_warm',
+            nonce: nonce,
+            preset: preset,
+            delay: throttleMs,
+            batch_size: batchSize
+          }
+        });
+
+        if (res.success && res.data.job) {
+          updateBgJobUI(res.data.job);
+          startBgPolling();
+        } else {
+          alert('Could not start background job: ' + (res.data?.message || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Server communication error while queueing background job.');
+      } finally {
+        $startBgWarmBtn.prop('disabled', false).removeClass('updating-message');
+      }
+    });
+
+    function updateBgJobUI(job) {
+      if (!job || !job.active) {
+        if (!job || job.status === 'cancelled') {
+          $bgBox.slideUp(150);
         }
         return;
       }
 
-      const batchSize = config.defaultBatch || 5;
-      const batch = warmerUrls.slice(warmerIndex, warmerIndex + batchSize);
+      $bgBox.slideDown(200);
+      $bgCurrent.text(job.current || 0);
+      $bgTotal.text(job.total || 0);
 
-      $.ajax({
+      var pct = (job.total > 0) ? Math.round((job.current / job.total) * 100) : 0;
+      $bgBarFill.css('width', pct + '%');
+
+      var st = (job.status || 'RUNNING').toUpperCase();
+      $bgStatusPill.text(st);
+
+      if (st === 'RUNNING') {
+        $bgStatusPill.css('background', '#059669');
+        $pauseBgBtn.show();
+        $resumeBgBtn.hide();
+        $cancelBgBtn.show();
+        $clearBgBtn.hide();
+        $bgMeta.text('Job active in background. Processing ~' + (job.batch_size || 2) + ' URLs per tick.');
+      } else if (st === 'PAUSED') {
+        $bgStatusPill.css('background', '#d97706');
+        $pauseBgBtn.hide();
+        $resumeBgBtn.show();
+        $cancelBgBtn.show();
+        $clearBgBtn.hide();
+        $bgMeta.text('Job is paused. Click Resume Job to continue warming.');
+      } else if (st === 'COMPLETED') {
+        $bgStatusPill.css('background', '#0284c7');
+        $pauseBgBtn.hide();
+        $resumeBgBtn.hide();
+        $cancelBgBtn.hide();
+        $clearBgBtn.show();
+        $bgMeta.text('Job finished! Successfully pre-warmed all ' + job.total + ' URLs.');
+        stopBgPolling();
+      } else if (st === 'CANCELLED') {
+        $bgStatusPill.css('background', '#dc2626');
+        $pauseBgBtn.hide();
+        $resumeBgBtn.hide();
+        $cancelBgBtn.hide();
+        $clearBgBtn.show();
+        $bgMeta.text('Job cancelled by user.');
+        stopBgPolling();
+      }
+    }
+
+    async function pollBgJobStatus() {
+      try {
+        var res = await $.ajax({
+          url: ajaxurl,
+          type: 'POST',
+          dataType: 'json',
+          data: {
+            action: 'astropress_get_bg_warm_status',
+            nonce: nonce
+          }
+        });
+        if (res.success && res.data.job) {
+          updateBgJobUI(res.data.job);
+        }
+      } catch (err) {}
+    }
+
+    function startBgPolling() {
+      stopBgPolling();
+      pollBgJobStatus();
+      bgPollTimer = setInterval(pollBgJobStatus, 3000);
+    }
+
+    function stopBgPolling() {
+      if (bgPollTimer) {
+        clearInterval(bgPollTimer);
+        bgPollTimer = null;
+      }
+    }
+
+    $pauseBgBtn.on('click', async function(e) {
+      e.preventDefault();
+      $(this).prop('disabled', true);
+      await $.ajax({
         url: ajaxurl,
         type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_warm_batch',
-          batch: batch,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success && res.data?.results) {
-            res.data.results.forEach(function(r) {
-              const symbol = r.ok ? '✓' : '✗';
-              $('#astropress-warmer-log').append(symbol + ' [' + (r.status || 'ERR') + '] ' + r.url + ' (' + (r.duration_ms || 0) + 'ms)\n');
-            });
-            const logBox = document.getElementById('astropress-warmer-log');
-            if (logBox) logBox.scrollTop = logBox.scrollHeight;
-          }
-
-          warmerIndex += batch.length;
-          const pct = Math.min(100, Math.round((warmerIndex / warmerUrls.length) * 100));
-          $('#astropress-warmer-progress-bar').css('width', pct + '%');
-          $('#astropress-warmer-progress-text').text(warmerIndex + ' / ' + warmerUrls.length + ' URLs (' + pct + '%)');
-
-          const delay = config.defaultDelay || 1000;
-          setTimeout(processWarmerBatch, delay);
-        },
-        error: function(xhr, status, err) {
-          $('#astropress-warmer-log').append('✗ Batch request error: ' + err + '\n');
-          warmerIndex += batch.length;
-          setTimeout(processWarmerBatch, 1500);
-        }
+        data: { action: 'astropress_pause_bg_warm', nonce: nonce }
       });
-    }
-
-    function finishWarmer() {
-      warmerActive = false;
-      $('#astropress-pause-warmer').hide();
-      $('#astropress-cancel-warmer').hide();
-      $('#astropress-start-warmer').prop('disabled', false).show().html('<span class="dashicons dashicons-controls-play"></span> Start Interactive Warmer');
-    }
-
-    $('#astropress-pause-warmer').on('click', function(e) {
-      e.preventDefault();
-      warmerPaused = !warmerPaused;
-      if (warmerPaused) {
-        $(this).html('<span class="dashicons dashicons-controls-play"></span> Resume');
-      } else {
-        $(this).html('<span class="dashicons dashicons-controls-pause"></span> Pause');
-        processWarmerBatch();
-      }
+      $(this).prop('disabled', false);
+      pollBgJobStatus();
     });
 
-    $('#astropress-cancel-warmer').on('click', function(e) {
+    $resumeBgBtn.on('click', async function(e) {
       e.preventDefault();
-      warmerActive = false;
-      finishWarmer();
-      $('#astropress-warmer-log').append('— Warmer cancelled by user.\n');
+      $(this).prop('disabled', true);
+      await $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        data: { action: 'astropress_resume_bg_warm', nonce: nonce }
+      });
+      $(this).prop('disabled', false);
+      startBgPolling();
     });
+
+    $cancelBgBtn.on('click', async function(e) {
+      e.preventDefault();
+      if (!confirm('Are you sure you want to cancel the background warmer job?')) return;
+      $(this).prop('disabled', true);
+      await $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        data: { action: 'astropress_cancel_bg_warm', nonce: nonce }
+      });
+      $(this).prop('disabled', false);
+      pollBgJobStatus();
+    });
+
+    $clearBgBtn.on('click', async function(e) {
+      e.preventDefault();
+      $(this).prop('disabled', true);
+      await $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        data: { action: 'astropress_clear_bg_warm', nonce: nonce }
+      });
+      $(this).prop('disabled', false);
+      $bgBox.slideUp(150);
+    });
+
+    // Automatically check for running background job on page load
+    pollBgJobStatus();
 
     // ========================================================
     // 7. Bulk Media Sync Engine & Verified Storage Cleanup

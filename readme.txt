@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.2
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,21 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.1 =
+* Restored dedicated SEO & Security settings tab with full Rank Math schema bridge, permalink rewrites, and Subdomain 301 Protection Shield.
+* Restored full Edge Cache Warmer capabilities with 12 scope presets, request gap throttling, live edge activity console, and persistent WP-Cron background worker.
+* Fixed fatal undefined method call `AstroPress_Encryption::is_encrypted()`.
+* Added exception shielding to master tab renderer to prevent site-wide fatal crashes.
+* Completely removed `overflow-x: hidden` and implemented fluid responsive layouts for WordPress mobile viewports.
+* Standardized R2 bucket discovery dropdown, manual input toggle, inline bucket creation, and CDN edge cache rule across all views.
+* Added resilient multi-nonce verification for all background and interactive AJAX requests.
+
+= 1.2.0 =
+* Complete UI/UX redesign with secret key concealment and dynamic rotation.
+* Added Cloudflare R2 bucket discovery, manual input toggle, and inline bucket creation.
+* Added 1-Click Cloudflare Edge Cache Everything rule deployment for custom media domains.
+* Full media sync parity with existing offload records import and verified file cleanup.
 
 = 1.1.0 =
 * Added Direct Cloudflare Zone Cache API purge (`purge_everything` and targeted URL files).
