@@ -1743,24 +1743,25 @@
     // SETUP WIZARD & MASKED CREDENTIAL INTERACTION
     // ========================================================
 
-    // 1. Copy Revalidation Secret
+    // 1. Copy Revalidation Secret (Active input only - never stored concealed secrets)
     $(document).on('click', '.onboard-copy-secret-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      let val = $btn.data('secret');
-      if (!val && $btn.data('target')) {
-        val = $($btn.data('target')).val();
-      }
+      const targetSel = $btn.data('target') || '#onboard_secret';
+      const val = $(targetSel).val()?.trim();
+      const $fb = $('#onboard-secret-copy-feedback');
+
       if (!val) {
-        alert('Please enter or generate a secret first.');
+        alert('Please enter or generate a secret first before copying.');
         return;
       }
 
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(val).then(function() {
-          const $fb = $('#onboard-secret-copy-feedback');
           $fb.html('<span class="astropress-copy-feedback"><span class="dashicons dashicons-yes"></span> Copied to clipboard! Set as REVALIDATE_SECRET in Cloudflare Pages.</span>').slideDown(150);
           setTimeout(function() { $fb.fadeOut(400); }, 5000);
+        }).catch(function() {
+          $fb.html('<span class="astropress-copy-feedback">Copied: ' + val + '</span>').slideDown(150);
         });
       } else {
         const $temp = $('<textarea>');
@@ -1768,24 +1769,25 @@
         $temp.val(val).select();
         document.execCommand('copy');
         $temp.remove();
-        const $fb = $('#onboard-secret-copy-feedback');
         $fb.html('<span class="astropress-copy-feedback"><span class="dashicons dashicons-yes"></span> Copied to clipboard! Set as REVALIDATE_SECRET in Cloudflare Pages.</span>').slideDown(150);
         setTimeout(function() { $fb.fadeOut(400); }, 5000);
       }
     });
 
-    // 2. Change Revalidation Secret Toggle
-    $('#onboard-change-secret-btn').on('click', function(e) {
+    // 2. Rotate / Change Revalidation Secret Toggle & Drawer
+    $(document).on('click', '#onboard-rotate-secret-btn, #onboard-change-secret-btn', function(e) {
       e.preventDefault();
-      $('#onboard-secret-status-card').slideUp(150);
-      $('#onboard-secret-input-wrap').slideDown(150);
-      $('#onboard_secret').focus();
+      const $wrap = $('#onboard-secret-input-wrap');
+      $wrap.slideToggle(150, function() {
+        if ($wrap.is(':visible')) {
+          $('#onboard_secret').focus();
+        }
+      });
     });
 
-    $('#onboard-cancel-change-secret').on('click', function(e) {
+    $(document).on('click', '#onboard-cancel-rotate-btn, #onboard-cancel-change-secret', function(e) {
       e.preventDefault();
       $('#onboard-secret-input-wrap').slideUp(150);
-      $('#onboard-secret-status-card').slideDown(150);
       $('#onboard_secret').val('');
     });
 
@@ -1976,21 +1978,23 @@
       }
     });
 
-    // 8b. Test Webhook Handshake Button
+    // 8b. Test Webhook Connection & Handshake Button (Test & Rotate pattern)
     $(document).on('click', '#onboard-test-handshake-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
       const $status = $('#onboard-handshake-status');
+      const $badge = $('#onboard-secret-badge');
+      const $icon = $('#onboard-secret-status-icon');
       const frontendUrl = $('#onboard_frontend_url').val()?.trim();
-      const secret = $('#onboard_secret').val()?.trim() || $btn.data('secret');
+      const newSecret = $('#onboard_secret').val()?.trim() || '';
 
       if (!frontendUrl) {
-        $status.html('<span style="color:#dc2626; font-weight:600;">Please enter Frontend Site URL above first.</span>');
+        $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please enter the Frontend URL above first.</div>').slideDown(150);
         return;
       }
 
-      $btn.prop('disabled', true).text('Testing...');
-      $status.html('<span style="color:#64748b;">Sending test webhook handshake to ' + frontendUrl + '/api/revalidate...</span>');
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
+      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Testing handshake with ' + frontendUrl + '/api/revalidate...</div>').slideDown(150);
 
       $.ajax({
         url: ajaxurl,
@@ -1999,21 +2003,33 @@
         data: {
           action: 'astropress_test_key',
           frontend_url: frontendUrl,
-          secret: secret,
+          secret: newSecret,
           nonce: nonce,
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669; font-weight:600;">✓ Handshake Verified! Cloudflare Edge & Astro communicated successfully.</span>');
+            if ($badge.length) $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
+            if ($icon.length) $icon.removeClass('dashicons-warning dashicons-dismiss').addClass('dashicons-shield-alt').css('color', '#059669');
+            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Verified:</strong> ' + res.data.message + ' (' + res.data.latency_ms + 'ms latency)</div>');
           } else {
-            $status.html('<span style="color:#dc2626; font-weight:600;">✗ Handshake Failed: ' + (res.data?.message || 'Unauthorized secret or unreachable route') + '</span>');
+            const code = res.data?.code || 0;
+            if ($badge.length) $badge.css({'background': '#fef2f2', 'color': '#991b1b', 'border-color': '#fecaca'}).text('Failed (HTTP ' + code + ')');
+            if ($icon.length) $icon.removeClass('dashicons-shield-alt').addClass('dashicons-warning').css('color', '#dc2626');
+            $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> <strong>Authentication Failed (HTTP ' + code + '):</strong> ' + (res.data?.message || 'Unauthorized') + ' Opening Rotate drawer below...</div>');
+            // Auto open rotate drawer so user can rotate easily!
+            const $wrap = $('#onboard-secret-input-wrap');
+            if (!$wrap.is(':visible')) {
+              $wrap.slideDown(200, function() {
+                $('#onboard_secret').focus();
+              });
+            }
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626; font-weight:600;">✗ Network request failed: ' + err + '</span>');
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Network request failed: ' + err + '</div>');
         },
         complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Handshake');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Connection');
         }
       });
     });

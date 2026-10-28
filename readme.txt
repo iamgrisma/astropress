@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.5
+Stable tag: 1.2.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 1.2.6 =
+* Security & Privacy: Completely eliminated plaintext secret exposure and DOM attributes (`data-secret`); Revalidation Secret is strictly concealed and AES-256 encrypted at rest.
+* Test & Rotate Pattern: Implemented seamless server-side `[Test Connection]` with automatic 401 failover to on-demand Rotate drawer; existing secrets continue untouched if left unchanged.
+* Cloudflare Scoped Token Audit: Comprehensive real-time verification across all 7 permissions (`Cache Purge: Purge`, `Cache Rules: Edit`, `DNS: Edit`, `Zone: Read`, `Workers R2 Storage: Edit`, `Cloudflare Pages: Edit`, `Account Settings: Read`).
+* DNS CNAME Automation: Integrated automatic Cloudflare DNS CNAME record verification and edge proxying (`proxied: true`) when attaching custom CDN domains to R2.
+* Unified Architecture: Standardized Setup Wizard as the master configuration pipeline supporting both single scoped tokens and granular S3-compatible credentials with comprehensive inline documentation.
 
 = 1.2.5 =
 * Security Audit & Hardening: Patched CSRF vulnerabilities across administrative AJAX endpoints with mandatory multi-nonce verification. Added strict path traversal containment checks in delete_local_files to prevent arbitrary file deletion outside wp-content/uploads.

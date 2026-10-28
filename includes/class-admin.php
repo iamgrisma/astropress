@@ -1878,27 +1878,36 @@ class AstroPress_Admin {
             }
         }
 
-        // 7. Structured Token Abilities & Health Audit
+        // 6c. Test Zone Cache Purge permission (non-destructive single dummy probe)
+        $can_purge = false;
+        if ($matched_zone && !empty($matched_zone['id'])) {
+            $purge_probe_res = wp_remote_post('https://api.cloudflare.com/client/v4/zones/' . rawurlencode($matched_zone['id']) . '/purge_cache', array(
+                'timeout' => 8,
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type'  => 'application/json',
+                ),
+                'body'    => wp_json_encode(array(
+                    'files' => array('https://' . ($matched_zone['name'] ?? 'example.com') . '/astropress-healthcheck-probe')
+                )),
+            ));
+            if (!is_wp_error($purge_probe_res)) {
+                $p_code = wp_remote_retrieve_response_code($purge_probe_res);
+                if ($p_code === 200) {
+                    $can_purge = true;
+                }
+            }
+        }
+
+        // 7. Structured Token Abilities & Health Audit (All 7 Cloudflare Scopes)
         $abilities = array(
-            'accounts' => array(
-                'scope'       => 'Account > Account Settings: Read',
-                'granted'     => !empty($accounts),
-                'label'       => esc_html__('Account Discovery', 'astropress'),
-                'description' => !empty($accounts) ? sprintf(esc_html__('Active (%d account(s) accessible)', 'astropress'), count($accounts)) : esc_html__('Missing permission', 'astropress'),
-            ),
-            'zones' => array(
-                'scope'       => 'Zone > Zone: Read',
-                'granted'     => !empty($zones),
-                'label'       => esc_html__('Zone & Domain Detection', 'astropress'),
-                'description' => !empty($zones) ? sprintf(esc_html__('Active (%s matched)', 'astropress'), $matched_zone['name'] ?? 'Zone found') : esc_html__('Missing permission', 'astropress'),
-            ),
-            'dns' => array(
-                'scope'       => 'Zone > DNS: Edit',
-                'granted'     => $can_dns,
-                'label'       => esc_html__('DNS & Custom CDN Routing', 'astropress'),
-                'description' => $can_dns
-                    ? esc_html__('Granted: Token can auto-verify DNS records and attach custom CDN domains to R2.', 'astropress')
-                    : esc_html__('Missing scope: "Zone > DNS: Edit". Required for 1-click custom domain R2 routing.', 'astropress'),
+            'cache_purge' => array(
+                'scope'       => 'Zone > Cache Purge: Purge',
+                'granted'     => $can_purge,
+                'label'       => esc_html__('Direct Edge Cache Purge', 'astropress'),
+                'description' => $can_purge
+                    ? esc_html__('Granted: Token is authorized for instantaneous Cloudflare Zone cache purging upon post publication.', 'astropress')
+                    : esc_html__('Missing scope: "Zone > Cache Purge: Purge". Real-time Zone cache invalidation requires this scope.', 'astropress'),
             ),
             'cache_rules' => array(
                 'scope'       => 'Zone > Page Rules: Edit / Cache Rules',
@@ -1907,6 +1916,20 @@ class AstroPress_Admin {
                 'description' => $can_cache_rules
                     ? esc_html__('Granted: Token is authorized to deploy Edge cache rules.', 'astropress')
                     : esc_html__('Missing scope: "Zone > Page Rules: Edit". Rule deployment requires this scope.', 'astropress'),
+            ),
+            'dns' => array(
+                'scope'       => 'Zone > DNS: Edit',
+                'granted'     => $can_dns,
+                'label'       => esc_html__('DNS & Custom CDN Routing', 'astropress'),
+                'description' => $can_dns
+                    ? esc_html__('Granted: Token can auto-verify DNS records, manage CNAME routing, and attach custom CDN domains to R2.', 'astropress')
+                    : esc_html__('Missing scope: "Zone > DNS: Edit". Required for 1-click custom domain R2 routing.', 'astropress'),
+            ),
+            'zones' => array(
+                'scope'       => 'Zone > Zone: Read',
+                'granted'     => !empty($zones),
+                'label'       => esc_html__('Zone & Domain Detection', 'astropress'),
+                'description' => !empty($zones) ? sprintf(esc_html__('Active (%s matched)', 'astropress'), $matched_zone['name'] ?? 'Zone found') : esc_html__('Missing scope: "Zone > Zone: Read".', 'astropress'),
             ),
             'r2_storage' => array(
                 'scope'       => 'Account > Workers R2 Storage: Edit',
@@ -1923,6 +1946,12 @@ class AstroPress_Admin {
                 'description' => $can_pages
                     ? sprintf(esc_html__('Granted: %d project(s) connected. Zero-touch env var sync available.', 'astropress'), count($pages_projects))
                     : esc_html__('Missing scope: "Account > Cloudflare Pages: Edit". Required for zero-touch secret injection.', 'astropress'),
+            ),
+            'accounts' => array(
+                'scope'       => 'Account > Account Settings: Read',
+                'granted'     => !empty($accounts),
+                'label'       => esc_html__('Account Discovery', 'astropress'),
+                'description' => !empty($accounts) ? sprintf(esc_html__('Active (%d account(s) accessible)', 'astropress'), count($accounts)) : esc_html__('Missing scope: "Account > Account Settings: Read".', 'astropress'),
             ),
         );
 
@@ -1954,6 +1983,7 @@ class AstroPress_Admin {
             'buckets'         => $buckets,
             'pages_projects'  => $pages_projects,
             'abilities'       => $abilities,
+            'can_purge'       => $can_purge,
             'can_r2'          => $can_r2,
             'can_dns'         => $can_dns,
             'can_cache_rules' => $can_cache_rules,
@@ -2240,11 +2270,11 @@ class AstroPress_Admin {
                                         <?php if (!empty($secret)): ?>
                                             <div id="onboard-secret-status-card" class="astropress-key-card" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; max-width:650px;">
                                                 <div style="display:flex; align-items:center; gap:10px;">
-                                                    <span class="dashicons dashicons-shield-alt" style="color:#059669; font-size:24px; width:24px; height:24px;"></span>
+                                                    <span id="onboard-secret-status-icon" class="dashicons dashicons-shield-alt" style="color:#059669; font-size:24px; width:24px; height:24px;"></span>
                                                     <div>
                                                         <div style="font-weight:600; font-size:13px; color:#0f172a; display:flex; align-items:center; gap:8px;">
                                                             <?php esc_html_e('Revalidation Secret Configured', 'astropress'); ?>
-                                                            <span class="astropress-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-size:11px;"><?php esc_html_e('Active & AES-256 Encrypted', 'astropress'); ?></span>
+                                                            <span id="onboard-secret-badge" class="astropress-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-size:11px;"><?php esc_html_e('Concealed & Encrypted', 'astropress'); ?></span>
                                                         </div>
                                                         <div style="font-size:12px; color:#64748b; margin-top:2px;">
                                                             <?php esc_html_e('Stored securely on server. Value is concealed to prevent exposure.', 'astropress'); ?>
@@ -2252,40 +2282,47 @@ class AstroPress_Admin {
                                                     </div>
                                                 </div>
                                                 <div style="display:flex; gap:8px; align-items:center;">
-                                                    <button type="button" class="button button-secondary onboard-copy-secret-btn" data-secret="<?php echo esc_attr($secret); ?>">
-                                                        <span class="dashicons dashicons-admin-page" style="vertical-align:-2px;"></span> <?php esc_html_e('Copy Secret', 'astropress'); ?>
+                                                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
+                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Connection', 'astropress'); ?>
                                                     </button>
-                                                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn" data-secret="<?php echo esc_attr($secret); ?>">
-                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
-                                                    </button>
-                                                    <button type="button" class="button button-secondary" id="onboard-change-secret-btn">
-                                                        <span class="dashicons dashicons-edit" style="vertical-align:-2px;"></span> <?php esc_html_e('Change Secret', 'astropress'); ?>
+                                                    <button type="button" class="button button-secondary" id="onboard-rotate-secret-btn">
+                                                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Rotate Secret', 'astropress'); ?>
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div id="onboard-secret-copy-feedback" style="display:none; margin-bottom:8px; font-size:12px; color:#057a55; font-weight:600;"></div>
-                                            <div id="onboard-handshake-status" style="margin-bottom:8px; font-size:12px;"></div>
+                                            <div id="onboard-handshake-status" style="margin-bottom:8px; font-size:12px; display:none;"></div>
 
                                             <div id="onboard-secret-input-wrap" style="display:none; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; margin-top:8px; max-width:650px;">
-                                                <label for="onboard_secret" style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">
-                                                    <?php esc_html_e('Enter New Revalidation Secret Key:', 'astropress'); ?>
-                                                </label>
+                                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                                    <label for="onboard_secret" style="font-size:12px; font-weight:600; color:#92400e;">
+                                                        <?php esc_html_e('Rotate Revalidation Secret Key:', 'astropress'); ?>
+                                                    </label>
+                                                    <button type="button" class="button button-link" id="onboard-cancel-rotate-btn" style="color:#b45309; text-decoration:none; font-size:12px; padding:0;">
+                                                        <span class="dashicons dashicons-no-alt" style="vertical-align:-2px;"></span> <?php esc_html_e('Cancel (Keep Current Secret)', 'astropress'); ?>
+                                                    </button>
+                                                </div>
                                                 <div style="display:flex; gap:8px; align-items:center;">
                                                     <div style="position:relative; flex:1;">
-                                                        <input type="password" id="onboard_secret" name="onboard_secret" placeholder="Enter or generate a 32-character secure secret" class="regular-text" style="width:100%; padding-right:32px;" autocomplete="new-password" />
+                                                        <input type="password" id="onboard_secret" name="onboard_secret" placeholder="Enter new secret or generate random..." class="regular-text" style="width:100%; padding-right:32px;" autocomplete="new-password" />
                                                         <button type="button" class="astropress-toggle-eye" data-target="#onboard_secret" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:#64748b;" title="Show/Hide">
                                                             <span class="dashicons dashicons-visibility"></span>
                                                         </button>
                                                     </div>
                                                     <button type="button" class="button" id="onboard-gen-secret"><?php esc_html_e('Generate Random', 'astropress'); ?></button>
-                                                    <button type="button" class="button button-secondary" id="onboard-cancel-change-secret"><?php esc_html_e('Cancel', 'astropress'); ?></button>
+                                                    <button type="button" class="button button-secondary onboard-copy-secret-btn" data-target="#onboard_secret">
+                                                        <span class="dashicons dashicons-admin-page" style="vertical-align:-2px;"></span> <?php esc_html_e('Copy Secret', 'astropress'); ?>
+                                                    </button>
                                                 </div>
-                                                <p class="description" style="color:#b45309; margin-top:4px;">
-                                                    <?php esc_html_e('Must match REVALIDATE_SECRET in Cloudflare Pages Environment Variables.', 'astropress'); ?>
+                                                <div id="onboard-secret-copy-feedback" style="display:none; margin-top:4px; font-size:12px; color:#057a55; font-weight:600;"></div>
+                                                <p class="description" style="color:#b45309; margin-top:6px;">
+                                                    <?php esc_html_e('Leave blank to continue using existing secret untouched. If changed, update REVALIDATE_SECRET in Cloudflare Pages.', 'astropress'); ?>
                                                 </p>
                                             </div>
                                         <?php else: ?>
                                             <div id="onboard-secret-input-wrap" style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; max-width:650px;">
+                                                <label for="onboard_secret" style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">
+                                                    <?php esc_html_e('Create Initial Revalidation Secret Key:', 'astropress'); ?>
+                                                </label>
                                                 <div style="display:flex; gap:8px; align-items:center;">
                                                     <div style="position:relative; flex:1;">
                                                         <input type="password" id="onboard_secret" name="onboard_secret" placeholder="Enter or generate a 32-character secure secret" class="regular-text" style="width:100%; padding-right:32px;" autocomplete="new-password" required />
@@ -2298,12 +2335,12 @@ class AstroPress_Admin {
                                                         <span class="dashicons dashicons-admin-page" style="vertical-align:-2px;"></span> <?php esc_html_e('Copy Secret', 'astropress'); ?>
                                                     </button>
                                                     <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
-                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
+                                                        <span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Connection', 'astropress'); ?>
                                                     </button>
                                                 </div>
                                                 <div id="onboard-secret-copy-feedback" style="display:none; margin-top:4px; font-size:12px; color:#057a55; font-weight:600;"></div>
-                                                <div id="onboard-handshake-status" style="margin-top:6px; font-size:12px;"></div>
-                                                <p class="description" style="color:#b45309; margin-top:4px;">
+                                                <div id="onboard-handshake-status" style="margin-top:6px; font-size:12px; display:none;"></div>
+                                                <p class="description" style="color:#b45309; margin-top:6px;">
                                                     <?php esc_html_e('Set REVALIDATE_SECRET in Cloudflare Pages Environment Variables to this exact value.', 'astropress'); ?>
                                                 </p>
                                             </div>
@@ -2497,26 +2534,39 @@ class AstroPress_Admin {
 
                                 <!-- Optional S3 Drawer for advanced users -->
                                 <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:12px; max-width:850px;">
-                                    <button type="button" class="button button-link" id="onboard-toggle-s3-drawer" style="text-decoration:none; font-size:12px; color:#64748b; padding:0;">
+                                    <button type="button" class="button button-link" id="onboard-toggle-s3-drawer" style="text-decoration:none; font-size:12px; color:#475569; padding:0; font-weight:600;">
                                         <span class="dashicons dashicons-arrow-right-alt2" id="onboard-s3-arrow" style="vertical-align:-2px;"></span>
                                         <?php esc_html_e('Use S3-compatible Access Key & Secret Key instead (Optional / Advanced)', 'astropress'); ?>
                                     </button>
-                                    <div id="onboard-s3-drawer-wrap" style="display:<?php echo (!empty($access_key)) ? 'block' : 'none'; ?>; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-top:10px;">
-                                        <p style="margin:0 0 8px 0; font-size:12px; color:#475569;">
-                                            <?php esc_html_e('If left empty, AstroPress uses your Cloudflare API Token for native zero-config media offloading.', 'astropress'); ?>
-                                        </p>
+                                    <div id="onboard-s3-drawer-wrap" style="display:<?php echo (!empty($access_key)) ? 'block' : 'none'; ?>; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:14px; margin-top:10px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                                            <div>
+                                                <strong style="font-size:12px; color:#1e293b;"><?php esc_html_e('S3-Compatible R2 Credentials Architecture', 'astropress'); ?></strong>
+                                                <p style="margin:2px 0 0 0; font-size:12px; color:#64748b;">
+                                                    <?php esc_html_e('If left empty, AstroPress uses your Cloudflare API Token for zero-config media offloading.', 'astropress'); ?>
+                                                </p>
+                                            </div>
+                                            <a href="<?php echo esc_url($this->get_cf_r2_tokens_url($account_id)); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary button-small">
+                                                <span class="dashicons dashicons-external" style="vertical-align:-2px;"></span> <?php esc_html_e('Create R2 S3 Token on Cloudflare', 'astropress'); ?> &rarr;
+                                            </a>
+                                        </div>
                                         <table class="form-table" style="margin:0;">
                                             <tr>
                                                 <th scope="row"><label for="onboard_r2_access_key"><?php esc_html_e('R2 Access Key ID', 'astropress'); ?></label></th>
                                                 <td>
-                                                    <input type="text" id="onboard_r2_access_key" name="onboard_r2_access_key" value="<?php echo esc_attr($access_key); ?>" class="regular-text" />
+                                                    <input type="text" id="onboard_r2_access_key" name="onboard_r2_access_key" value="<?php echo esc_attr($access_key); ?>" class="regular-text" placeholder="24 or 32 character Access Key ID" />
                                                 </td>
                                             </tr>
                                             <tr>
                                                 <th scope="row"><label for="onboard_r2_secret_key"><?php esc_html_e('R2 Secret Access Key', 'astropress'); ?></label></th>
                                                 <td>
-                                                    <input type="password" id="onboard_r2_secret_key" name="onboard_r2_secret_key" placeholder="<?php echo !empty(get_option('r2g_secret_key')) ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" autocomplete="off" />
-                                                    <p class="description"><?php esc_html_e('Stored securely using hardware AES-256 encryption at rest.', 'astropress'); ?></p>
+                                                    <div style="position:relative; max-width:25em;">
+                                                        <input type="password" id="onboard_r2_secret_key" name="onboard_r2_secret_key" placeholder="<?php echo !empty(get_option('r2g_secret_key')) ? '••••••••••••••••••••••••••••••••' : '64-character Secret Key'; ?>" class="regular-text" autocomplete="new-password" style="width:100%; padding-right:32px;" />
+                                                        <button type="button" class="astropress-toggle-eye" data-target="#onboard_r2_secret_key" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:#64748b;" title="Show/Hide">
+                                                            <span class="dashicons dashicons-visibility"></span>
+                                                        </button>
+                                                    </div>
+                                                    <p class="description"><?php esc_html_e('Stored securely using hardware AES-256 encryption at rest. Value is concealed once saved.', 'astropress'); ?></p>
                                                 </td>
                                             </tr>
                                         </table>

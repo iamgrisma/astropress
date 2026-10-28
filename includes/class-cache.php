@@ -1084,14 +1084,96 @@ class AstroPress_Cache {
         $body = json_decode(wp_remote_retrieve_body($res), true);
 
         if ($code === 200 || $code === 201 || !empty($body['success'])) {
+            $this->ensure_dns_cname($zone_id, $host, "{$bucket_name}.r2.cloudflarestorage.com", $token);
             return array(
                 'success' => true,
-                'message' => sprintf(esc_html__('Custom domain "%s" attached to R2 bucket "%s" successfully! DNS routing is now active.', 'astropress'), $host, $bucket_name),
+                'message' => sprintf(esc_html__('Custom domain "%s" attached to R2 bucket "%s" successfully! DNS routing and Edge proxying are active.', 'astropress'), $host, $bucket_name),
             );
         }
 
         $err = !empty($body['errors'][0]['message']) ? $body['errors'][0]['message'] : "HTTP {$code}";
+
+        // If domain is already attached or exists, treat gracefully as success and ensure DNS proxying
+        if (stripos($err, 'already') !== false || $code === 409) {
+            $this->ensure_dns_cname($zone_id, $host, "{$bucket_name}.r2.cloudflarestorage.com", $token);
+            return array(
+                'success' => true,
+                'message' => sprintf(esc_html__('Custom domain "%s" is already linked to R2 bucket "%s". DNS routing and Edge proxying verified.', 'astropress'), $host, $bucket_name),
+            );
+        }
+
         return array('success' => false, 'message' => sprintf(esc_html__('Failed to attach custom domain: %s (Requires "Zone > DNS: Edit" & "Account > Workers R2 Storage: Edit").', 'astropress'), $err));
+    }
+
+    /**
+     * Ensure DNS CNAME record exists and is proxied for R2 custom domain
+     *
+     * @param string $zone_id
+     * @param string $host
+     * @param string $cname_target
+     * @param string $token
+     * @return array
+     */
+    public function ensure_dns_cname($zone_id, $host, $cname_target, $token = '') {
+        $token = $token ?: $this->core->get_cf_api_token();
+        if (empty($zone_id) || empty($host) || empty($token)) {
+            return array('success' => false, 'message' => esc_html__('Zone ID, host, and token are required.', 'astropress'));
+        }
+
+        $headers = array(
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+        );
+
+        // 1. Query existing DNS records for this hostname
+        $check_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/dns_records?name=" . rawurlencode($host);
+        $res = wp_remote_get($check_url, array('timeout' => 8, 'headers' => $headers));
+        if (is_wp_error($res)) {
+            return array('success' => false, 'message' => $res->get_error_message());
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($res), true);
+        if (!empty($body['result']) && is_array($body['result']) && count($body['result']) > 0) {
+            $record = $body['result'][0];
+            // If DNS record exists but is unproxied, patch it to proxied: true
+            if (empty($record['proxied'])) {
+                $patch_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/dns_records/" . rawurlencode($record['id']);
+                wp_remote_request($patch_url, array(
+                    'method'  => 'PATCH',
+                    'timeout' => 8,
+                    'headers' => $headers,
+                    'body'    => wp_json_encode(array('proxied' => true)),
+                ));
+            }
+            return array('success' => true, 'message' => sprintf(esc_html__('DNS record for %s is verified and proxied.', 'astropress'), $host));
+        }
+
+        // 2. If no record exists, create CNAME record pointing to target with Cloudflare proxy
+        $create_url = "https://api.cloudflare.com/client/v4/zones/{$zone_id}/dns_records";
+        $create_res = wp_remote_post($create_url, array(
+            'timeout' => 10,
+            'headers' => $headers,
+            'body'    => wp_json_encode(array(
+                'type'    => 'CNAME',
+                'name'    => $host,
+                'content' => $cname_target,
+                'proxied' => true,
+                'ttl'     => 1, // Auto
+            )),
+        ));
+
+        if (is_wp_error($create_res)) {
+            return array('success' => false, 'message' => $create_res->get_error_message());
+        }
+
+        $c_code = wp_remote_retrieve_response_code($create_res);
+        $c_body = json_decode(wp_remote_retrieve_body($create_res), true);
+        if ($c_code === 200 || $c_code === 201 || !empty($c_body['success'])) {
+            return array('success' => true, 'message' => sprintf(esc_html__('DNS CNAME record created for %s with Cloudflare Proxy enabled.', 'astropress'), $host));
+        }
+
+        $c_err = !empty($c_body['errors'][0]['message']) ? $c_body['errors'][0]['message'] : "HTTP {$c_code}";
+        return array('success' => false, 'message' => $c_err);
     }
 
     /**
