@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.09
+Stable tag: 2.0.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.10 =
+* Fixed Temp File Extension Detection for reSmush.it API: Resolved an issue where upload preview and test tools passed extensionless PHP temp files (`/tmp/phpXXXXXX`), causing reSmush.it to reject uploads with "files cannot be sent to reSmush.it (it accepts JPG, PNG, GIF, BMP, TIFF only)".
+* Binary MIME & Magic Byte Sniffing: Added robust image extension detection (`AstroPress_Optimizer::detect_image_extension`) using original upload filename hints, image magic bytes (`getimagesize`), and EXIF image types (`exif_imagetype`).
+* Sanitized Multipart Form Payloads: Ensured all outbound reSmush.it multipart requests carry valid filenames and matching `Content-Type` headers.
+* Extension-Suffixed Test Temp Files: Updated AJAX compression tester to operate on extension-suffixed temporary files, ensuring proper format recognition across GD, Imagick, and external optimization APIs.
 
 = 2.0.09 =
 * Smart 5MB Dual Engine Routing: Added intelligent payload thresholding where images under 5MB automatically route to the free reSmush.it Cloud API for zero server CPU load, while images 5MB or larger route to Server GD/Imagick to prevent HTTP 413 and API rejection errors.

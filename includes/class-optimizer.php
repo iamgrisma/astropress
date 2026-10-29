@@ -81,14 +81,16 @@ class AstroPress_Optimizer {
      * @param string $engine
      * @return array
      */
-    public function compress_image($file_path, $format = 'webp', $quality = 82, $max_width = 1920, $engine = 'smart', $max_height = 0) {
+    public function compress_image($file_path, $format = 'webp', $quality = 82, $max_width = 1920, $engine = 'smart', $max_height = 0, $original_name = '') {
         $res = self::optimize_local_file($file_path, array(
-            'format'     => $format,
-            'quality'    => $quality,
-            'max_width'  => $max_width,
-            'max_height' => $max_height,
-            'engine'     => $engine,
-            'compress'   => true,
+            'format'        => $format,
+            'quality'       => $quality,
+            'max_width'     => $max_width,
+            'max_height'    => $max_height,
+            'engine'        => $engine,
+            'filename'      => $original_name,
+            'original_name' => $original_name,
+            'compress'      => true,
         ));
         if (!empty($res['success'])) {
             return array(
@@ -191,6 +193,70 @@ class AstroPress_Optimizer {
     }
 
     /**
+     * Reliably detect image extension from filename hint, path, or image magic bytes/mime
+     *
+     * @param string $file_path Absolute path to the image
+     * @param string $fallback_name Original filename hint (e.g. from $_FILES)
+     * @return string Normalized extension ('jpg', 'png', 'webp', 'gif', 'avif', etc.)
+     */
+    public static function detect_image_extension($file_path, $fallback_name = '') {
+        $ext = '';
+        if (!empty($fallback_name)) {
+            $ext = strtolower((string) pathinfo($fallback_name, PATHINFO_EXTENSION));
+        }
+        if (empty($ext) && !empty($file_path)) {
+            $ext = strtolower((string) pathinfo($file_path, PATHINFO_EXTENSION));
+        }
+
+        if ($ext === 'jpeg') {
+            $ext = 'jpg';
+        }
+        if (in_array($ext, array('jpg', 'png', 'gif', 'webp', 'avif', 'bmp', 'tif', 'tiff'), true)) {
+            return $ext;
+        }
+
+        // Sniff image magic bytes via getimagesize
+        if (!empty($file_path) && file_exists($file_path) && is_readable($file_path)) {
+            $info = @getimagesize($file_path);
+            if (!empty($info['mime'])) {
+                $mime = strtolower($info['mime']);
+                $mime_map = array(
+                    'image/jpeg'     => 'jpg',
+                    'image/jpg'      => 'jpg',
+                    'image/pjpeg'    => 'jpg',
+                    'image/png'      => 'png',
+                    'image/x-png'    => 'png',
+                    'image/webp'     => 'webp',
+                    'image/gif'      => 'gif',
+                    'image/avif'     => 'avif',
+                    'image/bmp'      => 'bmp',
+                    'image/x-ms-bmp' => 'bmp',
+                    'image/tiff'     => 'tif',
+                );
+                if (isset($mime_map[$mime])) {
+                    return $mime_map[$mime];
+                }
+            }
+
+            // Fallback to exif_imagetype
+            if (function_exists('exif_imagetype')) {
+                $type = @exif_imagetype($file_path);
+                switch ($type) {
+                    case IMAGETYPE_JPEG: return 'jpg';
+                    case IMAGETYPE_PNG:  return 'png';
+                    case IMAGETYPE_GIF:  return 'gif';
+                    case IMAGETYPE_WEBP: return 'webp';
+                    case IMAGETYPE_BMP:  return 'bmp';
+                    case IMAGETYPE_TIFF_II:
+                    case IMAGETYPE_TIFF_MM: return 'tif';
+                }
+            }
+        }
+
+        return $ext;
+    }
+
+    /**
      * Compress and optionally convert an image file.
      *
      * @param string $file_path Absolute path to the image
@@ -226,10 +292,8 @@ class AstroPress_Optimizer {
         $quality = max(50, min(100, (int) ($options['quality'] ?? get_option('astropress_compress_quality', get_option('r2g_compress_quality', 82)))));
 
         $path_info = pathinfo($file_path);
-        $current_ext = strtolower($path_info['extension'] ?? '');
-        if ($current_ext === 'jpeg') {
-            $current_ext = 'jpg';
-        }
+        $original_name = $options['filename'] ?? ($options['original_name'] ?? '');
+        $current_ext = self::detect_image_extension($file_path, $original_name);
 
         if ($format === 'webp' && $current_ext !== 'webp' && !self::can_generate_webp()) {
             return self::fail($file_path, __('WebP conversion is required but this server cannot create WebP images.', 'astropress'));
@@ -278,7 +342,7 @@ class AstroPress_Optimizer {
         $resmush_succeeded = false;
 
         if ($should_use_resmush) {
-            $resmush_result = self::resmush_stage($file_path, $quality, $max_width, $needs_format_change);
+            $resmush_result = self::resmush_stage($file_path, $quality, $max_width, $needs_format_change, $current_ext, $original_name);
             $resmush_succeeded = !empty($resmush_result['success']);
         }
 
@@ -304,7 +368,7 @@ class AstroPress_Optimizer {
         }
 
         $dirname = $path_info['dirname'];
-        $clean_filename = preg_replace('/-scaled$/i', '', $path_info['filename']);
+        $clean_filename = !empty($original_name) ? pathinfo($original_name, PATHINFO_FILENAME) : preg_replace('/-scaled$/i', '', $path_info['filename']);
 
         // Optional backup of uncompressed original file before transformation
         if ($backup_original && !empty($file_path) && file_exists($file_path)) {
@@ -349,6 +413,12 @@ class AstroPress_Optimizer {
         } elseif ($format === 'avif' && self::can_generate_avif()) {
             $target_mime = 'image/avif';
             $target_ext = 'avif';
+        } elseif ($format === 'original') {
+            $target_ext = $current_ext ?: 'jpg';
+            if ($target_ext === 'jpg') $target_mime = 'image/jpeg';
+            elseif ($target_ext === 'png') $target_mime = 'image/png';
+            elseif ($target_ext === 'webp') $target_mime = 'image/webp';
+            elseif ($target_ext === 'avif') $target_mime = 'image/avif';
         }
 
         $target_file = $file_path;
@@ -396,13 +466,18 @@ class AstroPress_Optimizer {
         return (is_array($exif) && !empty($exif['Orientation'])) ? (int) $exif['Orientation'] : 1;
     }
 
-    private static function resmush_stage($file_path, $quality, $max_width, $will_convert) {
-        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
-        if (!in_array($ext, array('jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff'), true)) {
+    private static function resmush_stage($file_path, $quality, $max_width, $will_convert, $ext = '', $original_name = '') {
+        if (empty($ext)) {
+            $ext = self::detect_image_extension($file_path, $original_name);
+        }
+        if ($ext === 'jpeg') {
+            $ext = 'jpg';
+        }
+        if (!in_array($ext, array('jpg', 'png', 'gif', 'bmp', 'tif', 'tiff'), true)) {
             return array(
                 'success' => false,
                 'status'  => 'unsupported_format',
-                'message' => sprintf(__('%s files cannot be sent to reSmush.it (it accepts JPG, PNG, GIF, BMP, TIFF only).', 'astropress'), strtoupper($ext)),
+                'message' => sprintf(__('%s files cannot be sent to reSmush.it (it accepts JPG, PNG, GIF, BMP, TIFF only).', 'astropress'), strtoupper($ext ?: 'Unknown')),
             );
         }
 
@@ -414,7 +489,7 @@ class AstroPress_Optimizer {
         $too_big = $size > self::RESMUSH_MAX_BYTES;
 
         if (($too_wide || $needs_rotate || $too_big) && $ext !== 'gif') {
-            self::prepare_for_resmush($file_path, $max_width, $too_wide, $is_jpeg, $too_wide || $needs_rotate);
+            self::prepare_for_resmush($file_path, $max_width, $too_wide, $is_jpeg, $too_wide || $needs_rotate, $ext);
             clearstatcache(true, $file_path);
             $size = filesize($file_path);
         }
@@ -428,10 +503,10 @@ class AstroPress_Optimizer {
         }
 
         $api_quality = $will_convert ? max($quality, 92) : $quality;
-        return self::resmush_file($file_path, $api_quality);
+        return self::resmush_file($file_path, $api_quality, $ext, $original_name);
     }
 
-    private static function prepare_for_resmush($file_path, $max_width, $too_wide, $is_jpeg, $force = false) {
+    private static function prepare_for_resmush($file_path, $max_width, $too_wide, $is_jpeg, $force = false, $ext = '') {
         $editor = wp_get_image_editor($file_path);
         if (is_wp_error($editor)) {
             return false;
@@ -444,8 +519,11 @@ class AstroPress_Optimizer {
         }
         $editor->set_quality(92);
 
-        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
-        $tmp = dirname($file_path) . '/astropress-prep-' . wp_generate_password(8, false, false) . '.' . $ext;
+        if (empty($ext)) {
+            $ext = self::detect_image_extension($file_path);
+        }
+        $safe_ext = ($ext === 'jpeg') ? 'jpg' : ($ext ?: 'jpg');
+        $tmp = dirname($file_path) . '/astropress-prep-' . wp_generate_password(8, false, false) . '.' . $safe_ext;
         $saved = $editor->save($tmp);
         if (is_wp_error($saved) || empty($saved['path']) || !file_exists($saved['path'])) {
             return false;
@@ -461,7 +539,7 @@ class AstroPress_Optimizer {
         return false;
     }
 
-    public static function resmush_file($file_path, $quality = 82) {
+    public static function resmush_file($file_path, $quality = 82, $ext = '', $original_name = '') {
         if (!file_exists($file_path) || !is_readable($file_path)) {
             return array('success' => false, 'status' => 'missing_file', 'message' => __('Local file not found.', 'astropress'));
         }
@@ -471,7 +549,12 @@ class AstroPress_Optimizer {
             return array('success' => false, 'status' => 'exceeds_size', 'message' => __('File exceeds 5 MB reSmush.it limit.', 'astropress'));
         }
 
-        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+        if (empty($ext)) {
+            $ext = self::detect_image_extension($file_path, $original_name);
+        }
+        if ($ext === 'jpeg') {
+            $ext = 'jpg';
+        }
         $mimes = array(
             'jpg'  => 'image/jpeg',
             'jpeg' => 'image/jpeg',
@@ -485,7 +568,7 @@ class AstroPress_Optimizer {
             return array(
                 'success' => false,
                 'status'  => 'unsupported_format',
-                'message' => sprintf(__('%s files cannot be sent to reSmush.it (it accepts JPG, PNG, GIF, BMP, TIFF only).', 'astropress'), strtoupper($ext)),
+                'message' => sprintf(__('%s files cannot be sent to reSmush.it (it accepts JPG, PNG, GIF, BMP, TIFF only).', 'astropress'), strtoupper($ext ?: 'Unknown')),
             );
         }
 
@@ -510,7 +593,18 @@ class AstroPress_Optimizer {
         self::throttle_resmush();
 
         $boundary = wp_generate_password(24, false);
-        $filename = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($file_path));
+        $raw_name = !empty($original_name) ? $original_name : basename($file_path);
+        $name_without_ext = pathinfo($raw_name, PATHINFO_FILENAME);
+        if (empty($name_without_ext) || $name_without_ext === '.' || $name_without_ext === 'php') {
+            $name_without_ext = 'image';
+        }
+        $filename = function_exists('sanitize_file_name')
+            ? sanitize_file_name($name_without_ext . '.' . ($ext === 'jpeg' ? 'jpg' : $ext))
+            : preg_replace('/[^A-Za-z0-9._-]/', '_', $name_without_ext . '.' . ($ext === 'jpeg' ? 'jpg' : $ext));
+        if (empty($filename)) {
+            $filename = 'image.' . ($ext === 'jpeg' ? 'jpg' : $ext);
+        }
+
         $payload = "--{$boundary}\r\n"
             . "Content-Disposition: form-data; name=\"files\"; filename=\"{$filename}\"\r\n"
             . "Content-Type: {$mimes[$ext]}\r\n\r\n"

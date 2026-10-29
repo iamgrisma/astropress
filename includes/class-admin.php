@@ -1662,15 +1662,33 @@ class AstroPress_Admin {
             $orig_size = filesize($tmp_file);
         }
 
+        $detected_ext = AstroPress_Optimizer::detect_image_extension($tmp_file, $orig_name);
+        if (empty($detected_ext)) {
+            $detected_ext = 'jpg';
+        }
+
+        // Copy upload temp file to an extension-suffixed temp file so external APIs and libraries recognize it
+        $temp_dir = get_temp_dir();
+        $safe_tmp = trailingslashit($temp_dir) . 'astropress-test-' . wp_generate_password(8, false, false) . '.' . $detected_ext;
+        if (!@copy($tmp_file, $safe_tmp)) {
+            $safe_tmp = $tmp_file;
+        }
+
         $optimizer = AstroPress_Optimizer::instance();
-        $res = $optimizer->compress_image($tmp_file, $format, $quality, $max_width, $engine, $max_height);
+        $res = $optimizer->compress_image($safe_tmp, $format, $quality, $max_width, $engine, $max_height, $orig_name);
+
+        if ($safe_tmp !== $tmp_file && file_exists($safe_tmp)) {
+            @unlink($safe_tmp);
+        }
 
         if (!empty($res['success']) && !empty($res['output_path']) && file_exists($res['output_path'])) {
             $out_size = filesize($res['output_path']);
             $out_data = base64_encode(file_get_contents($res['output_path']));
-            $mime     = ($format === 'webp') ? 'image/webp' : (($format === 'avif') ? 'image/avif' : 'image/jpeg');
+            $mime     = !empty($res['mime']) ? $res['mime'] : (($format === 'webp') ? 'image/webp' : (($format === 'avif') ? 'image/avif' : (($format === 'png') ? 'image/png' : 'image/jpeg')));
 
-            @unlink($res['output_path']);
+            if ($res['output_path'] !== $tmp_file && file_exists($res['output_path'])) {
+                @unlink($res['output_path']);
+            }
 
             wp_send_json_success(array(
                 'original_size'   => $orig_size,
