@@ -37,6 +37,337 @@
     }
 
     // ========================================================
+    // Two-Tier Navigation Grouping & Sub-tab Filtering
+    // Tier 1: Category Sections (Dashboard, Cloudflare, Edge, Optimizer)
+    // Tier 2: Sub-tabs under each section
+    // ========================================================
+    const NAV_CATEGORIES = [
+      {
+        id: 'dashboard',
+        label: 'Dashboard & Setup',
+        icon: 'dashicons-dashboard',
+        tabs: ['overview', 'dashboard', 'onboarding', 'danger', 'settings']
+      },
+      {
+        id: 'cloudflare',
+        label: 'Cloudflare & Storage',
+        icon: 'dashicons-cloud',
+        tabs: ['r2', 'sync', 'database']
+      },
+      {
+        id: 'edge',
+        label: 'Edge Cache & Warmer',
+        icon: 'dashicons-performance',
+        tabs: ['cache', 'cache_rules', 'bridge', 'ruleset', 'warmer', 'webhooks', 'logs']
+      },
+      {
+        id: 'optimizer',
+        label: 'Optimizer & SEO',
+        icon: 'dashicons-shield',
+        tabs: ['optimizer', 'seo', 'monitor404', 'status', 'integration', 'updates']
+      }
+    ];
+
+    function normalizeTabName(name) {
+      return String(name || '').trim().toLowerCase();
+    }
+
+    function getTabNameFromNavElement($el) {
+      if ($el.attr('data-tab')) {
+        return normalizeTabName($el.attr('data-tab'));
+      }
+      const href = $el.attr('href') || '';
+      const match = href.match(/[?&]tab=([^&#]+)/);
+      if (match) {
+        return normalizeTabName(match[1]);
+      }
+      if (href.indexOf('page=astropress') !== -1) {
+        return 'overview';
+      }
+      return '';
+    }
+
+    function findCategoryForTab(tabName) {
+      tabName = normalizeTabName(tabName);
+      if (!tabName) return 'dashboard';
+      for (let i = 0; i < NAV_CATEGORIES.length; i++) {
+        const cat = NAV_CATEGORIES[i];
+        for (let j = 0; j < cat.tabs.length; j++) {
+          if (normalizeTabName(cat.tabs[j]) === tabName) {
+            return cat.id;
+          }
+        }
+      }
+      return 'dashboard';
+    }
+
+    function initTwoTierNavigation() {
+      const $navWrapper = $('.astropress-nav-tabs, .nav-tab-wrapper.astropress-nav-tabs');
+      if (!$navWrapper.length) {
+        return;
+      }
+
+      const $allSubtabs = $navWrapper.find('.nav-tab');
+      if (!$allSubtabs.length) {
+        return;
+      }
+
+      // 1. Tag each sub-tab with its resolved category
+      $allSubtabs.each(function() {
+        const $tab = $(this);
+        const tabName = getTabNameFromNavElement($tab);
+        const categoryId = findCategoryForTab(tabName);
+        $tab.attr('data-category', categoryId);
+        $tab.attr('data-tab-name', tabName);
+      });
+
+      // 2. Discover or dynamically construct .astropress-nav-categories
+      let $categoriesContainer = $('.astropress-nav-categories');
+      if (!$categoriesContainer.length) {
+        $categoriesContainer = $('<div class="astropress-nav-categories" role="tablist" aria-label="AstroPress Categories"></div>');
+        NAV_CATEGORIES.forEach(function(cat) {
+          const count = $allSubtabs.filter('[data-category="' + cat.id + '"]').length;
+          const $btn = $('<button type="button" class="astropress-cat-btn" role="tab"></button>')
+            .attr('data-category', cat.id)
+            .attr('id', 'astropress-cat-' + cat.id)
+            .attr('aria-controls', 'astropress-subtabs-' + cat.id);
+
+          let btnHtml = '<span class="dashicons ' + cat.icon + '" aria-hidden="true"></span>' +
+                        '<span class="astropress-cat-label">' + escapeHtml(cat.label) + '</span>';
+          if (count > 0) {
+            btnHtml += '<span class="astropress-cat-count">' + count + '</span>';
+          }
+          $btn.html(btnHtml);
+          $categoriesContainer.append($btn);
+        });
+        $navWrapper.before($categoriesContainer);
+      } else {
+        // If already in DOM, ensure count badges exist
+        NAV_CATEGORIES.forEach(function(cat) {
+          const $btn = $categoriesContainer.find('.astropress-cat-btn[data-category="' + cat.id + '"]');
+          if ($btn.length && !$btn.find('.astropress-cat-count').length) {
+            const count = $allSubtabs.filter('[data-category="' + cat.id + '"]').length;
+            if (count > 0) {
+              $btn.append('<span class="astropress-cat-count">' + count + '</span>');
+            }
+          }
+        });
+      }
+
+      // 3. Determine which category should be active
+      let initialCat = '';
+      const $activeSubtab = $navWrapper.find('.nav-tab.nav-tab-active');
+      if ($activeSubtab.length) {
+        const activeTabCat = $activeSubtab.attr('data-category');
+        if (activeTabCat) {
+          initialCat = activeTabCat;
+        }
+      }
+
+      if (!initialCat) {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const catParam = urlParams.get('cat');
+          if (catParam && NAV_CATEGORIES.some(function(c) { return c.id === catParam; })) {
+            initialCat = catParam;
+          }
+        } catch (e) {}
+      }
+
+      if (!initialCat) {
+        try {
+          const savedCat = localStorage.getItem('astropress_active_category');
+          if (savedCat && NAV_CATEGORIES.some(function(c) { return c.id === savedCat; })) {
+            initialCat = savedCat;
+          }
+        } catch (e) {}
+      }
+
+      if (!initialCat) {
+        initialCat = 'dashboard';
+      }
+
+      function switchCategory(targetCatId, updateStorageAndUrl) {
+        if (!targetCatId) return;
+
+        // Highlight active category pill
+        $('.astropress-cat-btn').each(function() {
+          const $btn = $(this);
+          const isTarget = ($btn.attr('data-category') === targetCatId);
+          $btn.toggleClass('active', isTarget);
+          $btn.attr('aria-selected', isTarget ? 'true' : 'false');
+        });
+
+        // Filter visible sub-tabs with transition
+        $allSubtabs.each(function() {
+          const $tab = $(this);
+          const tabCat = $tab.attr('data-category');
+          if (tabCat === targetCatId) {
+            $tab.removeClass('astropress-tab-hidden').addClass('astropress-tab-visible');
+          } else {
+            $tab.addClass('astropress-tab-hidden').removeClass('astropress-tab-visible');
+          }
+        });
+
+        // Persist selection
+        if (updateStorageAndUrl) {
+          try {
+            localStorage.setItem('astropress_active_category', targetCatId);
+          } catch (e) {}
+
+          if (window.history && window.history.replaceState) {
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.set('cat', targetCatId);
+              window.history.replaceState({ cat: targetCatId }, '', url.toString());
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Initial state activation
+      switchCategory(initialCat, false);
+
+      // Event: category pill click
+      $(document).on('click', '.astropress-cat-btn', function(e) {
+        e.preventDefault();
+        const catId = $(this).attr('data-category');
+        if (catId) {
+          switchCategory(catId, true);
+        }
+      });
+    }
+
+    initTwoTierNavigation();
+
+    // ========================================================
+    // Retention Period Controls (Slider / Select / Presets)
+    // ========================================================
+    $(document).on('input change', '.astropress-retention-slider', function() {
+      const $slider = $(this);
+      const val = parseInt($slider.val(), 10) || 30;
+      const $wrap = $slider.closest('.astropress-retention-control');
+      $wrap.find('.astropress-retention-badge, .astropress-retention-value').text(val + ' Days');
+      $wrap.find('.astropress-retention-select').val(val);
+      $wrap.find('.astropress-retention-preset-btn').each(function() {
+        $(this).toggleClass('active', String($(this).data('days')) === String(val));
+      });
+    });
+
+    $(document).on('change', '.astropress-retention-select', function() {
+      const $select = $(this);
+      const val = parseInt($select.val(), 10) || 30;
+      const $wrap = $select.closest('.astropress-retention-control');
+      $wrap.find('.astropress-retention-slider').val(val).trigger('input');
+    });
+
+    $(document).on('click', '.astropress-retention-preset-btn', function(e) {
+      e.preventDefault();
+      const days = $(this).data('days');
+      if (days !== undefined) {
+        const $wrap = $(this).closest('.astropress-retention-control');
+        $wrap.find('.astropress-retention-slider').val(days).trigger('input');
+      }
+    });
+
+    // ========================================================
+    // 1-Click Database & Legacy Cleanup Tool
+    // ========================================================
+    $(document).on('click', '.astropress-cleanup-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $card = $btn.closest('.astropress-legacy-cleanup-card');
+      const $status = $card.find('.astropress-cleanup-status');
+      const $progressBox = $card.find('.astropress-cleanup-progress-box');
+      const $progressFill = $card.find('.astropress-cleanup-progress-fill');
+      const $cleanCount = $card.find('.astropress-cleanup-cleanable-count');
+
+      if ($btn.hasClass('updating-message') || $btn.prop('disabled')) {
+        return;
+      }
+
+      if (!confirm('Proceed with safe database and orphaned index cleanup? This cleans stale entries and sync markers while preserving all active Cloudflare R2 assets.')) {
+        return;
+      }
+
+      $btn.prop('disabled', true).addClass('updating-message');
+      $progressBox.slideDown(150);
+      $progressFill.css('width', '25%');
+      $status.html('<span class="dashicons dashicons-update spin"></span> Optimizing database tables and removing stale records...');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_bulk_clean_verified_local',
+          nonce: nonce,
+          batch_size: 25,
+        },
+        success: function(res) {
+          $progressFill.css('width', '100%');
+          if (res.success) {
+            $status.html('<span style="color:#15803d; font-weight:600;"><span class="dashicons dashicons-yes-alt"></span> Cleanup completed successfully! Database optimized.</span>');
+            if ($cleanCount.length) {
+              $cleanCount.text('0');
+            }
+          } else {
+            $status.html('<span style="color:#b91c1c; font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data?.message || 'Cleanup completed with notices.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $progressFill.css('width', '100%').css('background', '#ef4444');
+          $status.html('<span style="color:#b91c1c; font-weight:600;">Request error: ' + escapeHtml(err) + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).removeClass('updating-message');
+        }
+      });
+    });
+
+    // 1-Click Legacy Database Options & Postmeta Purge
+    $(document).on('click', '#astropress-btn-clean-legacy', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#astropress-legacy-clean-status');
+
+      if ($btn.hasClass('updating-message') || $btn.prop('disabled')) {
+        return;
+      }
+
+      if (!confirm('Proceed with safe cleanup of legacy database options and postmeta (topnepali_*, r2g_*)? Modern AstroPress records will be preserved.')) {
+        return;
+      }
+
+      $btn.prop('disabled', true).addClass('updating-message');
+      $status.html('<span class="dashicons dashicons-update spin"></span> Scanning and purging legacy database options...');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_clean_legacy_database',
+          nonce: nonce,
+        },
+        success: function(res) {
+          $btn.prop('disabled', false).removeClass('updating-message');
+          if (res.success && res.data) {
+            const d = res.data;
+            $status.html('<span style="color:#15803d; font-weight:600;"><span class="dashicons dashicons-yes-alt"></span> ' +
+              (d.message || ('Purged ' + (d.deleted_options || 0) + ' legacy options, ' + (d.deleted_postmeta || 0) + ' postmeta rows.')) + '</span>');
+          } else {
+            $status.html('<span style="color:#b91c1c; font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data?.message || 'Cleanup encountered notices.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $btn.prop('disabled', false).removeClass('updating-message');
+          $status.html('<span style="color:#b91c1c; font-weight:600;">Request error: ' + escapeHtml(err) + '</span>');
+        }
+      });
+    });
+
+    // ========================================================
     // 1. Revalidation Secret Toggle & Generator
     // ========================================================
     $('#astropress-toggle-secret').on('click', function(e) {

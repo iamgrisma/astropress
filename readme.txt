@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.11
+Stable tag: 2.0.12
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,14 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.12 =
+* Cloudflare Cache-Tag (Surrogate-Key) Purging: Added enterprise-grade Cache-Tag invalidation (`purge_by_tags`) to purge related articles and archives in a single API call, with automatic post tag generation (`post-{ID}`, `type-{type}`, `term-{id}`) and AJAX purging console.
+* Memory-Safe S3/R2 Multipart Uploads: Upgraded pure PHP SigV4 engine in R2 Client to stream and chunk large video, audio, and podcast files (5MB parts) via S3 Multipart Upload protocol, eliminating PHP memory exhaustion on large media.
+* Automated Local Storage Retention Cron: Added configurable retention policy (`astropress_retention_days`) and daily WP-Cron pruning task to automatically delete verified local copies older than 7, 14, 30, 60, or 90 days.
+* Multi-Engine Headless SEO Bridge: Extended SEO layer to automatically detect and bridge Yoast SEO, SEOPress, and All in One SEO (AIOSEO) alongside Rank Math, delivering rendered `<head>` tags and Schema JSON-LD to Astro.
+* 1-Click Legacy Database Cleanup: Added safe database optimization utility in Danger Zone / Maintenance tab to scan, migrate, and purge obsolete legacy options (`topnepali_*`, `r2g_*`) and old postmeta.
+* Two-Tier Admin Navigation: Grouped 13 admin tabs into 4 clear category sections (Dashboard & Setup, Cloudflare & Storage, Edge Cache & Warmer, Optimizer & SEO) with smooth animated filtering and mobile swipe support.
 
 = 2.0.11 =
 * Strict SSL Certificate Verification: Enforced default HTTPS TLS certificate validation (`sslverify => true`) across all remote HTTP requests (warmer sitemap crawling, frontend detection, and CDN health auditing) with an extensible `astropress_sslverify` filter.

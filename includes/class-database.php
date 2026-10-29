@@ -590,4 +590,328 @@ class AstroPress_Database {
             'found_offloaded' => $found_offloaded,
         );
     }
+
+    /**
+     * Scan WordPress database for legacy configuration options, postmeta, and tables.
+     *
+     * @return array
+     */
+    public static function get_legacy_footprint() {
+        global $wpdb;
+
+        // 1. Scan for legacy options matching: topnepali_headless_%, r2g_%, topnepali_%
+        $opt_patterns = array(
+            $wpdb->esc_like('topnepali_headless_') . '%',
+            $wpdb->esc_like('r2g_') . '%',
+            $wpdb->esc_like('topnepali_') . '%',
+        );
+
+        $where_clauses = array();
+        $params        = array();
+        foreach ($opt_patterns as $pattern) {
+            $where_clauses[] = 'option_name LIKE %s';
+            $params[]        = $pattern;
+        }
+
+        $options_sql  = "SELECT DISTINCT option_name FROM {$wpdb->options} WHERE " . implode(' OR ', $where_clauses) . " ORDER BY option_name ASC";
+        $options_list = $wpdb->get_col($wpdb->prepare($options_sql, $params));
+        if (!is_array($options_list)) {
+            $options_list = array();
+        }
+        $options_count = count($options_list);
+
+        // 2. Count legacy postmeta rows matching: _r2g_%, _headless_%, _mcs_%
+        $pm_patterns = array(
+            $wpdb->esc_like('_r2g_') . '%',
+            $wpdb->esc_like('_headless_') . '%',
+            $wpdb->esc_like('_mcs_') . '%',
+        );
+
+        $pm_where  = array();
+        $pm_params = array();
+        foreach ($pm_patterns as $pattern) {
+            $pm_where[]  = 'meta_key LIKE %s';
+            $pm_params[] = $pattern;
+        }
+
+        $pm_sql         = "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE " . implode(' OR ', $pm_where);
+        $postmeta_count = (int) $wpdb->get_var($wpdb->prepare($pm_sql, $pm_params));
+
+        // 3. Check if legacy tables exist: {$wpdb->prefix}r2g_media
+        $legacy_table = self::legacy_table();
+        $table_found  = ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $legacy_table)) === $legacy_table);
+        $tables_count = $table_found ? 1 : 0;
+
+        $can_clean = ($options_count > 0 || $postmeta_count > 0 || $tables_count > 0);
+
+        return array(
+            'options_count'  => (int) $options_count,
+            'options_list'   => $options_list,
+            'postmeta_count' => (int) $postmeta_count,
+            'tables_count'   => (int) $tables_count,
+            'can_clean'      => (bool) $can_clean,
+        );
+    }
+
+    /**
+     * Clean legacy options, postmeta, and tables with full safety checks.
+     *
+     * @return array
+     */
+    public static function clean_legacy_footprint() {
+        global $wpdb;
+
+        $deleted_options  = 0;
+        $deleted_postmeta = 0;
+        $dropped_tables   = 0;
+
+        // 1. Safety checks and legacy options cleanup
+        $footprint      = self::get_legacy_footprint();
+        $legacy_options = $footprint['options_list'];
+
+        $option_map = array(
+            // R2 storage & credentials
+            'r2g_account_id'                => 'astropress_r2_account_id',
+            'r2g_access_key'                => 'astropress_r2_access_key',
+            'r2g_secret_key'                => 'astropress_r2_secret_key',
+            'r2g_bucket'                    => 'astropress_r2_bucket',
+            'r2g_custom_domain'             => 'astropress_r2_custom_domain',
+            'r2g_public_url'                => 'astropress_r2_custom_domain',
+            'r2g_path_structure'            => 'astropress_path_structure',
+            'r2g_path_prefix'               => 'astropress_path_prefix',
+            'r2g_upload_sizes'              => 'astropress_upload_sizes',
+            'r2g_cleanup_scope'             => 'astropress_cleanup_scope',
+            'r2g_auto_upload'               => 'astropress_auto_upload',
+            'r2g_rewrite_urls'              => 'astropress_rewrite_urls',
+            'r2g_delete_from_r2'            => 'astropress_delete_from_r2',
+            'r2g_storage_mode'              => 'astropress_storage_mode',
+            'r2g_compress_engine'           => 'astropress_compress_engine',
+            'r2g_compress_enabled'          => 'astropress_compress_enabled',
+            'r2g_compress_format'           => 'astropress_compress_format',
+            'r2g_compress_quality'          => 'astropress_compress_quality',
+            'r2g_max_width'                 => 'astropress_max_width',
+            'r2g_max_height'                => 'astropress_max_height',
+            'r2g_strip_exif'                => 'astropress_strip_exif',
+            'r2g_auto_orient'               => 'astropress_auto_orient',
+            'r2g_backup_original'           => 'astropress_backup_original',
+            'r2g_smart_routing'             => 'astropress_smart_routing',
+            'r2g_interceptor_enabled'       => 'astropress_interceptor_enabled',
+            'r2g_active_preset'             => 'astropress_active_preset',
+            'r2g_upload_workflow'           => 'astropress_upload_workflow',
+            'r2g_editor_workflow'           => 'astropress_editor_workflow',
+            'r2g_db_version'                => 'astropress_db_version',
+            'r2g_v109_migrated'             => 'astropress_v109_migrated',
+            'r2g_v122_migrated'             => 'astropress_v122_migrated',
+            'r2g_v200_migrated'             => 'astropress_v200_migrated',
+            'r2g_postmeta_migrated'         => 'astropress_postmeta_migrated',
+            'r2g_last_known_releases'       => 'astropress_last_known_releases',
+            'r2g_last_known_latest_release' => 'astropress_last_known_latest_release',
+            'r2g_delete_data_on_uninstall'  => 'astropress_delete_data_on_uninstall',
+
+            // Headless / TopNepali options
+            'topnepali_headless_frontend_url'      => 'astropress_frontend_url',
+            'topnepali_headless_secret'            => 'astropress_secret',
+            'topnepali_headless_connected'         => 'astropress_connected',
+            'topnepali_headless_rewrite_links'     => 'astropress_rewrite_links',
+            'topnepali_headless_auto_update'       => 'astropress_auto_update',
+            'topnepali_headless_purge_on_save'     => 'astropress_purge_on_save',
+            'topnepali_headless_purge_feeds'       => 'astropress_purge_feeds',
+            'topnepali_headless_purge_taxonomy'    => 'astropress_purge_taxonomy',
+            'topnepali_headless_purge_menu'        => 'astropress_purge_menu',
+            'topnepali_headless_lscwp_sync'        => 'astropress_lscwp_sync',
+            'topnepali_headless_warm_delay'        => 'astropress_warm_delay',
+            'topnepali_headless_warm_batch_size'   => 'astropress_warm_batch_size',
+            'topnepali_headless_subdomain_shield'  => 'astropress_subdomain_shield',
+            'topnepali_headless_subdomain_noindex' => 'astropress_subdomain_noindex',
+            'topnepali_headless_cf_zone_id'        => 'astropress_cf_zone_id',
+            'topnepali_headless_cf_api_token'      => 'astropress_cf_api_token',
+            'topnepali_headless_cf_deploy_hook'    => 'astropress_cf_deploy_hook',
+            'topnepali_warm_bg_job'                => 'astropress_warm_bg_job',
+            'topnepali_backend_url'                => 'astropress_backend_url',
+        );
+
+        foreach ($legacy_options as $legacy_opt) {
+            // Determine corresponding modern option name
+            if (isset($option_map[$legacy_opt])) {
+                $modern_key = $option_map[$legacy_opt];
+            } elseif (strpos($legacy_opt, 'topnepali_headless_') === 0) {
+                $modern_key = 'astropress_' . substr($legacy_opt, 19);
+            } elseif (strpos($legacy_opt, 'topnepali_') === 0) {
+                $modern_key = 'astropress_' . substr($legacy_opt, 10);
+            } elseif (strpos($legacy_opt, 'r2g_') === 0) {
+                $suffix = substr($legacy_opt, 4);
+                if (get_option('astropress_' . $suffix, null) !== null) {
+                    $modern_key = 'astropress_' . $suffix;
+                } else {
+                    $modern_key = 'astropress_r2_' . $suffix;
+                }
+            } else {
+                continue;
+            }
+
+            // Safety check: ensure corresponding modern astropress_* option exists before wiping legacy
+            $modern_val = get_option($modern_key, null);
+            if ($modern_val === null) {
+                $legacy_val = get_option($legacy_opt);
+                if ($legacy_val !== false && $legacy_val !== null) {
+                    update_option($modern_key, $legacy_val);
+                }
+            }
+
+            // Verify modern option is confirmed present
+            if (get_option($modern_key, null) !== null) {
+                $deleted = delete_option($legacy_opt);
+                if (!$deleted) {
+                    $deleted = ($wpdb->delete($wpdb->options, array('option_name' => $legacy_opt)) !== false);
+                }
+                if ($deleted) {
+                    $deleted_options++;
+                }
+            }
+        }
+
+        // 2. Postmeta cleanup: Delete legacy postmeta rows where modern _astropress_* postmeta is confirmed present
+        $legacy_meta_keys = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT meta_key FROM {$wpdb->postmeta} WHERE meta_key LIKE %s OR meta_key LIKE %s OR meta_key LIKE %s",
+            $wpdb->esc_like('_r2g_') . '%',
+            $wpdb->esc_like('_headless_') . '%',
+            $wpdb->esc_like('_mcs_') . '%'
+        ));
+
+        if (!empty($legacy_meta_keys) && is_array($legacy_meta_keys)) {
+            foreach ($legacy_meta_keys as $legacy_key) {
+                $modern_key = '';
+                if ($legacy_key === '_headless_rm_head') {
+                    $modern_key = '_astropress_rm_head';
+                } elseif (strpos($legacy_key, '_r2g_') === 0) {
+                    $modern_key = '_astropress_' . substr($legacy_key, 5);
+                } elseif (strpos($legacy_key, '_headless_') === 0) {
+                    $modern_key = '_astropress_' . substr($legacy_key, 10);
+                } elseif ($legacy_key === '_mcs_key') {
+                    $modern_key = '_astropress_key';
+                } elseif (strpos($legacy_key, '_mcs_') === 0 || strpos($legacy_key, '_media_cloud_sync_') === 0) {
+                    $modern_key = '_astropress_synced';
+                }
+
+                if (empty($modern_key)) {
+                    continue;
+                }
+
+                // Ensure modern postmeta exists before deleting legacy postmeta
+                $wpdb->query($wpdb->prepare(
+                    "INSERT INTO {$wpdb->postmeta} (post_id, meta_key, meta_value)
+                     SELECT l.post_id, %s, l.meta_value
+                     FROM {$wpdb->postmeta} l
+                     LEFT JOIN {$wpdb->postmeta} m ON l.post_id = m.post_id AND m.meta_key = %s
+                     WHERE l.meta_key = %s AND m.meta_id IS NULL",
+                    $modern_key,
+                    $modern_key,
+                    $legacy_key
+                ));
+
+                // Delete legacy postmeta where modern postmeta is confirmed present
+                $del = $wpdb->query($wpdb->prepare(
+                    "DELETE l FROM {$wpdb->postmeta} l
+                     INNER JOIN {$wpdb->postmeta} m ON l.post_id = m.post_id AND m.meta_key = %s
+                     WHERE l.meta_key = %s",
+                    $modern_key,
+                    $legacy_key
+                ));
+
+                if ($del && is_numeric($del)) {
+                    $deleted_postmeta += (int) $del;
+                }
+            }
+        }
+
+        // 3. Database table cleanup: Drop {$wpdb->prefix}r2g_media if {$wpdb->prefix}astropress_media exists and has >= records
+        $legacy_table = self::legacy_table();
+        $modern_table = self::table();
+
+        $legacy_exists = ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $legacy_table)) === $legacy_table);
+        if ($legacy_exists) {
+            $modern_exists = ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $modern_table)) === $modern_table);
+            if ($modern_exists) {
+                $legacy_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM `{$legacy_table}`");
+                $modern_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM `{$modern_table}`");
+
+                if ($modern_count < $legacy_count && $legacy_count > 0) {
+                    $wpdb->query(
+                        "INSERT IGNORE INTO `{$modern_table}` 
+                        (attachment_id, r2_key, file_name, mime_type, file_size, original_size, status, has_local, thumb_count, synced_at, created_at, updated_at) 
+                        SELECT attachment_id, r2_key, file_name, mime_type, file_size, original_size, status, has_local, thumb_count, synced_at, created_at, updated_at 
+                        FROM `{$legacy_table}`"
+                    );
+                    $modern_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM `{$modern_table}`");
+                }
+
+                if ($modern_count >= $legacy_count) {
+                    $dropped = $wpdb->query("DROP TABLE IF EXISTS `{$legacy_table}`");
+                    if ($dropped !== false) {
+                        $dropped_tables++;
+                    }
+                }
+            }
+        }
+
+        // 4. Clear object cache
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
+
+        return array(
+            'deleted_options'  => (int) $deleted_options,
+            'deleted_postmeta' => (int) $deleted_postmeta,
+            'dropped_tables'   => (int) $dropped_tables,
+            'success'          => true,
+        );
+    }
+
+    /**
+     * AJAX handler for one-click legacy database cleanup.
+     */
+    public static function ajax_clean_legacy_database() {
+        if (isset($_REQUEST['nonce']) && !isset($_REQUEST['_ajax_nonce'])) {
+            $_REQUEST['_ajax_nonce'] = sanitize_text_field(wp_unslash($_REQUEST['nonce']));
+        }
+
+        check_ajax_referer('astropress_admin_nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized user permissions.'));
+            return;
+        }
+
+        $result = self::clean_legacy_footprint();
+        wp_send_json_success($result);
+    }
+
+    /**
+     * AJAX handler to get legacy database footprint.
+     */
+    public static function ajax_get_legacy_footprint() {
+        if (isset($_REQUEST['nonce']) && !isset($_REQUEST['_ajax_nonce'])) {
+            $_REQUEST['_ajax_nonce'] = sanitize_text_field(wp_unslash($_REQUEST['nonce']));
+        }
+
+        check_ajax_referer('astropress_admin_nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized user permissions.'));
+            return;
+        }
+
+        $footprint = self::get_legacy_footprint();
+        wp_send_json_success($footprint);
+    }
+
+    /**
+     * Initialize database layer hooks and AJAX actions.
+     */
+    public static function init() {
+        add_action('wp_ajax_astropress_clean_legacy_database', array(__CLASS__, 'ajax_clean_legacy_database'));
+        add_action('wp_ajax_astropress_get_legacy_footprint', array(__CLASS__, 'ajax_get_legacy_footprint'));
+    }
 }
+
+AstroPress_Database::init();

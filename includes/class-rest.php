@@ -62,6 +62,17 @@ class AstroPress_REST {
             ),
         ));
 
+        // Expose active SEO engine in /wp/v2/posts and /wp/v2/pages
+        register_rest_field(array('post', 'page'), 'engine_used', array(
+            'get_callback' => function() {
+                return $this->core->seo->detect_active_seo_engine();
+            },
+            'schema'       => array(
+                'description' => 'Active SEO engine powering head tags (rank_math, yoast, seopress, aioseo, native)',
+                'type'        => 'string',
+            ),
+        ));
+
         // Expose structured SEO fields in /wp/v2/posts and /wp/v2/pages
         register_rest_field(array('post', 'page'), 'seo', array(
             'get_callback' => array($this->core->seo, 'get_rank_math_seo_fields'),
@@ -109,15 +120,19 @@ class AstroPress_REST {
         $namespaces = array('astropress/v1', 'headless/v1');
 
         foreach ($namespaces as $ns) {
-            // Endpoint: /wp-json/{namespace}/head?slug=...
+            // Endpoint: /wp-json/{namespace}/head?slug=... or ?url=...
             register_rest_route($ns, '/head', array(
                 'methods'             => 'GET',
                 'callback'            => array($this, 'rest_get_rendered_head'),
                 'permission_callback' => '__return_true',
                 'args'                => array(
                     'slug' => array(
-                        'required'          => true,
+                        'required'          => false,
                         'sanitize_callback' => 'sanitize_title',
+                    ),
+                    'url'  => array(
+                        'required'          => false,
+                        'sanitize_callback' => 'esc_url_raw',
                     ),
                 ),
             ));
@@ -266,37 +281,67 @@ class AstroPress_REST {
     }
 
     /**
-     * Dedicated REST Callback for /wp-json/{namespace}/head?slug=...
+     * Dedicated REST Callback for /wp-json/{namespace}/head?slug=... or ?url=...
+     * Returns rendered HTML head tags, active SEO engine, and structured metadata.
      *
      * @param WP_REST_Request $request
      * @return WP_REST_Response|WP_Error
      */
     public function rest_get_rendered_head($request) {
         $slug = $request->get_param('slug');
-        $posts = get_posts(array(
-            'name'        => $slug,
-            'post_type'   => array('post', 'page'),
-            'post_status' => 'publish',
-            'numberposts' => 1,
-        ));
+        $url  = $request->get_param('url');
 
-        if (empty($posts)) {
+        if (empty($slug) && empty($url)) {
+            return new WP_Error('missing_param', 'Missing required "slug" or "url" parameter', array('status' => 400));
+        }
+
+        $target_post = null;
+        if (!empty($slug)) {
+            $posts = get_posts(array(
+                'name'        => $slug,
+                'post_type'   => array('post', 'page'),
+                'post_status' => 'publish',
+                'numberposts' => 1,
+            ));
+            if (!empty($posts)) {
+                $target_post = $posts[0];
+            }
+        } elseif (!empty($url)) {
+            $post_id = function_exists('url_to_postid') ? url_to_postid($url) : 0;
+            if ($post_id) {
+                $target_post = get_post($post_id);
+            } else {
+                $path = trim((string) wp_parse_url($url, PHP_URL_PATH), '/');
+                if (!empty($path)) {
+                    $target_post = get_page_by_path($path, OBJECT, array('post', 'page'));
+                }
+            }
+        }
+
+        if (!$target_post) {
             return new WP_Error('not_found', 'Post or page not found', array('status' => 404));
         }
 
-        $post = $posts[0];
-        if (post_password_required($post) || !empty($post->post_password)) {
+        if (post_password_required($target_post) || !empty($target_post->post_password)) {
             return new WP_Error('post_password_required', 'This content is password protected.', array('status' => 403));
         }
 
-        $head = $this->core->seo->get_rank_math_head(array('id' => $post->ID));
-        $seo  = $this->core->seo->get_rank_math_seo_fields(array('id' => $post->ID));
+        $permalink     = get_permalink($target_post->ID);
+        $rendered_data = $this->core->seo->get_rendered_head($permalink, array(
+            'post'    => $target_post,
+            'post_id' => $target_post->ID,
+        ));
+
+        $head        = is_array($rendered_data) ? ($rendered_data['head'] ?? '') : $rendered_data;
+        $engine_used = is_array($rendered_data) ? ($rendered_data['engine_used'] ?? 'native') : $this->core->seo->detect_active_seo_engine();
+        $seo         = $this->core->seo->get_rank_math_seo_fields(array('id' => $target_post->ID));
 
         return rest_ensure_response(array(
-            'id'   => $post->ID,
-            'slug' => $post->post_name,
-            'head' => $head,
-            'seo'  => $seo,
+            'id'          => $target_post->ID,
+            'slug'        => $target_post->post_name,
+            'head'        => $head,
+            'engine_used' => $engine_used,
+            'seo'         => $seo,
         ));
     }
 

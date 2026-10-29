@@ -14,6 +14,9 @@ if (!defined('ABSPATH')) {
 }
 
 class AstroPress_Media_Handler {
+    const OPTION_RETENTION_DAYS = 'astropress_retention_days';
+    const CRON_HOOK_RETENTION   = 'astropress_daily_media_retention';
+
     /**
      * Singleton instance
      */
@@ -41,6 +44,8 @@ class AstroPress_Media_Handler {
         add_filter('wp_editor_set_quality', array($this, 'filter_editor_quality'), 10, 2);
         add_filter('wp_generate_attachment_metadata', array($this, 'on_generate_metadata'), 20, 2);
         add_action('delete_attachment', array($this, 'on_delete_attachment'));
+        add_action(self::CRON_HOOK_RETENTION, array($this, 'prune_expired_local_media'));
+        add_action('init', array($this, 'maybe_schedule_retention_cron'));
     }
 
     /**
@@ -944,5 +949,224 @@ class AstroPress_Media_Handler {
         }
 
         AstroPress_Database::remove($attachment_id);
+    }
+
+    /**
+     * Get retention period in days
+     *
+     * 0 = disabled, options: 0, 7, 14, 30, 60, 90
+     *
+     * @return int
+     */
+    public static function get_retention_days() {
+        return (int) get_option(self::OPTION_RETENTION_DAYS, 0);
+    }
+
+    /**
+     * Schedule or clear daily media retention cron event based on retention setting
+     */
+    public function maybe_schedule_retention_cron() {
+        if (self::get_retention_days() > 0) {
+            if (!wp_next_scheduled(self::CRON_HOOK_RETENTION)) {
+                $first_run = time() + (defined('HOUR_IN_SECONDS') ? HOUR_IN_SECONDS : 3600);
+                wp_schedule_event($first_run, 'daily', self::CRON_HOOK_RETENTION);
+            }
+        } else {
+            wp_clear_scheduled_hook(self::CRON_HOOK_RETENTION);
+        }
+    }
+
+    /**
+     * Prune local media files older than retention days for attachments verified on R2
+     *
+     * @param int $limit Maximum attachments to prune per cron execution
+     * @return int|array 0 if disabled, or array('pruned' => int, 'bytes_reclaimed' => int)
+     */
+    public function prune_expired_local_media($limit = 50) {
+        $days = self::get_retention_days();
+        if ($days <= 0) {
+            return 0;
+        }
+
+        $day_seconds = defined('DAY_IN_SECONDS') ? DAY_IN_SECONDS : 86400;
+        $cutoff_time = time() - ($days * $day_seconds);
+        $limit       = (int) $limit > 0 ? (int) $limit : 50;
+
+        $client = function_exists('astropress') ? astropress()->get_r2_client() : null;
+        if (!$client || !$client->is_configured()) {
+            $log_data = array(
+                'timestamp'       => time(),
+                'datetime'        => current_time('mysql'),
+                'count'           => 0,
+                'pruned'          => 0,
+                'freed_size'      => 0,
+                'bytes_reclaimed' => 0,
+                'error'           => 'R2 client is not configured',
+            );
+            update_option('astropress_last_prune_log', $log_data, false);
+            return array('pruned' => 0, 'bytes_reclaimed' => 0);
+        }
+
+        global $wpdb;
+
+        $cutoff_gmt   = gmdate('Y-m-d H:i:s', $cutoff_time);
+        $cutoff_local = function_exists('wp_date')
+            ? wp_date('Y-m-d H:i:s', $cutoff_time)
+            : (function_exists('date_i18n') ? date_i18n('Y-m-d H:i:s', $cutoff_time) : date('Y-m-d H:i:s', $cutoff_time));
+
+        $sql = "SELECT DISTINCT p.ID, p.post_date_gmt, p.post_date
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm_synced
+                    ON p.ID = pm_synced.post_id
+                    AND (pm_synced.meta_key = '_astropress_synced' OR pm_synced.meta_key = '_r2g_synced')
+                    AND pm_synced.meta_value = '1'
+                LEFT JOIN {$wpdb->postmeta} pm_deleted
+                    ON p.ID = pm_deleted.post_id
+                    AND (pm_deleted.meta_key = '_astropress_local_deleted' OR pm_deleted.meta_key = '_r2g_local_deleted')
+                    AND pm_deleted.meta_value = '1'
+                LEFT JOIN {$wpdb->postmeta} pm_synced_at
+                    ON p.ID = pm_synced_at.post_id
+                    AND (pm_synced_at.meta_key = '_astropress_synced_at' OR pm_synced_at.meta_key = '_r2g_synced_at')
+                WHERE p.post_type = 'attachment'
+                  AND pm_deleted.post_id IS NULL
+                  AND (
+                      (pm_synced_at.meta_value IS NOT NULL AND pm_synced_at.meta_value != '' AND pm_synced_at.meta_value < %s)
+                      OR
+                      (
+                          (pm_synced_at.meta_value IS NULL OR pm_synced_at.meta_value = '')
+                          AND (
+                              (p.post_date_gmt IS NOT NULL AND p.post_date_gmt != '0000-00-00 00:00:00' AND p.post_date_gmt < %s)
+                              OR
+                              ((p.post_date_gmt IS NULL OR p.post_date_gmt = '0000-00-00 00:00:00') AND p.post_date < %s)
+                          )
+                      )
+                  )
+                ORDER BY p.ID ASC
+                LIMIT %d";
+
+        $results = $wpdb->get_results($wpdb->prepare($sql, $cutoff_local, $cutoff_gmt, $cutoff_local, $limit));
+
+        $pruned_count = 0;
+        $total_bytes  = 0;
+
+        if (!empty($results)) {
+            foreach ($results as $row) {
+                $attachment_id = (int) $row->ID;
+                if ($attachment_id <= 0) {
+                    continue;
+                }
+
+                // Verify item timestamp is strictly older than cutoff
+                $synced_at = get_post_meta($attachment_id, '_astropress_synced_at', true);
+                if (empty($synced_at)) {
+                    $synced_at = get_post_meta($attachment_id, '_r2g_synced_at', true);
+                }
+
+                if (!empty($synced_at)) {
+                    $item_timestamp = is_numeric($synced_at) ? (int) $synced_at : strtotime($synced_at);
+                } else {
+                    $post_date_gmt = !empty($row->post_date_gmt) && $row->post_date_gmt !== '0000-00-00 00:00:00' ? $row->post_date_gmt : '';
+                    if ($post_date_gmt) {
+                        $item_timestamp = strtotime($post_date_gmt . ' GMT');
+                    } else {
+                        $item_timestamp = strtotime($row->post_date);
+                    }
+                }
+
+                if ($item_timestamp && $item_timestamp > $cutoff_time) {
+                    continue;
+                }
+
+                // Verify synced flag
+                $is_synced = (int) get_post_meta($attachment_id, '_astropress_synced', true) === 1
+                          || (int) get_post_meta($attachment_id, '_r2g_synced', true) === 1;
+                if (!$is_synced) {
+                    continue;
+                }
+
+                // Calculate file size before local file removal
+                $attachment_bytes = 0;
+                $file_path = get_attached_file($attachment_id);
+                if ($file_path && file_exists($file_path)) {
+                    $attachment_bytes += (int) @filesize($file_path);
+                }
+
+                $metadata = wp_get_attachment_metadata($attachment_id);
+                if (!empty($metadata['sizes']) && is_array($metadata['sizes']) && $file_path) {
+                    $dir = dirname($file_path);
+                    foreach ($metadata['sizes'] as $size_info) {
+                        if (!empty($size_info['file'])) {
+                            $thumb_path = $dir . '/' . $size_info['file'];
+                            if (file_exists($thumb_path)) {
+                                $attachment_bytes += (int) @filesize($thumb_path);
+                            }
+                        }
+                    }
+                }
+
+                // Delete local files (internally verifies R2 object existence for all paths first)
+                $deleted = $this->delete_local_files($attachment_id);
+
+                if ($deleted) {
+                    update_post_meta($attachment_id, '_astropress_local_deleted', 1);
+                    update_post_meta($attachment_id, '_r2g_local_deleted', 1);
+
+                    if (class_exists('AstroPress_Database')) {
+                        AstroPress_Database::set_has_local($attachment_id, false);
+                    }
+                    $wpdb->update(
+                        $wpdb->prefix . 'astropress_media',
+                        array('has_local' => 0),
+                        array('attachment_id' => $attachment_id)
+                    );
+
+                    $pruned_count++;
+                    $total_bytes += $attachment_bytes;
+                } elseif ($file_path && !file_exists($file_path)) {
+                    // Local file was already deleted from disk; verify R2 object before flagging
+                    $main_key = get_post_meta($attachment_id, '_astropress_key', true);
+                    if (empty($main_key)) {
+                        $main_key = get_post_meta($attachment_id, '_r2g_key', true);
+                    }
+                    if (empty($main_key)) {
+                        $main_key = self::get_r2_key_from_path($file_path);
+                    }
+
+                    if ($main_key && $client->object_exists($main_key)) {
+                        update_post_meta($attachment_id, '_astropress_local_deleted', 1);
+                        update_post_meta($attachment_id, '_r2g_local_deleted', 1);
+
+                        if (class_exists('AstroPress_Database')) {
+                            AstroPress_Database::set_has_local($attachment_id, false);
+                        }
+                        $wpdb->update(
+                            $wpdb->prefix . 'astropress_media',
+                            array('has_local' => 0),
+                            array('attachment_id' => $attachment_id)
+                        );
+
+                        $pruned_count++;
+                    }
+                }
+            }
+        }
+
+        $log_data = array(
+            'timestamp'       => time(),
+            'datetime'        => current_time('mysql'),
+            'count'           => $pruned_count,
+            'pruned'          => $pruned_count,
+            'freed_size'      => $total_bytes,
+            'bytes_reclaimed' => $total_bytes,
+        );
+        update_option('astropress_last_prune_log', $log_data, false);
+        if (function_exists('set_transient')) {
+            set_transient('astropress_last_prune_log', $log_data, (defined('DAY_IN_SECONDS') ? DAY_IN_SECONDS : 86400) * 7);
+        }
+
+        return array(
+            'pruned'          => $pruned_count,
+            'bytes_reclaimed' => $total_bytes,
+        );
     }
 }

@@ -82,6 +82,11 @@ class AstroPress_Cache {
         add_action('update_option_show_on_front', array($this, 'on_site_info_change'));
         add_action('customize_save_after', array($this, 'on_site_info_change'));
 
+        // AJAX: Purge Cloudflare Cache-Tags (Surrogate-Keys)
+        if (is_admin()) {
+            add_action('wp_ajax_astropress_purge_cf_tags', array($this, 'ajax_purge_cf_tags'));
+        }
+
         // Debounced micro-queue execution on PHP shutdown
         add_action('shutdown', array($this, 'flush_invalidation_queue'));
     }
@@ -423,6 +428,192 @@ class AstroPress_Cache {
     }
 
     /**
+     * Direct Cloudflare Cache-Tag (Surrogate-Key) Purge via official Cloudflare API
+     *
+     * @param array $tags Array of cache tags to purge
+     * @return array Result array with success, purged_tags, http_code, message
+     */
+    public function purge_by_tags(array $tags) {
+        $token   = $this->core->get_cf_api_token();
+        $zone_id = $this->core->get_cf_zone_id();
+
+        if (empty($token) || empty($zone_id)) {
+            $msg = esc_html__('Cloudflare API Token or Zone ID is missing.', 'astropress');
+            $this->log_webhook_event(array(
+                'trigger'     => 'cf_cache_tags',
+                'target'      => 'Cloudflare Zone API',
+                'type'        => 'cf_tag_purge',
+                'urls_count'  => 0,
+                'urls'        => array(),
+                'status'      => 'failed',
+                'http_code'   => 0,
+                'duration_ms' => 0,
+                'message'     => $msg,
+                'payload'     => array('tags' => $tags),
+            ));
+            return array(
+                'success'     => false,
+                'purged_tags' => array(),
+                'http_code'   => 0,
+                'message'     => $msg,
+            );
+        }
+
+        $clean_tags = array();
+        foreach ($tags as $tag) {
+            if (!is_string($tag) && !is_numeric($tag)) {
+                continue;
+            }
+            $clean = preg_replace('/[^A-Za-z0-9_-]/', '', trim((string) $tag));
+            if (!empty($clean) && strlen($clean) <= 1024) {
+                $clean_tags[] = $clean;
+            }
+        }
+        $clean_tags = array_values(array_unique($clean_tags));
+
+        if (empty($clean_tags)) {
+            $msg = esc_html__('No valid cache tags provided.', 'astropress');
+            return array(
+                'success'     => false,
+                'purged_tags' => array(),
+                'http_code'   => 0,
+                'message'     => $msg,
+            );
+        }
+
+        $endpoint   = 'https://api.cloudflare.com/client/v4/zones/' . rawurlencode($zone_id) . '/purge_cache';
+        $start_time = microtime(true);
+
+        $response = wp_remote_post($endpoint, array(
+            'method'      => 'POST',
+            'timeout'     => 15,
+            'sslverify'   => (bool) apply_filters('astropress_sslverify', true),
+            'headers'     => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'        => json_encode(array('tags' => array_values($clean_tags))),
+            'data_format' => 'body',
+        ));
+
+        $latency = round((microtime(true) - $start_time) * 1000);
+        $code    = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
+        $body    = is_wp_error($response) ? '' : wp_remote_retrieve_body($response);
+        $data    = json_decode($body, true);
+        $success = (!is_wp_error($response) && !empty($data['success']));
+
+        if (is_wp_error($response)) {
+            $msg = $response->get_error_message();
+        } elseif ($success) {
+            $msg = sprintf(esc_html__('Successfully purged %d cache tag(s) from Cloudflare.', 'astropress'), count($clean_tags));
+        } elseif (!empty($data['errors'][0]['message'])) {
+            $msg = $data['errors'][0]['message'];
+        } else {
+            $msg = sprintf(esc_html__('Cloudflare Cache-Tag purge failed with HTTP code %d.', 'astropress'), $code);
+        }
+
+        $this->log_webhook_event(array(
+            'trigger'     => 'cf_cache_tags',
+            'target'      => 'Cloudflare Zone API (' . substr($zone_id, 0, 8) . '...)',
+            'type'        => 'cf_tag_purge',
+            'urls_count'  => count($clean_tags),
+            'urls'        => array_slice($clean_tags, 0, 10),
+            'status'      => $success ? 'success' : 'failed',
+            'http_code'   => $code,
+            'duration_ms' => $latency,
+            'message'     => $msg,
+            'payload'     => array('tags' => $clean_tags),
+        ));
+
+        return array(
+            'success'     => $success,
+            'purged_tags' => $clean_tags,
+            'http_code'   => $code,
+            'message'     => $msg,
+        );
+    }
+
+    /**
+     * Compute canonical surrogate keys (cache tags) for a WordPress post
+     *
+     * @param WP_Post|int $post
+     * @return array
+     */
+    public function get_post_cache_tags($post) {
+        if (is_numeric($post)) {
+            $post = get_post($post);
+        }
+        if (!$post || !is_object($post)) {
+            return array();
+        }
+
+        $tags = array();
+
+        if (!empty($post->ID)) {
+            $tags[] = "post-{$post->ID}";
+        }
+
+        if (!empty($post->post_type)) {
+            $tags[] = "type-{$post->post_type}";
+        }
+
+        if (!empty($post->post_author)) {
+            $tags[] = "author-{$post->post_author}";
+        }
+
+        $taxonomies = get_object_taxonomies($post->post_type, 'names');
+        if (!empty($taxonomies)) {
+            $terms = wp_get_object_terms($post->ID, $taxonomies);
+            if (!empty($terms) && !is_wp_error($terms)) {
+                foreach ($terms as $term) {
+                    if (!empty($term->term_id)) {
+                        $tags[] = "term-{$term->term_id}";
+                    }
+                    if (!empty($term->taxonomy)) {
+                        $tags[] = "tax-{$term->taxonomy}";
+                    }
+                }
+            }
+        }
+
+        return (array) apply_filters('astropress_post_cache_tags', array_unique(array_filter($tags)), $post);
+    }
+
+    /**
+     * AJAX handler to purge Cloudflare cache by surrogate keys (Cache-Tags)
+     */
+    public function ajax_purge_cf_tags() {
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
+        if (empty($nonce) || (
+            !wp_verify_nonce($nonce, 'astropress_admin_nonce') &&
+            !wp_verify_nonce($nonce, 'astropress_onboarding_nonce') &&
+            !wp_verify_nonce($nonce, 'topnepali_admin_nonce') &&
+            !wp_verify_nonce($nonce, 'r2g_admin_nonce')
+        )) {
+            wp_send_json_error(array('message' => esc_html__('Invalid or missing security token (nonce).', 'astropress')), 403);
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+        }
+
+        $raw_tags = isset($_POST['tags']) ? wp_unslash($_POST['tags']) : (isset($_REQUEST['tags']) ? wp_unslash($_REQUEST['tags']) : '');
+        if (is_array($raw_tags)) {
+            $tags = $raw_tags;
+        } else {
+            $tags = explode(',', (string) $raw_tags);
+        }
+
+        $result = $this->purge_by_tags($tags);
+
+        if (!empty($result['success'])) {
+            wp_send_json_success($result);
+        } else {
+            wp_send_json_error($result);
+        }
+    }
+
+    /**
      * Trigger Cloudflare Pages / Workers Deploy Hook
      *
      * @param string $reason Deploy trigger note
@@ -523,9 +714,12 @@ class AstroPress_Cache {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
         if (wp_is_post_revision($post_id)) return;
 
-        // Invalidate cached Rank Math head so changes take effect immediately
+        // Invalidate cached head tags across SEO engines so changes take effect immediately
         delete_post_meta($post_id, '_astropress_rm_head');
         delete_post_meta($post_id, '_headless_rm_head');
+        delete_post_meta($post_id, '_astropress_yoast_head');
+        delete_post_meta($post_id, '_astropress_seopress_head');
+        delete_post_meta($post_id, '_astropress_aioseo_head');
 
         if ($post->post_status !== 'publish') return;
         $supported_types = $this->get_supported_post_types();
@@ -572,6 +766,11 @@ class AstroPress_Cache {
 
         $slug = $this->get_post_relative_slug($post);
         $this->queue_invalidation($slug, $post->post_type, $update ? 'update' : 'publish', array_unique(array_filter($extra_urls)));
+
+        if ((bool) get_option('astropress_cf_cache_tags_enabled', false)) {
+            $tags = $this->get_post_cache_tags($post);
+            $this->purge_by_tags($tags);
+        }
     }
 
     /**
@@ -587,9 +786,17 @@ class AstroPress_Cache {
         if ($old_status === 'publish' && $new_status !== 'publish') {
             delete_post_meta($post->ID, '_astropress_rm_head');
             delete_post_meta($post->ID, '_headless_rm_head');
+            delete_post_meta($post->ID, '_astropress_yoast_head');
+            delete_post_meta($post->ID, '_astropress_seopress_head');
+            delete_post_meta($post->ID, '_astropress_aioseo_head');
             $slug = $this->get_post_relative_slug($post);
             $extra_urls = array('/', '/blogs', '/blog', '/feed', '/rss', '/rss.xml', '/sitemap.xml');
             $this->queue_invalidation($slug, $post->post_type, 'unpublish', $extra_urls);
+
+            if ((bool) get_option('astropress_cf_cache_tags_enabled', false)) {
+                $tags = $this->get_post_cache_tags($post);
+                $this->purge_by_tags($tags);
+            }
         }
     }
 
@@ -599,6 +806,9 @@ class AstroPress_Cache {
     public function on_trash_post($post_id) {
         delete_post_meta($post_id, '_astropress_rm_head');
         delete_post_meta($post_id, '_headless_rm_head');
+        delete_post_meta($post_id, '_astropress_yoast_head');
+        delete_post_meta($post_id, '_astropress_seopress_head');
+        delete_post_meta($post_id, '_astropress_aioseo_head');
 
         $post = get_post($post_id);
         if (!$post) return;
@@ -633,6 +843,11 @@ class AstroPress_Cache {
 
         $slug = $this->get_post_relative_slug($post);
         $this->queue_invalidation($slug, $post->post_type, 'delete', array_unique(array_filter($extra_urls)));
+
+        if ((bool) get_option('astropress_cf_cache_tags_enabled', false)) {
+            $tags = $this->get_post_cache_tags($post);
+            $this->purge_by_tags($tags);
+        }
     }
 
     /**

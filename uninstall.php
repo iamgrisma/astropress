@@ -45,6 +45,7 @@ function astropress_uninstall_site() {
         'astropress_cf_account_id',
         'astropress_cf_deploy_hook',
         'astropress_cf_purge_mode',
+        'astropress_cf_cache_tags_enabled',
         'astropress_cf_ruleset_id',
         'astropress_cf_rule_ids',
         'astropress_webhook_logs',
@@ -54,6 +55,8 @@ function astropress_uninstall_site() {
         'astropress_r2_secret_key',
         'astropress_r2_bucket',
         'astropress_r2_custom_domain',
+        'astropress_retention_days',
+        'astropress_last_prune_log',
         'astropress_path_structure',
         'astropress_path_prefix',
         'astropress_upload_sizes',
@@ -150,6 +153,7 @@ function astropress_uninstall_site() {
     wp_clear_scheduled_hook('astropress_warmer_cron');
     wp_clear_scheduled_hook('astropress_warm_bg_worker');
     wp_clear_scheduled_hook('astropress_retry_webhooks');
+    wp_clear_scheduled_hook('astropress_daily_media_retention');
     wp_clear_scheduled_hook('topnepali_warm_bg_worker');
     wp_clear_scheduled_hook('r2g_warmer_cron');
 
@@ -174,6 +178,9 @@ function astropress_uninstall_site() {
             '_astropress_sizes_synced',
             '_astropress_rm_head',
             '_headless_rm_head',
+            '_astropress_yoast_head',
+            '_astropress_seopress_head',
+            '_astropress_aioseo_head',
             '_r2g_synced',
             '_r2g_synced_at',
             '_r2g_key',

@@ -476,6 +476,9 @@ class AstroPress_Admin {
             if ($post) {
                 delete_post_meta($post_id, '_astropress_rm_head');
                 delete_post_meta($post_id, '_headless_rm_head');
+                delete_post_meta($post_id, '_astropress_yoast_head');
+                delete_post_meta($post_id, '_astropress_seopress_head');
+                delete_post_meta($post_id, '_astropress_aioseo_head');
                 $this->core->cache->dispatch_revalidation($post->post_name, $post->post_type, 'update');
             }
             wp_safe_redirect(add_query_arg('astropress_msg', 'purged_single', wp_get_referer() ?: admin_url()));
@@ -889,6 +892,7 @@ class AstroPress_Admin {
         // 2. Save Automation & Cache Preferences
         if (isset($_POST['astropress_save_automation']) && check_admin_referer('astropress_automation_action', 'astropress_automation_nonce')) {
             update_option(AstroPress::OPTION_PURGE_ON_SAVE, isset($_POST['purge_on_save']) ? '1' : '0');
+            update_option('astropress_cf_cache_tags_enabled', isset($_POST['cf_cache_tags_enabled']) ? '1' : '0');
             update_option(AstroPress::OPTION_PURGE_FEEDS, isset($_POST['purge_feeds']) ? '1' : '0');
             update_option(AstroPress::OPTION_PURGE_TAXONOMY, isset($_POST['purge_taxonomy']) ? '1' : '0');
             update_option(AstroPress::OPTION_PURGE_MENU, isset($_POST['purge_menu']) ? '1' : '0');
@@ -996,6 +1000,15 @@ class AstroPress_Admin {
                 $storage_mode = 'both';
             }
             update_option('r2g_storage_mode', $storage_mode);
+            update_option('astropress_storage_mode', $storage_mode);
+
+            if (isset($_POST['astropress_retention_days'])) {
+                $ret_days = max(0, (int) $_POST['astropress_retention_days']);
+                update_option('astropress_retention_days', $ret_days);
+                if (class_exists('AstroPress_Media_Handler')) {
+                    AstroPress_Media_Handler::instance()->maybe_schedule_retention_cron();
+                }
+            }
 
             set_transient('astropress_notice', array(
                 'type'    => 'success',
@@ -3476,6 +3489,7 @@ class AstroPress_Admin {
                                 <label><input type="checkbox" name="purge_taxonomy" value="1" <?php checked($this->core->should_purge_taxonomy()); ?> /> <?php esc_html_e('Purge category and tag archives when terms are edited', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="purge_menu" value="1" <?php checked($this->core->should_purge_menu()); ?> /> <?php esc_html_e('Purge global cache when navigation menus are updated', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="debounce_enabled" value="1" <?php checked($this->core->should_debounce_webhooks()); ?> /> <?php esc_html_e('Debounce requests (batch multiple invalidations into a single payload)', 'astropress'); ?></label><br />
+                                <label><input type="checkbox" name="cf_cache_tags_enabled" value="1" <?php checked((bool) get_option('astropress_cf_cache_tags_enabled', false)); ?> /> <?php esc_html_e('Purge Cloudflare Cache-Tags (Surrogate-Key instant purging)', 'astropress'); ?></label><br />
                                 <label><input type="checkbox" name="lscwp_sync" value="1" <?php checked($this->core->should_sync_lscwp()); ?> /> <?php esc_html_e('Synchronize with LiteSpeed Cache purge events', 'astropress'); ?></label>
                             </fieldset>
                         </td>
@@ -3682,6 +3696,21 @@ class AstroPress_Admin {
                             <label><input type="radio" name="r2_storage_mode" value="both" <?php checked($storage_mode, 'both'); ?> /> <strong><?php esc_html_e('Dual Storage (Recommended)', 'astropress'); ?></strong> — <?php esc_html_e('Store files on both local server and R2. Fast CDN delivery with zero local data loss risk.', 'astropress'); ?></label><br />
                             <label><input type="radio" name="r2_storage_mode" value="r2_only" <?php checked($storage_mode, 'r2_only'); ?> /> <strong><?php esc_html_e('R2 Only (Disk Saver)', 'astropress'); ?></strong> — <?php esc_html_e('Delete local media file after successful upload to R2 to conserve hosting disk space.', 'astropress'); ?></label><br />
                             <label><input type="radio" name="r2_storage_mode" value="local_only" <?php checked($storage_mode, 'local_only'); ?> /> <strong><?php esc_html_e('Local Only', 'astropress'); ?></strong> — <?php esc_html_e('Bypass R2 uploads completely.', 'astropress'); ?></label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Local Retention Policy', 'astropress'); ?></th>
+                        <td>
+                            <?php $retention_days = (int) get_option('astropress_retention_days', 0); ?>
+                            <select name="astropress_retention_days" id="astropress_retention_days">
+                                <option value="0" <?php selected($retention_days, 0); ?>><?php esc_html_e('Disabled (Retain local files indefinitely)', 'astropress'); ?></option>
+                                <option value="7" <?php selected($retention_days, 7); ?>><?php esc_html_e('7 Days (Prune local media older than 1 week after R2 sync)', 'astropress'); ?></option>
+                                <option value="14" <?php selected($retention_days, 14); ?>><?php esc_html_e('14 Days (Prune local media older than 2 weeks after R2 sync)', 'astropress'); ?></option>
+                                <option value="30" <?php selected($retention_days, 30); ?>><?php esc_html_e('30 Days (Prune local media older than 1 month after R2 sync)', 'astropress'); ?></option>
+                                <option value="60" <?php selected($retention_days, 60); ?>><?php esc_html_e('60 Days (Prune local media older than 2 months after R2 sync)', 'astropress'); ?></option>
+                                <option value="90" <?php selected($retention_days, 90); ?>><?php esc_html_e('90 Days (Prune local media older than 3 months after R2 sync)', 'astropress'); ?></option>
+                            </select>
+                            <p class="description"><?php esc_html_e('Automatically prunes local server files via daily WP-Cron once verified safely offloaded to Cloudflare R2.', 'astropress'); ?></p>
                         </td>
                     </tr>
                     <tr>
@@ -4176,9 +4205,16 @@ class AstroPress_Admin {
         <div style="max-width:920px;">
             <div class="astropress-card">
                 <div class="astropress-card-header">
-                    <h2><span class="dashicons dashicons-shield"></span> <?php esc_html_e('Rank Math SEO & Subdomain Protection Shield', 'astropress'); ?></h2>
+                    <h2><span class="dashicons dashicons-shield"></span> <?php esc_html_e('Multi-Engine Headless SEO & Subdomain Protection Shield', 'astropress'); ?></h2>
+                    <?php
+                    $detected_engine = $this->core->seo ? $this->core->seo->detect_active_seo_engine() : 'native';
+                    $engine_label = ($detected_engine === 'rank_math') ? ($rank_math_pro ? 'Rank Math Pro Active' : 'Rank Math Active')
+                        : (($detected_engine === 'yoast') ? 'Yoast SEO Active'
+                        : (($detected_engine === 'seopress') ? 'SEOPress Active'
+                        : (($detected_engine === 'aioseo') ? 'AIOSEO Active' : 'Native SEO Ready')));
+                    ?>
                     <span class="astropress-badge astropress-badge-online">
-                        <span class="astropress-dot"></span> <?php echo $rank_math_active ? ($rank_math_pro ? 'Rank Math Pro Active' : 'Rank Math Active') : 'SEO Bridge Ready'; ?>
+                        <span class="astropress-dot"></span> <?php echo esc_html($engine_label); ?>
                     </span>
                 </div>
                 <p style="color: #64748b; font-size: 13px; margin-top: 0;">
@@ -4448,6 +4484,15 @@ class AstroPress_Admin {
                             <span class="dashicons dashicons-heart" style="vertical-align:-2px;"></span> <?php esc_html_e('Audit Media Health & Missing Files', 'astropress'); ?>
                         </button>
                         <div id="r2g-audit-status" style="margin-top:8px; font-size:12px;"></div>
+                    </div>
+
+                    <div style="flex:1; min-width:280px; padding:16px; background:#fff1f2; border:1px solid #fecdd3; border-radius:6px;">
+                        <h3 style="margin-top:0; font-size:14px; font-weight:600; color:#9f1239;"><?php esc_html_e('1-Click Legacy Database Cleanup', 'astropress'); ?></h3>
+                        <p style="font-size:12px; color:#475569; margin-bottom:14px; line-height:1.5;"><?php esc_html_e('Safely prunes obsolete legacy plugin options (topnepali_*, r2g_*) and legacy postmeta after confirming modern AstroPress records exist.', 'astropress'); ?></p>
+                        <button type="button" id="astropress-btn-clean-legacy" class="button button-secondary" style="border-color:#e11d48; color:#be123c;">
+                            <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Clean Legacy Footprint', 'astropress'); ?>
+                        </button>
+                        <div id="astropress-legacy-clean-status" style="margin-top:8px; font-size:12px;"></div>
                     </div>
                 </div>
             </div>

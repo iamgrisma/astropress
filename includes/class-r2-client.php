@@ -53,6 +53,17 @@ class AstroPress_R2_Client {
     const SERVICE = 's3';
 
     /**
+     * Multipart upload threshold in bytes (10 MB).
+     * Files >= 10 MB use streamed multipart uploads.
+     */
+    const MULTIPART_THRESHOLD = 10485760;
+
+    /**
+     * Multipart chunk size in bytes (5 MB per part - S3 min part size).
+     */
+    const MULTIPART_CHUNK_SIZE = 5242880;
+
+    /**
      * Singleton / global accessor
      *
      * @return AstroPress_R2_Client
@@ -236,15 +247,18 @@ class AstroPress_R2_Client {
      * @return array [ 'success' => bool, 'code' => int, 'body' => string, 'error' => string ]
      */
     public function request($method, $uri, $payload = '', $extra_headers = array()) {
-        $is_root = ($uri === '/' || $uri === '');
+        $parsed_url = parse_url($uri);
+        $raw_path   = isset($parsed_url['path']) ? $parsed_url['path'] : $uri;
+        $raw_query  = isset($parsed_url['query']) ? $parsed_url['query'] : '';
+        $is_root    = ($raw_path === '/' || $raw_path === '');
 
         if ($is_root) {
             if (empty($this->account_id) || empty($this->access_key) || empty($this->secret_key)) {
-                return array('success' => false, 'code' => 0, 'body' => '', 'error' => 'Account ID, Access Key, and Secret Key are required.');
+                return array('success' => false, 'code' => 0, 'body' => '', 'headers' => array(), 'error' => 'Account ID, Access Key, and Secret Key are required.');
             }
         } else {
             if (!$this->is_configured()) {
-                return array('success' => false, 'code' => 0, 'body' => '', 'error' => 'R2 credentials or bucket name not fully configured.');
+                return array('success' => false, 'code' => 0, 'body' => '', 'headers' => array(), 'error' => 'R2 credentials or bucket name not fully configured.');
             }
         }
 
@@ -255,14 +269,41 @@ class AstroPress_R2_Client {
         if ($is_root) {
             $clean_uri = '/';
         } else {
-            $segments = explode('/', ltrim(preg_replace('#/+#', '/', $uri), '/'));
-            $encoded_segments = array_map('rawurlencode', $segments);
+            $segments = explode('/', ltrim(preg_replace('#/+#', '/', $raw_path), '/'));
+            $encoded_segments = array_map('rawurlencode', array_map('urldecode', $segments));
             $clean_uri = '/' . implode('/', $encoded_segments);
         }
 
-        $payload_hash = hash('sha256', $payload);
+        $canonical_query_str = '';
+        if ($raw_query !== '') {
+            $query_parts  = explode('&', $raw_query);
+            $query_params = array();
+            foreach ($query_parts as $part) {
+                if ($part === '') {
+                    continue;
+                }
+                $kv = explode('=', $part, 2);
+                $k  = rawurlencode(urldecode($kv[0]));
+                $v  = isset($kv[1]) ? rawurlencode(urldecode($kv[1])) : '';
+                $query_params[$k] = $v;
+            }
+            ksort($query_params);
+            $pairs = array();
+            foreach ($query_params as $k => $v) {
+                $pairs[] = "{$k}={$v}";
+            }
+            $canonical_query_str = implode('&', $pairs);
+        }
 
-        if (in_array(strtoupper($method), array('PUT', 'POST'))) {
+        $payload_hash = hash('sha256', $payload);
+        foreach ($extra_headers as $k => $v) {
+            if (strtolower(trim($k)) === 'x-amz-content-sha256') {
+                $payload_hash = trim($v);
+                break;
+            }
+        }
+
+        if (in_array(strtoupper($method), array('PUT', 'POST'), true)) {
             $has_content_type = false;
             foreach ($extra_headers as $k => $v) {
                 if (strtolower($k) === 'content-type') {
@@ -296,7 +337,7 @@ class AstroPress_R2_Client {
 
         $canonical_request = strtoupper($method) . "\n"
             . $clean_uri . "\n"
-            . "" . "\n"
+            . $canonical_query_str . "\n"
             . $canonical_headers_str . "\n"
             . $signed_headers_str . "\n"
             . $payload_hash;
@@ -316,6 +357,10 @@ class AstroPress_R2_Client {
         $auth_header = "AWS4-HMAC-SHA256 Credential={$this->access_key}/{$credential_scope}, SignedHeaders={$signed_headers_str}, Signature={$signature}";
 
         $request_url = "https://{$host}" . $clean_uri;
+        if ($raw_query !== '') {
+            $request_url .= '?' . $raw_query;
+        }
+
         $method_uc = strtoupper($method);
         $http_headers = array(
             'x-amz-date'           => $date_time,
@@ -331,7 +376,7 @@ class AstroPress_R2_Client {
         $args = array(
             'method'      => $method_uc,
             'headers'     => $http_headers,
-            'timeout'     => (int) apply_filters('astropress_r2_http_timeout', 60, $method_uc),
+            'timeout'     => (int) apply_filters('astropress_r2_http_timeout', 120, $method_uc),
             'redirection' => 0,
             'sslverify'   => true,
             'httpversion' => '1.1',
@@ -345,11 +390,12 @@ class AstroPress_R2_Client {
         $response = wp_remote_request($request_url, $args);
 
         if (is_wp_error($response)) {
-            return array('success' => false, 'code' => 0, 'body' => '', 'error' => 'HTTP error: ' . $response->get_error_message());
+            return array('success' => false, 'code' => 0, 'body' => '', 'headers' => array(), 'error' => 'HTTP error: ' . $response->get_error_message());
         }
 
-        $http_code = (int) wp_remote_retrieve_response_code($response);
-        $response_body = (string) wp_remote_retrieve_body($response);
+        $http_code        = (int) wp_remote_retrieve_response_code($response);
+        $response_body    = (string) wp_remote_retrieve_body($response);
+        $response_headers = wp_remote_retrieve_headers($response);
 
         $success = ($http_code >= 200 && $http_code < 300);
 
@@ -372,6 +418,7 @@ class AstroPress_R2_Client {
             'success' => $success,
             'code'    => $http_code,
             'body'    => $response_body,
+            'headers' => $response_headers,
             'error'   => $error_message,
         );
     }
@@ -522,6 +569,24 @@ class AstroPress_R2_Client {
         }
 
         $file_size = (int) @filesize($local_path);
+
+        if (empty($mime_type)) {
+            $mime_type = function_exists('wp_check_filetype') ? (wp_check_filetype($local_path)['type'] ?: 'application/octet-stream') : 'application/octet-stream';
+        }
+
+        // Seamlessly delegate to streamed multipart upload for large files or memory-constrained environments
+        if (($file_size >= self::MULTIPART_THRESHOLD || !self::has_memory_for_payload($file_size)) && $this->has_s3_keys()) {
+            $multipart_res = $this->put_large_object_multipart($local_path, $r2_key, $mime_type);
+            if (is_wp_error($multipart_res)) {
+                return array(
+                    'success' => false,
+                    'code'    => 0,
+                    'error'   => $multipart_res->get_error_message(),
+                );
+            }
+            return $multipart_res;
+        }
+
         if (!self::has_memory_for_payload($file_size)) {
             return array(
                 'success' => false,
@@ -536,10 +601,6 @@ class AstroPress_R2_Client {
         $payload = file_get_contents($local_path);
         if ($payload === false) {
             return array('success' => false, 'code' => 0, 'error' => esc_html__('Could not read local file.', 'astropress'));
-        }
-
-        if (empty($mime_type)) {
-            $mime_type = wp_check_filetype($local_path)['type'] ?: 'application/octet-stream';
         }
 
         $clean_segments = array_map('rawurlencode', explode('/', ltrim(preg_replace('#/+#', '/', $r2_key), '/')));
@@ -576,6 +637,324 @@ class AstroPress_R2_Client {
             'success' => false,
             'code'    => 0,
             'error'   => esc_html__('R2 Storage unconfigured: Need S3 credentials or Cloudflare API Token.', 'astropress'),
+        );
+    }
+
+    /**
+     * Initiate S3 SigV4 Multipart Upload
+     *
+     * @param string $r2_key
+     * @param string $content_type
+     * @return string|WP_Error UploadId on success, WP_Error on failure
+     */
+    private function initiate_multipart_upload($r2_key, $content_type) {
+        if (!$this->has_s3_keys() || empty($this->bucket)) {
+            return new WP_Error('r2_unconfigured', esc_html__('S3 SigV4 credentials and bucket name are required.', 'astropress'));
+        }
+
+        $clean_key = ltrim($r2_key, '/');
+        $uri       = "/{$this->bucket}/{$clean_key}?uploads";
+
+        $headers = array(
+            'Content-Type'         => !empty($content_type) ? $content_type : 'application/octet-stream',
+            'Cache-Control'        => 'public, max-age=31536000, immutable',
+            'x-amz-content-sha256' => 'UNSIGNED-PAYLOAD',
+        );
+
+        $res = $this->request('POST', $uri, '', $headers);
+
+        if (!$res['success'] || $res['code'] !== 200) {
+            return new WP_Error(
+                'r2_initiate_multipart_failed',
+                sprintf(
+                    esc_html__('Failed to initiate multipart upload (HTTP %d): %s', 'astropress'),
+                    $res['code'],
+                    !empty($res['error']) ? $res['error'] : esc_html__('Unknown error', 'astropress')
+                )
+            );
+        }
+
+        if (preg_match('#<UploadId>([^<]+)</UploadId>#i', $res['body'], $matches)) {
+            return trim($matches[1]);
+        }
+
+        return new WP_Error(
+            'r2_invalid_upload_id',
+            esc_html__('Could not parse UploadId from R2 initiate multipart response.', 'astropress')
+        );
+    }
+
+    /**
+     * Upload an individual part in a multipart upload
+     *
+     * @param string $r2_key
+     * @param string $upload_id
+     * @param int    $part_number 1-based part index
+     * @param string $chunk_bytes Binary bytes of part chunk
+     * @return string|WP_Error Sanitized ETag string on success, WP_Error on failure
+     */
+    private function upload_part($r2_key, $upload_id, $part_number, $chunk_bytes) {
+        if (!$this->has_s3_keys() || empty($this->bucket)) {
+            return new WP_Error('r2_unconfigured', esc_html__('S3 SigV4 credentials and bucket name are required.', 'astropress'));
+        }
+
+        $chunk_hash = hash('sha256', $chunk_bytes);
+        $clean_key  = ltrim($r2_key, '/');
+        $uri        = "/{$this->bucket}/{$clean_key}?partNumber={$part_number}&uploadId=" . rawurlencode($upload_id);
+
+        $headers = array(
+            'Content-Type'         => 'application/octet-stream',
+            'x-amz-content-sha256' => $chunk_hash,
+        );
+
+        $res = $this->request('PUT', $uri, $chunk_bytes, $headers);
+
+        if (!$res['success'] || $res['code'] !== 200) {
+            return new WP_Error(
+                'r2_upload_part_failed',
+                sprintf(
+                    esc_html__('Failed to upload part %d (HTTP %d): %s', 'astropress'),
+                    $part_number,
+                    $res['code'],
+                    !empty($res['error']) ? $res['error'] : esc_html__('Unknown error', 'astropress')
+                )
+            );
+        }
+
+        $etag = '';
+        if (!empty($res['headers'])) {
+            if (isset($res['headers']['etag'])) {
+                $etag = $res['headers']['etag'];
+            } elseif (isset($res['headers']['ETag'])) {
+                $etag = $res['headers']['ETag'];
+            }
+        }
+
+        $etag = trim((string) $etag, '"\' ');
+        if (empty($etag)) {
+            return new WP_Error(
+                'r2_missing_part_etag',
+                sprintf(esc_html__('Part %d uploaded but ETag response header was missing.', 'astropress'), $part_number)
+            );
+        }
+
+        return $etag;
+    }
+
+    /**
+     * Complete a multipart upload by assembling parts
+     *
+     * @param string $r2_key
+     * @param string $upload_id
+     * @param array  $parts Array of parts (PartNumber, ETag)
+     * @return array|WP_Error Array with final etag on success, WP_Error on failure
+     */
+    private function complete_multipart_upload($r2_key, $upload_id, array $parts) {
+        if (!$this->has_s3_keys() || empty($this->bucket)) {
+            return new WP_Error('r2_unconfigured', esc_html__('S3 SigV4 credentials and bucket name are required.', 'astropress'));
+        }
+
+        $normalized_parts = array();
+        foreach ($parts as $key => $item) {
+            if (is_array($item)) {
+                $p_num  = isset($item['PartNumber']) ? (int) $item['PartNumber'] : (int) ($item['part_number'] ?? $key);
+                $p_etag = isset($item['ETag']) ? (string) $item['ETag'] : (string) ($item['etag'] ?? '');
+            } else {
+                $p_num  = (int) $key;
+                $p_etag = (string) $item;
+            }
+            $p_etag = trim($p_etag, '"\' ');
+            if ($p_num > 0 && !empty($p_etag)) {
+                $normalized_parts[$p_num] = $p_etag;
+            }
+        }
+
+        ksort($normalized_parts, SORT_NUMERIC);
+
+        $xml = "<CompleteMultipartUpload>\n";
+        foreach ($normalized_parts as $p_num => $p_etag) {
+            $xml .= "  <Part><PartNumber>{$p_num}</PartNumber><ETag>\"" . htmlspecialchars($p_etag, ENT_COMPAT, 'UTF-8') . "\"</ETag></Part>\n";
+        }
+        $xml .= "</CompleteMultipartUpload>";
+
+        $clean_key = ltrim($r2_key, '/');
+        $uri       = "/{$this->bucket}/{$clean_key}?uploadId=" . rawurlencode($upload_id);
+
+        $headers = array(
+            'Content-Type' => 'application/xml',
+        );
+
+        $res = $this->request('POST', $uri, $xml, $headers);
+
+        if (!$res['success'] || $res['code'] !== 200) {
+            return new WP_Error(
+                'r2_complete_multipart_failed',
+                sprintf(
+                    esc_html__('Failed to complete multipart upload (HTTP %d): %s', 'astropress'),
+                    $res['code'],
+                    !empty($res['error']) ? $res['error'] : esc_html__('Unknown error', 'astropress')
+                )
+            );
+        }
+
+        if (strpos($res['body'], '<Error>') !== false) {
+            $err_msg = 'S3 CompleteMultipartUpload error';
+            if (preg_match('#<Message>([^<]+)</Message>#i', $res['body'], $m)) {
+                $err_msg = trim($m[1]);
+            }
+            return new WP_Error('r2_complete_multipart_xml_error', $err_msg);
+        }
+
+        $final_etag = '';
+        if (preg_match('#<ETag>([^<]+)</ETag>#i', $res['body'], $m)) {
+            $final_etag = trim($m[1], '"\' ');
+        }
+
+        return array(
+            'success' => true,
+            'etag'    => $final_etag,
+            'body'    => $res['body'],
+        );
+    }
+
+    /**
+     * Abort an uncompleted multipart upload to purge orphaned chunks
+     *
+     * @param string $r2_key
+     * @param string $upload_id
+     * @return bool
+     */
+    private function abort_multipart_upload($r2_key, $upload_id) {
+        if (!$this->has_s3_keys() || empty($this->bucket)) {
+            return false;
+        }
+
+        $clean_key = ltrim($r2_key, '/');
+        $uri       = "/{$this->bucket}/{$clean_key}?uploadId=" . rawurlencode($upload_id);
+
+        $res = $this->request('DELETE', $uri);
+
+        return ($res['success'] || $res['code'] === 204 || $res['code'] === 200);
+    }
+
+    /**
+     * Upload a large file to Cloudflare R2 using pure PHP streamed multipart chunks
+     *
+     * Memory-safe: reads and transmits files in 5 MB chunks without loading full payloads into memory.
+     *
+     * @param string      $file_path    Absolute path to local file
+     * @param string      $r2_key       Target key on R2
+     * @param string|null $content_type MIME type
+     * @return array|WP_Error Array with success/url/etag/parts_count on success, WP_Error on failure
+     */
+    public function put_large_object_multipart($file_path, $r2_key, $content_type = null) {
+        if (!file_exists($file_path) || !is_readable($file_path)) {
+            return new WP_Error('r2_file_not_found', esc_html__('Local file does not exist or is not readable.', 'astropress'));
+        }
+
+        if (!$this->has_s3_keys() || empty($this->bucket)) {
+            return new WP_Error('r2_unconfigured', esc_html__('S3 SigV4 credentials and bucket name are required for multipart uploads.', 'astropress'));
+        }
+
+        if (empty($content_type)) {
+            if (function_exists('wp_check_filetype')) {
+                $file_type    = wp_check_filetype($file_path);
+                $content_type = !empty($file_type['type']) ? $file_type['type'] : 'application/octet-stream';
+            } else {
+                $content_type = 'application/octet-stream';
+            }
+        }
+
+        $file_handle = @fopen($file_path, 'rb');
+        if (!$file_handle) {
+            return new WP_Error('r2_file_open_failed', esc_html__('Could not open file handle for streaming.', 'astropress'));
+        }
+
+        $upload_id = $this->initiate_multipart_upload($r2_key, $content_type);
+        if (is_wp_error($upload_id)) {
+            @fclose($file_handle);
+            return $upload_id;
+        }
+
+        $parts       = array();
+        $part_number = 1;
+
+        while (!feof($file_handle)) {
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(300);
+            }
+
+            $chunk_bytes = fread($file_handle, self::MULTIPART_CHUNK_SIZE);
+            if ($chunk_bytes === false) {
+                $this->abort_multipart_upload($r2_key, $upload_id);
+                @fclose($file_handle);
+                return new WP_Error(
+                    'r2_read_chunk_failed',
+                    sprintf(esc_html__('Failed reading file chunk at part %d.', 'astropress'), $part_number)
+                );
+            }
+
+            if (strlen($chunk_bytes) === 0) {
+                break;
+            }
+
+            $etag = $this->upload_part($r2_key, $upload_id, $part_number, $chunk_bytes);
+            unset($chunk_bytes);
+
+            if (is_wp_error($etag)) {
+                $this->abort_multipart_upload($r2_key, $upload_id);
+                @fclose($file_handle);
+                return $etag;
+            }
+
+            $parts[] = array(
+                'PartNumber' => $part_number,
+                'ETag'       => $etag,
+            );
+
+            $part_number++;
+        }
+
+        @fclose($file_handle);
+
+        // S3 requires at least one part even for empty files
+        if (empty($parts)) {
+            $etag = $this->upload_part($r2_key, $upload_id, 1, '');
+            if (is_wp_error($etag)) {
+                $this->abort_multipart_upload($r2_key, $upload_id);
+                return $etag;
+            }
+            $parts[] = array(
+                'PartNumber' => 1,
+                'ETag'       => $etag,
+            );
+        }
+
+        $complete_res = $this->complete_multipart_upload($r2_key, $upload_id, $parts);
+        if (is_wp_error($complete_res)) {
+            $this->abort_multipart_upload($r2_key, $upload_id);
+            return $complete_res;
+        }
+
+        $final_etag = !empty($complete_res['etag']) ? $complete_res['etag'] : '';
+
+        $custom_domain = function_exists('get_option') ? get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', '')) : '';
+        if (!empty($custom_domain)) {
+            $cdn_base = rtrim($custom_domain, '/');
+            if (!preg_match('#^https?://#i', $cdn_base)) {
+                $cdn_base = 'https://' . $cdn_base;
+            }
+            $url = $cdn_base . '/' . ltrim($r2_key, '/');
+        } else {
+            $url = "https://{$this->get_endpoint_host()}/{$this->bucket}/" . ltrim($r2_key, '/');
+        }
+
+        return array(
+            'success'     => true,
+            'url'         => $url,
+            'etag'        => $final_etag,
+            'parts_count' => count($parts),
+            'code'        => 200,
         );
     }
 
