@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.12
+Stable tag: 2.0.13
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.13 =
+* Architectural De-monolithization: Decomposed monolithic `class-admin.php` by extracting 12 dedicated partial view templates into `includes/admin/views/` (reducing `class-admin.php` by ~1,740 lines from 4,802 down to 3,061 lines).
+* Lean MVC View Loader: Introduced `render_view()` partial renderer with scoped variable extraction, isolating HTML presentation from core controller and AJAX action dispatchers.
+* Legacy Option Dual-Write Cleanup: Modern `astropress_*` options are now strictly primary canonical keys. Deprecated `r2g_*` keys are only mirrored conditionally if unmigrated, eliminating database bloat on fresh and cleaned installations.
+* Resilient View Fallbacks: All view templates now read canonical `astropress_*` settings first with automatic graceful fallback to legacy keys.
 
 = 2.0.12 =
 * Cloudflare Cache-Tag (Surrogate-Key) Purging: Added enterprise-grade Cache-Tag invalidation (`purge_by_tags`) to purge related articles and archives in a single API call, with automatic post tag generation (`post-{ID}`, `type-{type}`, `term-{id}`) and AJAX purging console.
