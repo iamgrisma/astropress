@@ -1436,10 +1436,18 @@ class AstroPress_Cache {
             $domains = array();
             foreach ($body['result'] as $d) {
                 if (!empty($d['domain'])) {
+                    $status_val = 'active';
+                    if (isset($d['status'])) {
+                        if (is_array($d['status'])) {
+                            $status_val = $d['status']['ssl'] ?? ($d['status']['ownership'] ?? 'active');
+                        } elseif (is_string($d['status'])) {
+                            $status_val = $d['status'];
+                        }
+                    }
                     $domains[] = array(
                         'domain'  => $d['domain'],
                         'enabled' => !empty($d['enabled']),
-                        'status'  => $d['status']['ssl'] ?? ($d['status']['ownership'] ?? 'active'),
+                        'status'  => $status_val,
                     );
                 }
             }

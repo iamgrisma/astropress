@@ -481,6 +481,10 @@ class AstroPress_Admin {
 
         // Single post purge
         if (isset($_GET['action']) && ($_GET['action'] === 'astropress_purge_single' || $_GET['action'] === 'topnepali_purge_single') && isset($_GET['post_id'])) {
+            $nonce = sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'] ?? ''));
+            if (!wp_verify_nonce($nonce, 'astropress_purge_single_nonce') && !wp_verify_nonce($nonce, 'topnepali_purge_single_nonce')) {
+                wp_die(esc_html__('Invalid or missing security token (nonce).', 'astropress'), 403);
+            }
             $post_id = intval($_GET['post_id']);
             if (!current_user_can('edit_post', $post_id)) {
                 wp_die(esc_html__('Unauthorized.', 'astropress'), 403);
@@ -500,6 +504,10 @@ class AstroPress_Admin {
 
         // Global edge cache purge
         if (isset($_GET['action']) && ($_GET['action'] === 'astropress_purge_all' || $_GET['action'] === 'topnepali_purge_all')) {
+            $nonce = sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'] ?? ''));
+            if (!wp_verify_nonce($nonce, 'astropress_purge_all_nonce') && !wp_verify_nonce($nonce, 'topnepali_purge_all_nonce')) {
+                wp_die(esc_html__('Invalid or missing security token (nonce).', 'astropress'), 403);
+            }
             if (!current_user_can('manage_options')) {
                 wp_die(esc_html__('Unauthorized.', 'astropress'), 403);
             }

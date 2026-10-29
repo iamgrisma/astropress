@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.16
+Stable tag: 2.0.17
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.17 =
+* Red Team CSRF Defense: Enforced dual-token verification (`astropress_purge_single_nonce` / `topnepali_purge_single_nonce` and `astropress_purge_all_nonce` / `topnepali_purge_all_nonce`) on admin bar quick purge actions.
+* Type-Safe Cloudflare Domain Parsing: Hardened custom domain status parser in `get_r2_custom_domains()` against array/string API payload variance.
+* SSRF Guard & Host Isolation Verification: Certified `is_safe_external_url()` against DNS rebinding, internal RFC 1918 / RFC 3927 addresses, and loopback targeting.
+* Edge Cache Security Verification: Validated unauthenticated user enumeration protection, REST cache isolation, and timing-safe `hash_equals` ticket verification.
 
 = 2.0.16 =
 * Single-Source R2 Bucket Selection: Removed redundant manual text typing input alongside dropdown. Bucket selection is now driven directly by discovered buckets dropdown or inline '+ Create Bucket' drawer.
