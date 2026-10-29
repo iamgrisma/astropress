@@ -212,11 +212,16 @@ if (!defined('ABSPATH')) {
                         <div class="wizard-field">
                             <label for="onboard_r2_bucket"><strong><?php esc_html_e('R2 Bucket Name', 'astropress'); ?></strong></label>
                             <div class="wizard-input-row">
-                                <input type="text" id="onboard_r2_bucket" name="onboard_r2_bucket" value="<?php echo esc_attr($bucket); ?>" class="regular-text" placeholder="e.g. topnepali" />
-                                <select id="onboard_r2_bucket_select" class="regular-text" style="<?php echo !empty($cached_buckets) ? '' : 'display:none;'; ?>">
-                                    <option value=""><?php esc_html_e('-- Discovered Buckets --', 'astropress'); ?></option>
+                                <select id="onboard_r2_bucket" name="onboard_r2_bucket" class="regular-text">
+                                    <?php if (!empty($bucket)): ?>
+                                        <option value="<?php echo esc_attr($bucket); ?>" selected><?php echo esc_html($bucket); ?> (Current)</option>
+                                    <?php else: ?>
+                                        <option value=""><?php esc_html_e('-- Select Discovered Bucket --', 'astropress'); ?></option>
+                                    <?php endif; ?>
                                     <?php foreach ($cached_buckets as $cb): ?>
-                                        <option value="<?php echo esc_attr($cb); ?>" <?php selected($bucket, $cb); ?>><?php echo esc_html($cb); ?></option>
+                                        <?php if ($cb !== $bucket): ?>
+                                            <option value="<?php echo esc_attr($cb); ?>"><?php echo esc_html($cb); ?></option>
+                                        <?php endif; ?>
                                     <?php endforeach; ?>
                                 </select>
                                 <button type="button" class="button button-secondary" id="onboard-fetch-buckets">
@@ -226,16 +231,17 @@ if (!defined('ABSPATH')) {
                                     <span class="dashicons dashicons-plus-alt2"></span> <?php esc_html_e('+ Create Bucket', 'astropress'); ?>
                                 </button>
                             </div>
+                            <div id="onboard-r2-status" style="margin-top:6px; font-size:12px;"></div>
 
                             <!-- Inline Create Bucket Box -->
-                            <div id="onboard-create-bucket-wrap" class="wizard-subpanel-inner" style="display:none;">
+                            <div id="onboard-create-bucket-wrap" class="wizard-subpanel-inner" style="display:none; margin-top:10px;">
                                 <label for="onboard_new_bucket_name"><strong><?php esc_html_e('New Bucket Name:', 'astropress'); ?></strong></label>
                                 <div class="wizard-input-row">
                                     <input type="text" id="onboard_new_bucket_name" placeholder="lowercase letters, numbers, hyphens" class="regular-text" />
                                     <button type="button" id="onboard-btn-confirm-create-bucket" class="button button-primary button-small"><?php esc_html_e('Create & Select', 'astropress'); ?></button>
                                     <button type="button" id="onboard-btn-cancel-create-bucket" class="button button-secondary button-small"><?php esc_html_e('Cancel', 'astropress'); ?></button>
                                 </div>
-                                <div id="onboard-create-bucket-status"></div>
+                                <div id="onboard-create-bucket-status" style="margin-top:6px;"></div>
                             </div>
                         </div>
 
@@ -243,13 +249,17 @@ if (!defined('ABSPATH')) {
                             <label for="onboard_r2_custom_domain"><strong><?php esc_html_e('Public CDN Domain', 'astropress'); ?></strong></label>
                             <div class="wizard-input-row">
                                 <input type="text" id="onboard_r2_custom_domain" name="onboard_r2_custom_domain" value="<?php echo esc_attr($custom_domain); ?>" class="regular-text" placeholder="media.example.com" />
-                                <button type="button" class="button button-secondary" id="onboard-audit-cdn-btn">
-                                    <span class="dashicons dashicons-admin-tools"></span> <?php esc_html_e('Audit CDN & Rules', 'astropress'); ?>
+                                <button type="button" class="button button-secondary" id="onboard-detect-cdn-btn">
+                                    <span class="dashicons dashicons-search"></span> <?php esc_html_e('Auto-Detect Attached', 'astropress'); ?>
                                 </button>
-                                <button type="button" class="button button-secondary" id="onboard-deploy-cache-rule-btn">
-                                    <span class="dashicons dashicons-cloud"></span> <?php esc_html_e('Deploy Cache Rule', 'astropress'); ?>
+                                <button type="button" class="button button-primary" id="onboard-attach-cname-btn">
+                                    <span class="dashicons dashicons-admin-links"></span> <?php esc_html_e('Attach & Setup CNAME', 'astropress'); ?>
+                                </button>
+                                <button type="button" class="button button-secondary" id="onboard-audit-cdn-btn">
+                                    <span class="dashicons dashicons-admin-tools"></span> <?php esc_html_e('Audit Rules', 'astropress'); ?>
                                 </button>
                             </div>
+                            <div id="onboard-cdn-domain-status" style="margin-top:8px;"></div>
                             <p class="field-help">
                                 <?php printf(
                                     esc_html__('Custom CDN subdomain hooked to your R2 bucket. Must be a subdomain of %s (e.g. media.%s).', 'astropress'),
@@ -257,8 +267,8 @@ if (!defined('ABSPATH')) {
                                     esc_html($allowed_roots[0] ?? 'example.com')
                                 ); ?>
                             </p>
-                            <div id="onboard-cdn-audit-box" style="display:none;"></div>
-                            <div id="onboard-cache-rule-status"></div>
+                            <div id="onboard-cdn-audit-box" style="display:none; margin-top:10px;"></div>
+                            <div id="onboard-cache-rule-status" style="margin-top:8px;"></div>
                         </div>
                     </div>
                 </section>

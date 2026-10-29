@@ -1400,6 +1400,67 @@ class AstroPress_Cache {
     }
 
     /**
+     * Get active custom domains attached to an R2 bucket
+     *
+     * @param string $bucket_name
+     * @param string $account_id
+     * @param string $token
+     * @return array [ 'success' => bool, 'domains' => array, 'primary' => string, 'message' => string ]
+     */
+    public function get_r2_custom_domains($bucket_name, $account_id = '', $token = '') {
+        $bucket_name = sanitize_text_field($bucket_name ?: (get_option('astropress_r2_bucket') ?: get_option('r2g_bucket', '')));
+        $account_id  = sanitize_text_field($account_id ?: (get_option('astropress_r2_account_id') ?: (get_option('astropress_cf_account_id') ?: get_option('r2g_account_id', ''))));
+        $token       = $token ?: $this->core->get_cf_api_token();
+
+        if (empty($bucket_name) || empty($account_id) || empty($token)) {
+            return array('success' => false, 'domains' => array(), 'primary' => '', 'message' => esc_html__('Missing bucket name, account ID, or API token.', 'astropress'));
+        }
+
+        $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
+        $response = wp_remote_get($endpoint, array(
+            'timeout' => 10,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+        ));
+
+        if (is_wp_error($response)) {
+            return array('success' => false, 'domains' => array(), 'primary' => '', 'message' => $response->get_error_message());
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($code === 200 && !empty($body['success']) && !empty($body['result'])) {
+            $domains = array();
+            foreach ($body['result'] as $d) {
+                if (!empty($d['domain'])) {
+                    $domains[] = array(
+                        'domain'  => $d['domain'],
+                        'enabled' => !empty($d['enabled']),
+                        'status'  => $d['status']['ssl'] ?? ($d['status']['ownership'] ?? 'active'),
+                    );
+                }
+            }
+            $primary = !empty($domains[0]['domain']) ? $domains[0]['domain'] : '';
+            return array(
+                'success' => true,
+                'domains' => $domains,
+                'primary' => $primary,
+                'message' => !empty($primary) ? sprintf(esc_html__('Found custom domain: %s', 'astropress'), $primary) : esc_html__('No custom domains found for this bucket.', 'astropress'),
+            );
+        }
+
+        return array(
+            'success' => false,
+            'domains' => array(),
+            'primary' => '',
+            'message' => !empty($body['errors'][0]['message']) ? $body['errors'][0]['message'] : sprintf(esc_html__('No custom domains attached (HTTP %d)', 'astropress'), $code),
+        );
+    }
+
+    /**
      * Attach a Custom Domain to Cloudflare R2 Bucket
      *
      * @param string $bucket_name

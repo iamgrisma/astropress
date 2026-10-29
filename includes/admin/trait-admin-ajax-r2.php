@@ -80,7 +80,8 @@ trait AstroPress_Admin_Ajax_R2 {
 
         if (is_wp_error($response)) {
             wp_send_json_error(array(
-                'message'    => 'Connection Failed: ' . $response->get_error_message(),
+                'message'    => sprintf(esc_html__('Connection Failed: %s', 'astropress'), $response->get_error_message()),
+                'guidance'   => esc_html__('WordPress could not reach your Astro frontend. Verify that your frontend URL is online, has valid SSL, and is not blocking your WordPress server IP address.', 'astropress'),
                 'code'       => 0,
                 'latency_ms' => $latency,
             ));
@@ -93,17 +94,30 @@ trait AstroPress_Admin_Ajax_R2 {
         if ($code === 200) {
             update_option(AstroPress::OPTION_CONNECTED, '1');
             wp_send_json_success(array(
-                'message'    => 'Handshake verified. Key matches Cloudflare Pages/Workers REVALIDATE_SECRET (HTTP 200 OK).',
+                'message'    => esc_html__('Handshake verified. Key matches Cloudflare Pages/Workers REVALIDATE_SECRET (HTTP 200 OK).', 'astropress'),
                 'code'       => 200,
                 'latency_ms' => $latency,
             ));
         } else {
-            $err_msg = !empty($decoded['error']) ? $decoded['error'] : 'HTTP Error ' . $code;
+            $err_msg = !empty($decoded['error']) ? $decoded['error'] : ('HTTP Error ' . $code);
+            $guidance = '';
+
             if ($code === 401) {
-                $err_msg = 'Authentication Failed (HTTP 401): Stored secret key does not match Cloudflare environment.';
+                $err_msg  = esc_html__('Authentication Failed (HTTP 401 Unauthorized): Secret token mismatch.', 'astropress');
+                $guidance = esc_html__('Your Astro frontend rejected the request. To fix this: 1) Go to Cloudflare Dashboard > Workers & Pages > Your Project > Settings > Environment Variables. 2) Check the value of REVALIDATE_SECRET. 3) Enter that exact secret in the Astro Webhook Secret field.', 'astropress');
+            } elseif ($code === 404) {
+                $err_msg  = esc_html__('Endpoint Not Found (HTTP 404): /api/revalidate does not exist on your Astro site.', 'astropress');
+                $guidance = esc_html__('Ensure your Astro project contains "src/pages/api/revalidate.ts" and that your site is deployed. You can copy the code snippet directly from the Astro Snippets tab.', 'astropress');
+            } elseif ($code >= 500) {
+                $err_msg  = sprintf(esc_html__('Astro Server Error (HTTP %d): The revalidation worker threw an exception.', 'astropress'), $code);
+                $guidance = esc_html__('Check your Cloudflare Pages / Workers real-time logs for exception stack traces.', 'astropress');
+            } else {
+                $guidance = esc_html__('Verify that your Astro site is reachable and that your Cloudflare DNS is properly configured.', 'astropress');
             }
+
             wp_send_json_error(array(
                 'message'    => $err_msg,
+                'guidance'   => $guidance,
                 'code'       => $code,
                 'latency_ms' => $latency,
             ));
@@ -600,6 +614,37 @@ trait AstroPress_Admin_Ajax_R2 {
 
         $result = $this->core->cache->attach_r2_custom_domain($bucket_name, $custom_domain, $zone_id, $zone_name, $account_id, $token);
         if (!empty($result['success'])) {
+            wp_send_json_success($result);
+        } else {
+            wp_send_json_error($result);
+        }
+    }
+
+    /**
+     * AJAX: Auto-detect active custom domain attached to R2 bucket
+     */
+    public function ajax_detect_r2_custom_domain() {
+        $this->verify_admin_ajax();
+
+        $bucket_name = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
+        $account_id  = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
+        $token       = trim(sanitize_text_field($_POST['token'] ?? ''));
+
+        if (empty($token) || strpos($token, '••••') !== false) {
+            $token = $this->core->get_cf_api_token();
+        }
+
+        if (empty($bucket_name)) {
+            wp_send_json_error(array('message' => esc_html__('Bucket name is required to detect custom domain.', 'astropress')));
+        }
+
+        $result = $this->core->cache->get_r2_custom_domains($bucket_name, $account_id, $token);
+        if (!empty($result['success']) && !empty($result['primary'])) {
+            // Update stored custom domain
+            update_option('astropress_r2_custom_domain', $result['primary']);
+            if (get_option('r2g_custom_domain', null) !== null) {
+                update_option('r2g_custom_domain', $result['primary']);
+            }
             wp_send_json_success($result);
         } else {
             wp_send_json_error($result);

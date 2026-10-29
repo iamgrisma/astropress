@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.15
+Stable tag: 2.0.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,14 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.16 =
+* Single-Source R2 Bucket Selection: Removed redundant manual text typing input alongside dropdown. Bucket selection is now driven directly by discovered buckets dropdown or inline '+ Create Bucket' drawer.
+* R2 Custom Domain Auto-Detection: Automatically queries Cloudflare API (`/r2/buckets/:name/domains/custom`) when selecting a bucket to discover existing attached custom domains.
+* 1-Click CNAME & Custom Domain Setup: Added direct 'Attach & Setup CNAME' button to link CDN subdomain and configure proxied Cloudflare DNS CNAME record in 1 click.
+* Clean R2 Tab Separation: Streamlined R2 tab into an active pipeline summary card and operational policies (storage delivery, retention rules, automation policies), eliminating duplicate credential forms.
+* Rich Actionable Error Guidance: Enhanced revalidation handshake and connection testers to provide clear, actionable troubleshooting steps on 401, 404, or network failures.
+* Legacy Plugin Worker Decommissioned: Detached and removed obsolete `headless-plugin.ts` endpoint and middleware bypass rules.
 
 = 2.0.15 =
 * Two-Tier Navigation Architecture: Replaced flat 11-tab row with a responsive two-tier category system (Dashboard & Setup, Cloudflare & Storage, Edge Cache & Warmer, Optimizer & SEO) with live category counts and smooth state preservation.

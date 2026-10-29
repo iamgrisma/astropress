@@ -83,6 +83,7 @@ class AstroPress_Admin {
             add_action('wp_ajax_astropress_sync_pages_env', array($this, 'ajax_sync_pages_env'));
             add_action('wp_ajax_astropress_audit_cdn_domain', array($this, 'ajax_audit_cdn_domain'));
             add_action('wp_ajax_astropress_attach_r2_custom_domain', array($this, 'ajax_attach_r2_custom_domain'));
+            add_action('wp_ajax_astropress_detect_r2_custom_domain', array($this, 'ajax_detect_r2_custom_domain'));
 
             // AJAX Handlers for Cloudflare Ruleset Engine & Danger Zone Reset
             add_action('wp_ajax_astropress_get_cache_rules', array($this, 'ajax_get_cf_cache_rules'));
