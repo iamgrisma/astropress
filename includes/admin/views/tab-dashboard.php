@@ -38,11 +38,11 @@ if (!defined('ABSPATH')) {
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Cloudflare R2 Bucket', 'astropress'); ?></strong></td>
-                        <td><code><?php echo esc_html(get_option('astropress_r2_bucket', get_option('r2g_bucket', 'None'))); ?></code></td>
+                        <td><code><?php echo esc_html(AstroPress_Admin::get_r2_option('bucket') ?: esc_html__('None', 'astropress')); ?></code></td>
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Custom CDN Host', 'astropress'); ?></strong></td>
-                        <td><code><?php echo esc_html(get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', 'Origin Uploads'))); ?></code></td>
+                        <td><code><?php echo esc_html(AstroPress_Admin::get_r2_option('custom_domain') ?: esc_html__('Origin Uploads', 'astropress')); ?></code></td>
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Image Engine', 'astropress'); ?></strong></td>
@@ -111,7 +111,7 @@ if (!defined('ABSPATH')) {
         <?php
         $cf_token      = $this->core->get_cf_api_token();
         $zone_id       = $this->core->get_cf_zone_id();
-        $r2_bucket     = get_option('r2g_bucket', '');
+        $r2_bucket     = AstroPress_Admin::get_r2_option('bucket', '');
         $is_configured = (!empty($cf_token) && !empty($frontend_url));
         ?>
         <div class="astropress-card" style="margin-top:20px;">

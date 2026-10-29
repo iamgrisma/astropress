@@ -1186,7 +1186,7 @@ class AstroPress_Cache {
      */
     public function sync_pages_env($project_name, $env_vars, $account_id = '', $token = '') {
         $project_name = sanitize_text_field($project_name);
-        $account_id   = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
+        $account_id   = sanitize_text_field($account_id ?: (get_option('astropress_r2_account_id') ?: (get_option('astropress_cf_account_id') ?: get_option('r2g_account_id', ''))));
         $token        = $token ?: $this->core->get_cf_api_token();
 
         if (empty($project_name) || empty($account_id) || empty($token)) {
@@ -1271,8 +1271,8 @@ class AstroPress_Cache {
         $parsed = wp_parse_url($custom_domain);
         $host   = !empty($parsed['host']) ? $parsed['host'] : trim($custom_domain, '/');
         $zone_id = sanitize_text_field($zone_id ?: $this->core->get_cf_zone_id());
-        $account_id = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
-        $bucket_name = sanitize_text_field($bucket_name ?: get_option('r2g_bucket', ''));
+        $account_id = sanitize_text_field($account_id ?: (get_option('astropress_r2_account_id') ?: (get_option('astropress_cf_account_id') ?: get_option('r2g_account_id', ''))));
+        $bucket_name = sanitize_text_field($bucket_name ?: (get_option('astropress_r2_bucket') ?: get_option('r2g_bucket', '')));
         $token   = $token ?: $this->core->get_cf_api_token();
 
         if (empty($host) || empty($zone_id) || empty($token)) {
@@ -1413,9 +1413,9 @@ class AstroPress_Cache {
     public function attach_r2_custom_domain($bucket_name, $custom_domain, $zone_id, $zone_name = '', $account_id = '', $token = '') {
         $parsed = wp_parse_url($custom_domain);
         $host   = !empty($parsed['host']) ? $parsed['host'] : trim($custom_domain, '/');
-        $bucket_name = sanitize_text_field($bucket_name ?: get_option('r2g_bucket', ''));
+        $bucket_name = sanitize_text_field($bucket_name ?: (get_option('astropress_r2_bucket') ?: get_option('r2g_bucket', '')));
         $zone_id     = sanitize_text_field($zone_id ?: $this->core->get_cf_zone_id());
-        $account_id  = sanitize_text_field($account_id ?: get_option('r2g_account_id', ''));
+        $account_id  = sanitize_text_field($account_id ?: (get_option('astropress_r2_account_id') ?: (get_option('astropress_cf_account_id') ?: get_option('r2g_account_id', ''))));
         $token       = $token ?: $this->core->get_cf_api_token();
 
         if (empty($host) || empty($bucket_name) || empty($zone_id) || empty($account_id) || empty($token)) {

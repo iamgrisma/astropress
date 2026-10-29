@@ -12,9 +12,9 @@ if (!defined('ABSPATH')) {
         $checks        = $this->get_preflight_checks();
         $cf_token      = $this->core->get_cf_api_token();
         $cf_zone_id    = $this->core->get_cf_zone_id();
-        $account_id    = get_option('astropress_r2_account_id', get_option('r2g_account_id', ''));
-        $bucket        = get_option('astropress_r2_bucket', get_option('r2g_bucket', ''));
-        $custom_domain = get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', ''));
+        $account_id    = AstroPress_Admin::get_r2_option('account_id', '');
+        $bucket        = AstroPress_Admin::get_r2_option('bucket', '');
+        $custom_domain = AstroPress_Admin::get_r2_option('custom_domain', '');
         $media_mode    = get_option(AstroPress::OPTION_MEDIA_MODE, 'wp');
         $allowed_roots = $this->get_allowed_domain_roots();
         $allowed_roots_str = !empty($allowed_roots) ? implode(', ', $allowed_roots) : 'your site domain';
@@ -148,27 +148,45 @@ if (!defined('ABSPATH')) {
                     </div>
                 </section>
 
-                <!-- STEP 2: Headless Astro Frontend URL -->
+                <!-- STEP 2: Headless Astro Frontend URL & Secret Handshake -->
                 <section class="wizard-section">
                     <header class="section-header">
                         <span class="step-badge">2</span>
                         <div>
-                            <h3><?php esc_html_e('Headless Astro Frontend URL', 'astropress'); ?></h3>
-                            <p><?php esc_html_e('The public URL where your Astro website is hosted (e.g., https://example.com). Auto-derived from your root domain.', 'astropress'); ?></p>
+                            <h3><?php esc_html_e('Headless Astro Frontend & Webhook Secret', 'astropress'); ?></h3>
+                            <p><?php esc_html_e('The public URL where your Astro website is hosted, and optional shared revalidation secret.', 'astropress'); ?></p>
                         </div>
                     </header>
 
-                    <div class="wizard-input-row">
-                        <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" required />
-                        <button type="button" class="button button-secondary" id="onboard-detect-frontend-btn">
-                            <span class="dashicons dashicons-search"></span> <?php esc_html_e('Ping & Verify Reachability', 'astropress'); ?>
-                        </button>
+                    <div class="wizard-field">
+                        <label for="onboard_frontend_url"><strong><?php esc_html_e('Astro Frontend URL:', 'astropress'); ?></strong></label>
+                        <div class="wizard-input-row">
+                            <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" required />
+                            <button type="button" class="button button-secondary" id="onboard-detect-frontend-btn">
+                                <span class="dashicons dashicons-search"></span> <?php esc_html_e('Ping Frontend', 'astropress'); ?>
+                            </button>
+                        </div>
+                        <div id="onboard-frontend-collision-warning" style="display:none;" class="wizard-alert-warning">
+                            <strong><span class="dashicons dashicons-warning"></span> <?php esc_html_e('URL Collision Error:', 'astropress'); ?></strong>
+                            <?php esc_html_e('Frontend URL cannot match your WordPress backend installation. WordPress should be on a subdomain (e.g. wp.example.com) and Astro on your canonical root domain (https://example.com).', 'astropress'); ?>
+                        </div>
+                        <div id="onboard-frontend-detect-badge" style="display:none;"></div>
                     </div>
-                    <div id="onboard-frontend-collision-warning" style="display:none;" class="wizard-alert-warning">
-                        <strong><span class="dashicons dashicons-warning"></span> <?php esc_html_e('URL Collision Error:', 'astropress'); ?></strong>
-                        <?php esc_html_e('Frontend URL cannot match your WordPress backend installation. WordPress should be on a subdomain (e.g. wp.example.com) and Astro on your canonical root domain (https://example.com).', 'astropress'); ?>
+
+                    <div class="wizard-field" style="margin-top:16px;">
+                        <label for="onboard_secret"><strong><?php esc_html_e('Astro Webhook Revalidate Secret (Optional):', 'astropress'); ?></strong></label>
+                        <div class="wizard-input-row">
+                            <input type="password" id="onboard_secret" name="onboard_revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" />
+                            <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
+                                <span class="dashicons dashicons-admin-network"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
+                            </button>
+                            <span id="onboard-secret-badge" class="astropress-badge" style="padding:4px 10px; font-size:12px;">
+                                <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Default Auto-Secured', 'astropress'); ?>
+                            </span>
+                        </div>
+                        <p class="field-help"><?php esc_html_e('Optional: AstroPress automatically authenticates using internal crypto tokens. If your Cloudflare Pages/Workers environment defines REVALIDATE_SECRET, enter it here and click Test Handshake.', 'astropress'); ?></p>
+                        <div id="onboard-handshake-status" style="margin-top:8px;"></div>
                     </div>
-                    <div id="onboard-frontend-detect-badge" style="display:none;"></div>
                 </section>
 
                 <!-- STEP 3: Media Storage Mode -->
@@ -195,7 +213,7 @@ if (!defined('ABSPATH')) {
                             <label for="onboard_r2_bucket"><strong><?php esc_html_e('R2 Bucket Name', 'astropress'); ?></strong></label>
                             <div class="wizard-input-row">
                                 <input type="text" id="onboard_r2_bucket" name="onboard_r2_bucket" value="<?php echo esc_attr($bucket); ?>" class="regular-text" placeholder="e.g. topnepali" />
-                                <select id="onboard_r2_bucket_select" name="onboard_r2_bucket_select" class="regular-text" style="<?php echo !empty($cached_buckets) ? '' : 'display:none;'; ?>">
+                                <select id="onboard_r2_bucket_select" class="regular-text" style="<?php echo !empty($cached_buckets) ? '' : 'display:none;'; ?>">
                                     <option value=""><?php esc_html_e('-- Discovered Buckets --', 'astropress'); ?></option>
                                     <?php foreach ($cached_buckets as $cb): ?>
                                         <option value="<?php echo esc_attr($cb); ?>" <?php selected($bucket, $cb); ?>><?php echo esc_html($cb); ?></option>

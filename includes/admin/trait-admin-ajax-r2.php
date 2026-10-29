@@ -118,14 +118,15 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_test_connection() {
         $this->verify_admin_ajax();
 
-        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: get_option('r2g_account_id', '');
-        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: get_option('r2g_access_key', '');
+        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: self::get_r2_option('account_id', '');
+        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: self::get_r2_option('access_key', '');
         $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
 
         if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
             $secret_key = $posted_secret;
         } else {
-            $secret_key = AstroPress_Encryption::decrypt(get_option('r2g_secret_key', ''));
+            $secret_enc = self::get_r2_option('secret_key', '');
+            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
         }
 
         $cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
@@ -133,8 +134,8 @@ trait AstroPress_Admin_Ajax_R2 {
             $cf_token = $this->core->get_cf_api_token();
         }
 
-        $bucket        = sanitize_text_field($_POST['bucket'] ?? '') ?: get_option('r2g_bucket', '');
-        $custom_domain = sanitize_text_field($_POST['custom_domain'] ?? '') ?: get_option('r2g_custom_domain', '');
+        $bucket        = sanitize_text_field($_POST['bucket'] ?? '') ?: self::get_r2_option('bucket', '');
+        $custom_domain = sanitize_text_field($_POST['custom_domain'] ?? '') ?: self::get_r2_option('custom_domain', '');
 
         $has_s3 = !empty($access_key) && !empty($secret_key);
         $has_cf = !empty($cf_token);
@@ -167,14 +168,15 @@ trait AstroPress_Admin_Ajax_R2 {
             wp_send_json_error(array('message' => esc_html__('Please enter a valid bucket name (lowercase letters, numbers, hyphens).', 'astropress')));
         }
 
-        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: get_option('r2g_account_id', '');
-        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: get_option('r2g_access_key', '');
+        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: self::get_r2_option('account_id', '');
+        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: self::get_r2_option('access_key', '');
         $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
 
         if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
             $secret_key = $posted_secret;
         } else {
-            $secret_key = AstroPress_Encryption::decrypt(get_option('r2g_secret_key', ''));
+            $secret_enc = self::get_r2_option('secret_key', '');
+            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
         }
 
         $cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
@@ -208,7 +210,7 @@ trait AstroPress_Admin_Ajax_R2 {
             $token = $this->core->get_cf_api_token();
         }
         $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
-        $cdn_url = trim(sanitize_text_field($_POST['cdn_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
+        $cdn_url = trim(sanitize_text_field($_POST['cdn_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
 
         if (empty($token) || empty($zone_id)) {
             wp_send_json_error(array('message' => esc_html__('Cloudflare API Token and Zone ID must be configured first in Headless Bridge settings or Quick Connect.', 'astropress')));
@@ -389,14 +391,15 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_fetch_buckets() {
         $this->verify_admin_ajax();
 
-        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: get_option('r2g_account_id', '');
-        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: get_option('r2g_access_key', '');
+        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: self::get_r2_option('account_id', '');
+        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: self::get_r2_option('access_key', '');
         $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
 
         if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
             $secret_key = $posted_secret;
         } else {
-            $secret_key = AstroPress_Encryption::decrypt(get_option('r2g_secret_key', ''));
+            $secret_enc = self::get_r2_option('secret_key', '');
+            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
         }
 
         $cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
@@ -528,10 +531,10 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_audit_cdn_domain() {
         $this->verify_admin_ajax();
 
-        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
+        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
         $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
-        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: get_option('r2g_account_id', '');
-        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: get_option('r2g_bucket', '');
+        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
+        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
         $token         = trim(sanitize_text_field($_POST['token'] ?? ''));
 
         if (empty($token) || strpos($token, '••••') !== false) {
@@ -568,11 +571,11 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_attach_r2_custom_domain() {
         $this->verify_admin_ajax();
 
-        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: get_option('r2g_custom_domain', '');
-        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: get_option('r2g_bucket', '');
+        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
+        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
         $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
         $zone_name     = trim(sanitize_text_field($_POST['zone_name'] ?? ''));
-        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: get_option('r2g_account_id', '');
+        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
         $token         = trim(sanitize_text_field($_POST['token'] ?? ''));
 
         if (empty($token) || strpos($token, '••••') !== false) {

@@ -9,12 +9,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-        $account_id    = get_option('astropress_r2_account_id', get_option('r2g_account_id', ''));
-        $access_key    = get_option('astropress_r2_access_key', get_option('r2g_access_key', ''));
-        $secret_key    = AstroPress_Encryption::decrypt(get_option('astropress_r2_secret_key', get_option('r2g_secret_key', '')));
-        $bucket        = get_option('astropress_r2_bucket', get_option('r2g_bucket', ''));
-        $custom_domain = get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', ''));
-        $storage_mode  = get_option('astropress_storage_mode', get_option('r2g_storage_mode', 'both'));
+        $account_id    = AstroPress_Admin::get_r2_option('account_id', '');
+        $access_key    = AstroPress_Admin::get_r2_option('access_key', '');
+        $raw_secret    = AstroPress_Admin::get_r2_option('secret_key', '');
+        $secret_key    = !empty($raw_secret) ? AstroPress_Encryption::decrypt($raw_secret) : '';
+        $bucket        = AstroPress_Admin::get_r2_option('bucket', '');
+        $custom_domain = AstroPress_Admin::get_r2_option('custom_domain', '');
+        $storage_mode  = AstroPress_Admin::get_r2_option('storage_mode', 'both');
         $cf_token      = $this->core->get_cf_api_token();
         $allowed_roots = $this->get_allowed_domain_roots();
         $allowed_roots_str = !empty($allowed_roots) ? implode(', ', $allowed_roots) : 'your site domain';
@@ -59,7 +60,7 @@ if (!defined('ABSPATH')) {
                         <td>
                             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:650px;">
                                 <input type="text" id="r2_bucket" name="r2_bucket" value="<?php echo esc_attr($bucket); ?>" class="regular-text" style="flex:1; min-width:200px;" placeholder="e.g. topnepali" />
-                                <select id="r2_bucket_select" name="r2_bucket_select" class="regular-text" style="display:none; flex:1; min-width:200px;">
+                                <select id="r2_bucket_select" class="regular-text" style="display:none; flex:1; min-width:200px;">
                                     <option value=""><?php esc_html_e('-- Choose Discovered Bucket --', 'astropress'); ?></option>
                                     <?php if (!empty($bucket)): ?>
                                         <option value="<?php echo esc_attr($bucket); ?>" selected><?php echo esc_html($bucket); ?></option>
@@ -152,9 +153,9 @@ if (!defined('ABSPATH')) {
                         <th scope="row"><?php esc_html_e('Automation Policies', 'astropress'); ?></th>
                         <td>
                             <fieldset>
-                                <label><input type="checkbox" name="r2_auto_upload" value="1" <?php checked(get_option('r2g_auto_upload', 1)); ?> /> <?php esc_html_e('Automatically upload new media attachments to R2 on upload', 'astropress'); ?></label><br />
-                                <label><input type="checkbox" name="r2_rewrite_urls" value="1" <?php checked(get_option('r2g_rewrite_urls', 1)); ?> /> <?php esc_html_e('Rewrite attachment URLs and srcset to use the R2 Custom CDN Domain', 'astropress'); ?></label><br />
-                                <label><input type="checkbox" name="r2_delete_from_r2" value="1" <?php checked(get_option('r2g_delete_from_r2', 1)); ?> /> <?php esc_html_e('Delete file from R2 when deleted permanently from WordPress Media Library', 'astropress'); ?></label>
+                                <label><input type="checkbox" name="r2_auto_upload" value="1" <?php checked((bool) AstroPress_Admin::get_r2_option('auto_upload', 1)); ?> /> <?php esc_html_e('Automatically upload new media attachments to R2 on upload', 'astropress'); ?></label><br />
+                                <label><input type="checkbox" name="r2_rewrite_urls" value="1" <?php checked((bool) AstroPress_Admin::get_r2_option('rewrite_urls', 1)); ?> /> <?php esc_html_e('Rewrite attachment URLs and srcset to use the R2 Custom CDN Domain', 'astropress'); ?></label><br />
+                                <label><input type="checkbox" name="r2_delete_from_r2" value="1" <?php checked((bool) AstroPress_Admin::get_r2_option('delete_from_r2', 1)); ?> /> <?php esc_html_e('Delete file from R2 when deleted permanently from WordPress Media Library', 'astropress'); ?></label>
                             </fieldset>
                         </td>
                     </tr>

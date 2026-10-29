@@ -82,7 +82,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $this->verify_admin_ajax();
 
         $project_name = trim(sanitize_text_field($_POST['project_name'] ?? ''));
-        $account_id   = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: get_option('r2g_account_id', '');
+        $account_id   = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
         $token        = trim(sanitize_text_field($_POST['token'] ?? ''));
 
         if (empty($token) || strpos($token, '••••') !== false) {
@@ -407,9 +407,9 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 update_option(AstroPress::OPTION_CF_ZONE_ID, $matched_zone['id']);
                 update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
             }
-            if (!empty($buckets) && empty(get_option('r2g_bucket', ''))) {
-                update_option('r2g_bucket', $buckets[0]);
+            if (!empty($buckets) && empty(self::get_r2_option('bucket', ''))) {
                 update_option('astropress_r2_bucket', $buckets[0]);
+                update_option('r2g_bucket', $buckets[0]);
             }
             $applied = true;
         }

@@ -72,8 +72,17 @@ if (!defined('ABSPATH')) {
                     <tr>
                         <th scope="row"><label for="astropress_revalidate_secret"><?php esc_html_e('Astro Webhook Secret', 'astropress'); ?></label></th>
                         <td>
-                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" />
+                            <div class="astropress-inline-form" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" />
+                                <button type="button" class="button button-secondary" id="astropress-test-key-btn">
+                                    <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Secret Handshake', 'astropress'); ?>
+                                </button>
+                                <span id="astropress-key-badge" style="display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
+                                    <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Default Auto-Secured', 'astropress'); ?>
+                                </span>
+                            </div>
                             <p class="description"><?php esc_html_e('Optional: Zero-config default token is automatically active. Only enter a custom value if you explicitly defined REVALIDATE_SECRET in your Cloudflare Pages dashboard.', 'astropress'); ?></p>
+                            <div id="astropress-key-test-feedback" style="margin-top:10px;"></div>
                         </td>
                     </tr>
                 </table>

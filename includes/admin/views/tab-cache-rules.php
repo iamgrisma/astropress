@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
         $zone_id       = $this->core->get_cf_zone_id();
         $frontend      = $this->core->get_frontend_url();
         $frontend_host = wp_parse_url($frontend, PHP_URL_HOST) ?: $frontend;
-        $cdn_domain    = get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', ''));
+        $cdn_domain    = AstroPress_Admin::get_r2_option('custom_domain', '');
         ?>
         <div class="astropress-card" style="max-width:960px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">

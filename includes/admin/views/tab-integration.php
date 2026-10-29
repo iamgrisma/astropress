@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 }
 
         $secret = $this->core->get_secret();
-        $custom_domain = get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', 'media.example.com'));
+        $custom_domain = AstroPress_Admin::get_r2_option('custom_domain', 'media.example.com');
         ?>
         <div class="astropress-card" style="max-width:900px;">
             <h2><?php esc_html_e('Astro Project Integration Snippets', 'astropress'); ?></h2>

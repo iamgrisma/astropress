@@ -410,14 +410,21 @@
       $btn.prop('disabled', true).addClass('updating-message');
       $keyFeedback.html('<div style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-update spin"></span> Verifying secret key handshake with Cloudflare Pages/Workers...</div>').slideDown(150);
 
+      const rawSecret = $('#astropress_revalidate_secret').val()?.trim() || '';
+      const secretVal = (rawSecret && !rawSecret.startsWith('•••')) ? rawSecret : '';
+      const postData = {
+        action: 'astropress_test_key',
+        nonce: nonce,
+      };
+      if (secretVal) {
+        postData.secret = secretVal;
+      }
+
       $.ajax({
         url: ajaxurl,
         type: 'POST',
         dataType: 'json',
-        data: {
-          action: 'astropress_test_key',
-          nonce: nonce,
-        },
+        data: postData,
         success: function(res) {
           if (res.success) {
             $keyStatusBadge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
@@ -2527,7 +2534,8 @@
       const $badge = $('#onboard-secret-badge');
       const $icon = $('#onboard-secret-status-icon');
       const frontendUrl = $('#onboard_frontend_url').val()?.trim();
-      const newSecret = $('#onboard_secret').val()?.trim() || '';
+      const rawSecret = ($('#onboard_secret').length ? $('#onboard_secret').val() : $('#onboard_revalidate_secret').val())?.trim() || '';
+      const newSecret = (rawSecret && !rawSecret.startsWith('•••')) ? rawSecret : '';
 
       if (!frontendUrl) {
         $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please enter the Frontend URL above first.</div>').slideDown(150);

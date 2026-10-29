@@ -108,7 +108,7 @@ trait AstroPress_Admin_Settings {
                 'message' => esc_html__('Automation & Cache rules saved successfully.', 'astropress'),
             ), 30);
 
-            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=bridge'));
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=settings'));
             exit;
         }
 
@@ -138,12 +138,9 @@ trait AstroPress_Admin_Settings {
             $access_key    = sanitize_text_field(wp_unslash($_POST['r2_access_key'] ?? ($_POST['r2g_access_key'] ?? '')));
             $posted_secret = trim(wp_unslash($_POST['r2_secret_key'] ?? ($_POST['r2g_secret_key'] ?? '')));
             
-            $bucket = sanitize_text_field(wp_unslash($_POST['r2_bucket'] ?? ($_POST['r2g_bucket'] ?? '')));
-            if (!empty($_POST['r2_bucket_select'])) {
-                $bucket = sanitize_text_field(wp_unslash($_POST['r2_bucket_select']));
-            } elseif (!empty($_POST['r2g_bucket_select'])) {
-                $bucket = sanitize_text_field(wp_unslash($_POST['r2g_bucket_select']));
-            }
+            $bucket_input  = sanitize_text_field(wp_unslash($_POST['r2_bucket'] ?? ''));
+            $bucket_select = sanitize_text_field(wp_unslash($_POST['r2_bucket_select'] ?? ''));
+            $bucket        = $bucket_input !== '' ? $bucket_input : ($bucket_select !== '' ? $bucket_select : '');
             
             $custom_domain = sanitize_text_field(wp_unslash($_POST['r2_custom_domain'] ?? ($_POST['r2g_custom_domain'] ?? '')));
 
@@ -167,9 +164,8 @@ trait AstroPress_Admin_Settings {
                 $encrypted_secret = AstroPress_Encryption::encrypt($posted_secret);
                 update_option('astropress_r2_secret_key', $encrypted_secret);
             }
-            if (!empty($bucket)) {
-                update_option('astropress_r2_bucket', $bucket);
-            }
+            update_option('astropress_r2_bucket', $bucket);
+            update_option('r2g_bucket', $bucket);
             update_option('astropress_r2_custom_domain', $clean_domain);
             update_option('astropress_r2_auto_upload', $auto_upload);
             update_option('astropress_r2_rewrite_urls', $rewrite_urls);
@@ -317,26 +313,26 @@ trait AstroPress_Admin_Settings {
                 }
             }
 
+            // Revalidation Secret (if specified in onboarding)
+            $raw_secret = trim(wp_unslash($_POST['onboard_revalidate_secret'] ?? ''));
+            if (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {
+                update_option(AstroPress::OPTION_SECRET, AstroPress_Encryption::encrypt($raw_secret));
+            }
+
             // R2 Object Storage
             if ($media_mode === 'r2') {
-                $bucket = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket'] ?? ''));
-                if (!empty($_POST['onboard_r2_bucket_select'])) {
-                    $bucket = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket_select']));
-                }
+                $bucket_input  = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket'] ?? ''));
+                $bucket_select = sanitize_text_field(wp_unslash($_POST['onboard_r2_bucket_select'] ?? ''));
+                $bucket        = $bucket_input !== '' ? $bucket_input : ($bucket_select !== '' ? $bucket_select : '');
                 $custom_domain = sanitize_text_field(wp_unslash($_POST['onboard_r2_custom_domain'] ?? ''));
 
-                if (!empty($bucket)) {
-                    update_option('astropress_r2_bucket', $bucket);
-                    if (get_option('r2g_bucket', null) !== null) {
-                        update_option('r2g_bucket', $bucket);
-                    }
-                }
+                update_option('astropress_r2_bucket', $bucket);
+                update_option('r2g_bucket', $bucket);
+
                 if (!empty($custom_domain)) {
                     $clean_domain = preg_replace('#^https?://#', '', rtrim($custom_domain, '/'));
                     update_option('astropress_r2_custom_domain', $clean_domain);
-                    if (get_option('r2g_custom_domain', null) !== null) {
-                        update_option('r2g_custom_domain', $clean_domain);
-                    }
+                    update_option('r2g_custom_domain', $clean_domain);
                 }
 
                 update_option('astropress_r2_auto_upload', 1);

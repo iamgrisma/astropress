@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.14
+Stable tag: 2.0.15
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.15 =
+* Two-Tier Navigation Architecture: Replaced flat 11-tab row with a responsive two-tier category system (Dashboard & Setup, Cloudflare & Storage, Edge Cache & Warmer, Optimizer & SEO) with live category counts and smooth state preservation.
+* Permanent Setup Wizard Navigation: Setup Wizard is now a permanent sub-tab under Dashboard & Setup, allowing re-running and updating credentials anytime without being locked out post-completion.
+* Unified R2 Option Resolution: Introduced `AstroPress_Admin::get_r2_option()` helper across views, traits, and cache engines. Fixed bucket override conflict by removing conflicting `select` form names.
+* Real-time Secret Handshake Verification: Added interactive "Test Secret Handshake" button with real-time status badges and latency metrics in both General Settings and Setup Wizard.
+* Form Redirect Normalization: Corrected automation settings form redirect to stay anchored on `tab=settings` instead of jumping to `tab=bridge`.
 
 = 2.0.14 =
 * Trait-Based Admin Decomposition: Modularized `class-admin.php` from 3,061 lines down to 765 lines by extracting 4 single-responsibility traits (`trait-admin-ajax-cloudflare.php`, `trait-admin-ajax-r2.php`, `trait-admin-settings.php`, `trait-admin-preflight.php`).
