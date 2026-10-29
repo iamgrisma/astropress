@@ -335,6 +335,15 @@ class AstroPress_Media_Handler {
             $max_width = (int) get_option('astropress_max_width', get_option('r2g_max_width', 1920));
         }
 
+        $max_height = 0;
+        if (isset($_POST['astropress_max_height']) && $_POST['astropress_max_height'] !== '') {
+            $max_height = (int)$_POST['astropress_max_height'];
+        } elseif (isset($_POST['r2g_max_height']) && $_POST['r2g_max_height'] !== '') {
+            $max_height = (int)$_POST['r2g_max_height'];
+        } else {
+            $max_height = (int) get_option('astropress_max_height', get_option('r2g_max_height', 0));
+        }
+
         $engine = '';
         if (!empty($_POST['astropress_engine'])) {
             $engine = sanitize_text_field(wp_unslash($_POST['astropress_engine']));
@@ -349,7 +358,7 @@ class AstroPress_Media_Handler {
         } elseif (!empty($_COOKIE['r2g_engine'])) {
             $engine = sanitize_text_field(wp_unslash($_COOKIE['r2g_engine']));
         } else {
-            $engine = get_option('astropress_compress_engine', get_option('r2g_compress_engine', 'resmush'));
+            $engine = get_option('astropress_compress_engine', get_option('r2g_compress_engine', 'smart'));
         }
         $engine = AstroPress_Optimizer::normalize_engine($engine);
 
@@ -357,6 +366,7 @@ class AstroPress_Media_Handler {
             $compress = 0;
             $format = 'original';
             $max_width = 0;
+            $max_height = 0;
         }
 
         $storage_mode = '';
@@ -379,13 +389,23 @@ class AstroPress_Media_Handler {
             $storage_mode = 'both';
         }
 
+        $smart_routing   = (bool) get_option('astropress_smart_routing', get_option('r2g_smart_routing', 1));
+        $backup_original = (bool) get_option('astropress_backup_original', get_option('r2g_backup_original', 0));
+        $strip_exif      = (bool) get_option('astropress_strip_exif', get_option('r2g_strip_exif', 1));
+        $auto_orient     = (bool) get_option('astropress_auto_orient', get_option('r2g_auto_orient', 1));
+
         return array(
-            'format'       => $format,
-            'quality'      => $quality,
-            'compress'     => (bool)$compress,
-            'max_width'    => $max_width,
-            'storage_mode' => $storage_mode,
-            'engine'       => $engine,
+            'format'          => $format,
+            'quality'         => $quality,
+            'compress'        => (bool)$compress,
+            'max_width'       => $max_width,
+            'max_height'      => $max_height,
+            'storage_mode'    => $storage_mode,
+            'engine'          => $engine,
+            'smart_routing'   => $smart_routing,
+            'backup_original' => $backup_original,
+            'strip_exif'      => $strip_exif,
+            'auto_orient'     => $auto_orient,
         );
     }
 
@@ -422,11 +442,16 @@ class AstroPress_Media_Handler {
         $orig_size = (int) filesize($file_path);
 
         $opt_res = AstroPress_Optimizer::optimize_local_file($file_path, array(
-            'format'    => $opts['format'],
-            'quality'   => $opts['quality'],
-            'max_width' => $opts['max_width'],
-            'compress'  => $opts['compress'],
-            'engine'    => $opts['engine'],
+            'format'          => $opts['format'],
+            'quality'         => $opts['quality'],
+            'max_width'       => $opts['max_width'],
+            'max_height'      => $opts['max_height'] ?? 0,
+            'compress'        => $opts['compress'],
+            'engine'          => $opts['engine'],
+            'smart_routing'   => $opts['smart_routing'] ?? true,
+            'backup_original' => $opts['backup_original'] ?? false,
+            'strip_exif'      => $opts['strip_exif'] ?? true,
+            'auto_orient'     => $opts['auto_orient'] ?? true,
         ));
 
         if (empty($opt_res['success']) && $opts['format'] === 'webp' && strtolower(pathinfo($file_path, PATHINFO_EXTENSION)) !== 'webp') {
@@ -486,11 +511,16 @@ class AstroPress_Media_Handler {
         if (!$already_processed) {
             $orig_size = (int) filesize($file_path);
             $opt_res = AstroPress_Optimizer::optimize_local_file($file_path, array(
-                'format'    => $opts['format'],
-                'quality'   => $opts['quality'],
-                'max_width' => $opts['max_width'],
-                'compress'  => $opts['compress'],
-                'engine'    => $opts['engine'],
+                'format'          => $opts['format'],
+                'quality'         => $opts['quality'],
+                'max_width'       => $opts['max_width'],
+                'max_height'      => $opts['max_height'] ?? 0,
+                'compress'        => $opts['compress'],
+                'engine'          => $opts['engine'],
+                'smart_routing'   => $opts['smart_routing'] ?? true,
+                'backup_original' => $opts['backup_original'] ?? false,
+                'strip_exif'      => $opts['strip_exif'] ?? true,
+                'auto_orient'     => $opts['auto_orient'] ?? true,
             ));
 
             if (!empty($opt_res['success']) && !empty($opt_res['file_path'])) {

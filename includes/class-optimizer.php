@@ -42,11 +42,11 @@ class AstroPress_Optimizer {
      */
     public static function normalize_engine($engine) {
         $engine = sanitize_key((string) $engine);
-        if ($engine === 'browser' || $engine === '') {
-            return 'resmush';
+        if ($engine === 'browser' || $engine === '' || $engine === 'smart' || $engine === 'auto') {
+            return 'smart';
         }
-        if (!in_array($engine, array('resmush', 'server', 'none'), true)) {
-            return 'resmush';
+        if (!in_array($engine, array('smart', 'resmush', 'server', 'none'), true)) {
+            return 'smart';
         }
         return $engine;
     }
@@ -57,7 +57,7 @@ class AstroPress_Optimizer {
     public static function get_default_engine() {
         $engine = get_option('astropress_compress_engine', null);
         if ($engine === null) {
-            $engine = get_option('r2g_compress_engine', 'resmush');
+            $engine = get_option('r2g_compress_engine', 'smart');
         }
         return self::normalize_engine($engine);
     }
@@ -81,24 +81,27 @@ class AstroPress_Optimizer {
      * @param string $engine
      * @return array
      */
-    public function compress_image($file_path, $format = 'webp', $quality = 82, $max_width = 1920, $engine = 'resmush') {
+    public function compress_image($file_path, $format = 'webp', $quality = 82, $max_width = 1920, $engine = 'smart', $max_height = 0) {
         $res = self::optimize_local_file($file_path, array(
-            'format'    => $format,
-            'quality'   => $quality,
-            'max_width' => $max_width,
-            'engine'    => $engine,
-            'compress'  => true,
+            'format'     => $format,
+            'quality'    => $quality,
+            'max_width'  => $max_width,
+            'max_height' => $max_height,
+            'engine'     => $engine,
+            'compress'   => true,
         ));
         if (!empty($res['success'])) {
             return array(
                 'success'     => true,
                 'output_path' => $res['file_path'] ?? $file_path,
                 'engine_used' => $res['engine_used'] ?? $engine,
+                'engine_note' => $res['engine_note'] ?? '',
+                'bytes_saved' => $res['bytes_saved'] ?? 0,
             );
         }
         return array(
             'success' => false,
-            'error'   => $res['error'] ?? __('Optimization failed.', 'astropress'),
+            'error'   => $res['error'] ?? ($res['message'] ?? __('Optimization failed.', 'astropress')),
         );
     }
 
@@ -159,12 +162,19 @@ class AstroPress_Optimizer {
         ), $extra);
     }
 
-    private static function describe_engine($engine, $resmush_result, $gd_ran) {
+    private static function describe_engine($engine, $resmush_result, $gd_ran, $auto_routed = false, $orig_size = 0) {
         if ($engine === 'none') {
             return array('engine_used' => 'none', 'engine_note' => __('Raw offload (no processing).', 'astropress'));
         }
-        if ($engine !== 'resmush') {
-            return array('engine_used' => 'server', 'engine_note' => __('Optimized with Server GD/Imagick.', 'astropress'));
+        if ($auto_routed) {
+            $size_str = $orig_size > 0 ? ' (' . size_format($orig_size) . ')' : '';
+            return array(
+                'engine_used' => 'server',
+                'engine_note' => sprintf(__('Smart 5MB Routing: Image%s routed to Server GD/Imagick (bypasses 5MB reSmush limit).', 'astropress'), $size_str),
+            );
+        }
+        if ($engine === 'server') {
+            return array('engine_used' => 'server', 'engine_note' => __('Optimized locally with Server GD/Imagick.', 'astropress'));
         }
         if (is_array($resmush_result) && !empty($resmush_result['success'])) {
             $note = !empty($resmush_result['message']) ? $resmush_result['message'] : __('Optimized via reSmush.it.', 'astropress');
@@ -193,7 +203,7 @@ class AstroPress_Optimizer {
         }
 
         $default_engine = get_option('astropress_compress_engine', null);
-        if ($default_engine === null) $default_engine = get_option('r2g_compress_engine', 'resmush');
+        if ($default_engine === null) $default_engine = get_option('r2g_compress_engine', 'smart');
 
         $engine = self::normalize_engine($options['engine'] ?? $default_engine);
         $format = strtolower($options['format'] ?? get_option('astropress_compress_format', get_option('r2g_compress_format', 'webp')));
@@ -202,10 +212,16 @@ class AstroPress_Optimizer {
         }
         $compress = isset($options['compress']) ? (bool) $options['compress'] : (bool) get_option('astropress_compress_enabled', get_option('r2g_compress_enabled', 1));
         $max_width = (int) ($options['max_width'] ?? get_option('astropress_max_width', get_option('r2g_max_width', 1920)));
+        $max_height = (int) ($options['max_height'] ?? get_option('astropress_max_height', get_option('r2g_max_height', 0)));
+        $smart_routing = isset($options['smart_routing']) ? (bool) $options['smart_routing'] : (bool) get_option('astropress_smart_routing', get_option('r2g_smart_routing', 1));
+        $backup_original = !empty($options['backup_original']) || (bool) get_option('astropress_backup_original', get_option('r2g_backup_original', 0));
+        $auto_orient = isset($options['auto_orient']) ? (bool) $options['auto_orient'] : (bool) get_option('astropress_auto_orient', get_option('r2g_auto_orient', 1));
+
         if ($engine === 'none') {
             $compress = false;
             $format = 'original';
             $max_width = 0;
+            $max_height = 0;
         }
         $quality = max(50, min(100, (int) ($options['quality'] ?? get_option('astropress_compress_quality', get_option('r2g_compress_quality', 82)))));
 
@@ -230,25 +246,50 @@ class AstroPress_Optimizer {
             $needs_format_change = true;
         }
 
-        if (!$needs_format_change && !$compress && $max_width <= 0) {
+        if (!$needs_format_change && !$compress && $max_width <= 0 && $max_height <= 0) {
             $d = self::describe_engine($engine, null, false);
             return array('success' => true, 'file_path' => $file_path, 'mime' => '', 'width' => 0, 'height' => 0, 'bytes_saved' => 0, 'engine_used' => $d['engine_used'], 'engine_note' => $d['engine_note'], 'resmush_result' => null);
         }
 
-        $original_size = filesize($file_path);
+        $original_size = (int) filesize($file_path);
+        $auto_routed_server = false;
+        $should_use_resmush = false;
+
+        // Smart 5MB Routing:
+        // reSmush.it Free API strictly enforces a 5MB payload limit.
+        // Route images < 5MB to external API (zero server CPU) and images >= 5MB to Server GD/Imagick.
+        if ($compress) {
+            if ($engine === 'smart') {
+                if ($original_size < self::RESMUSH_MAX_BYTES) {
+                    $should_use_resmush = true;
+                } else {
+                    $auto_routed_server = true;
+                }
+            } elseif ($engine === 'resmush') {
+                if ($original_size >= self::RESMUSH_MAX_BYTES && $smart_routing) {
+                    $auto_routed_server = true;
+                } else {
+                    $should_use_resmush = true;
+                }
+            }
+        }
+
         $resmush_result = null;
         $resmush_succeeded = false;
 
-        if ($engine === 'resmush' && $compress) {
+        if ($should_use_resmush) {
             $resmush_result = self::resmush_stage($file_path, $quality, $max_width, $needs_format_change);
             $resmush_succeeded = !empty($resmush_result['success']);
         }
 
         clearstatcache(true, $file_path);
         $source_info = @getimagesize($file_path);
-        $resize_required = $max_width > 0 && !empty($source_info[0]) && $source_info[0] > $max_width;
+        $resize_w = $max_width > 0 && !empty($source_info[0]) && $source_info[0] > $max_width;
+        $resize_h = $max_height > 0 && !empty($source_info[1]) && $source_info[1] > $max_height;
+        $resize_required = $resize_w || $resize_h;
+
         if ($resmush_succeeded && !$needs_format_change && !$resize_required) {
-            $d = self::describe_engine($engine, $resmush_result, false);
+            $d = self::describe_engine($engine, $resmush_result, false, $auto_routed_server, $original_size);
             return array(
                 'success'        => true,
                 'file_path'      => $file_path,
@@ -262,26 +303,37 @@ class AstroPress_Optimizer {
             );
         }
 
+        $dirname = $path_info['dirname'];
+        $clean_filename = preg_replace('/-scaled$/i', '', $path_info['filename']);
+
+        // Optional backup of uncompressed original file before transformation
+        if ($backup_original && !empty($file_path) && file_exists($file_path)) {
+            $backup_file = $dirname . '/' . $clean_filename . '.original.' . $current_ext;
+            if (!file_exists($backup_file)) {
+                @copy($file_path, $backup_file);
+            }
+        }
+
         $editor = wp_get_image_editor($file_path);
         if (is_wp_error($editor)) {
             return self::fail($file_path, $editor->get_error_message(), array('resmush_result' => $resmush_result));
         }
 
-        if ($current_ext === 'jpg' && method_exists($editor, 'maybe_exif_rotate')) {
+        if ($auto_orient && $current_ext === 'jpg' && method_exists($editor, 'maybe_exif_rotate')) {
             $editor->maybe_exif_rotate();
         }
 
         $size = $editor->get_size();
-        $resize_required = $max_width > 0 && !empty($size['width']) && $size['width'] > $max_width;
+        $resize_w = $max_width > 0 && !empty($size['width']) && $size['width'] > $max_width;
+        $resize_h = $max_height > 0 && !empty($size['height']) && $size['height'] > $max_height;
+        $resize_required = $resize_w || $resize_h;
+
         if ($compress) {
             $editor->set_quality($quality);
         }
         if ($resize_required) {
-            $editor->resize($max_width, null, false);
+            $editor->resize($max_width > 0 ? $max_width : null, $max_height > 0 ? $max_height : null, false);
         }
-
-        $dirname = $path_info['dirname'];
-        $clean_filename = preg_replace('/-scaled$/i', '', $path_info['filename']);
 
         $target_mime = null;
         $target_ext = null;
@@ -321,7 +373,7 @@ class AstroPress_Optimizer {
 
         $new_size = file_exists($final_path) ? filesize($final_path) : $original_size;
         $final_size = $editor->get_size();
-        $d = self::describe_engine($engine, $resmush_result, true);
+        $d = self::describe_engine($engine, $resmush_result, true, $auto_routed_server, $original_size);
 
         return array(
             'success'        => true,

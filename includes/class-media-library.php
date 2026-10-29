@@ -103,7 +103,8 @@ class AstroPress_Media_Library {
             $opt_info = get_post_meta($post_id, '_r2g_opt_info', true);
         }
 
-        $engine_buttons = '<button type="button" class="button button-small astropress-btn-recompress" data-id="' . esc_attr($post_id) . '" data-engine="resmush" title="' . esc_attr__('Compress via reSmush.it (falls back to Server GD)', 'astropress') . '">' . esc_html__('reSmush', 'astropress') . '</button>'
+        $engine_buttons = '<button type="button" class="button button-small astropress-btn-recompress" data-id="' . esc_attr($post_id) . '" data-engine="smart" title="' . esc_attr__('Smart Dual: reSmush for < 5MB, Server GD for >= 5MB', 'astropress') . '">' . esc_html__('Smart Auto', 'astropress') . '</button>'
+            . '<button type="button" class="button button-small astropress-btn-recompress" data-id="' . esc_attr($post_id) . '" data-engine="resmush" title="' . esc_attr__('Compress via reSmush.it Cloud API', 'astropress') . '">' . esc_html__('reSmush', 'astropress') . '</button>'
             . '<button type="button" class="button button-small astropress-btn-recompress" data-id="' . esc_attr($post_id) . '" data-engine="server" title="' . esc_attr__('Compress using Server PHP GD / Imagick only', 'astropress') . '">' . esc_html__('Server GD', 'astropress') . '</button>';
 
         echo '<div class="astropress-compress-cell" id="astropress-compress-cell-' . esc_attr($post_id) . '">';
@@ -384,6 +385,39 @@ class AstroPress_Media_Library {
             );
         }
 
+        if (wp_attachment_is_image($post->ID)) {
+            $opt_info = get_post_meta($post->ID, '_astropress_opt_info', true);
+            if (empty($opt_info)) {
+                $opt_info = get_post_meta($post->ID, '_r2g_opt_info', true);
+            }
+            $is_opt = (bool) get_post_meta($post->ID, '_astropress_optimized', true) || !empty($opt_info);
+            $opt_html = '';
+            if ($is_opt && !empty($opt_info['orig_bytes']) && !empty($opt_info['final_bytes'])) {
+                $orig = (int) $opt_info['orig_bytes'];
+                $final = (int) $opt_info['final_bytes'];
+                $saved = max(0, $orig - $final);
+                $pct = $orig > 0 ? round(($saved / $orig) * 100) : 0;
+                $eng = ($opt_info['engine_used'] ?? '') === 'resmush' ? 'reSmush.it Cloud' : 'Server GD/Imagick';
+                $opt_html .= '<div style="font-size:12px; margin-bottom:6px; color:#059669; font-weight:600;">'
+                    . sprintf(esc_html__('Optimized via %s (-%d%% / %s saved)', 'astropress'), esc_html($eng), $pct, size_format($saved))
+                    . '</div>';
+            } else {
+                $opt_html .= '<div style="font-size:12px; margin-bottom:6px; color:#64748b;">'
+                    . esc_html__('Standard original image', 'astropress')
+                    . '</div>';
+            }
+            $opt_html .= '<div style="display:flex; gap:6px; flex-wrap:wrap;">'
+                . '<button type="button" class="button button-small astropress-btn-recompress" data-id="' . esc_attr($post->ID) . '" data-engine="smart">' . esc_html__('Smart Re-compress', 'astropress') . '</button>'
+                . '<button type="button" class="button button-small astropress-btn-recompress" data-id="' . esc_attr($post->ID) . '" data-engine="server">' . esc_html__('Server GD', 'astropress') . '</button>'
+                . '</div>';
+
+            $form_fields['astropress_compression'] = array(
+                'label' => esc_html__('Optimization', 'astropress'),
+                'input' => 'html',
+                'html'  => $opt_html,
+            );
+        }
+
         return $form_fields;
     }
 
@@ -392,9 +426,13 @@ class AstroPress_Media_Library {
         if (!empty($nonce) && (
             wp_verify_nonce($nonce, 'astropress_admin_nonce') ||
             wp_verify_nonce($nonce, 'astropress_onboarding_nonce') ||
-            wp_verify_nonce($nonce, 'r2g_admin_nonce')
+            wp_verify_nonce($nonce, 'r2g_admin_nonce') ||
+            wp_verify_nonce($nonce, 'wp_rest')
         )) {
             return $action === 'delete' ? current_user_can('delete_post', $id) : current_user_can('edit_post', $id);
+        }
+        if (current_user_can('edit_post', $id) && check_ajax_referer('astropress_admin_nonce', 'nonce', false)) {
+            return true;
         }
         return false;
     }
@@ -534,11 +572,16 @@ class AstroPress_Media_Library {
 
         $orig_size = (int) filesize($file_path);
         $opts = array(
-            'format'    => $format,
-            'quality'   => $quality,
-            'max_width' => $max_width,
-            'compress'  => true,
-            'engine'    => $engine,
+            'format'          => $format,
+            'quality'         => $quality,
+            'max_width'       => $max_width,
+            'max_height'      => (int) get_option('astropress_max_height', get_option('r2g_max_height', 0)),
+            'compress'        => true,
+            'engine'          => $engine,
+            'smart_routing'   => (bool) get_option('astropress_smart_routing', get_option('r2g_smart_routing', 1)),
+            'backup_original' => (bool) get_option('astropress_backup_original', get_option('r2g_backup_original', 0)),
+            'strip_exif'      => (bool) get_option('astropress_strip_exif', get_option('r2g_strip_exif', 1)),
+            'auto_orient'     => (bool) get_option('astropress_auto_orient', get_option('r2g_auto_orient', 1)),
         );
         $opt_res = AstroPress_Optimizer::optimize_local_file($file_path, $opts);
 
@@ -569,12 +612,19 @@ class AstroPress_Media_Library {
                 ? $opt_res['engine_note']
                 : sprintf(esc_html__('Successfully compressed (%s) and synced to Cloudflare R2!', 'astropress'), strtoupper($format));
 
+            $final_size = file_exists($new_file) ? (int) filesize($new_file) : $orig_size;
+            $saved_bytes = max(0, $orig_size - $final_size);
+            $percent = $orig_size > 0 ? round(($saved_bytes / $orig_size) * 100, 1) : 0;
+
             wp_send_json_success(array(
-                'message'     => $msg,
-                'url'         => $new_url,
-                'format'      => strtoupper($format),
-                'engine_used' => $opt_res['engine_used'] ?? '',
-                'bytes_saved' => $opt_res['bytes_saved'] ?? 0,
+                'message'         => $msg,
+                'url'             => $new_url,
+                'format'          => strtoupper($format),
+                'engine_used'     => $opt_res['engine_used'] ?? '',
+                'bytes_saved'     => $saved_bytes,
+                'percent'         => $percent,
+                'original_size'   => $orig_size,
+                'compressed_size' => $final_size,
             ));
         }
 

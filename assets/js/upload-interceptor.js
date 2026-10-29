@@ -28,9 +28,9 @@
     },
 
     normalizeEngine: function(eng) {
-      eng = (eng || 'resmush').toLowerCase();
-      if (eng === 'browser' || eng === '') eng = 'resmush';
-      if (eng !== 'resmush' && eng !== 'server' && eng !== 'none') eng = 'resmush';
+      eng = (eng || 'smart').toLowerCase();
+      if (eng === 'browser' || eng === '' || eng === 'auto') eng = 'smart';
+      if (eng !== 'smart' && eng !== 'resmush' && eng !== 'server' && eng !== 'none') eng = 'smart';
       return eng;
     },
 
@@ -86,17 +86,19 @@
       this.quality = parseInt(this.config.quality, 10) || 82;
       this.compress = (this.config.compress !== undefined) ? parseInt(this.config.compress, 10) : 1;
       this.maxWidth = Number.isFinite(parseInt(this.config.maxWidth, 10)) ? parseInt(this.config.maxWidth, 10) : 1920;
-      this.engine = this.normalizeEngine(this.config.engine || 'resmush');
+      this.engine = this.normalizeEngine(this.config.engine || 'smart');
       this.storageMode = this.config.storageMode || 'both';
 
       this.syncCookies();
       this.bindNetworkHeaders();
 
-      // In the Media Library, bulk uploads are streamlined and silent without modal interruptions
+      // Gateway A (Media Library) is always automated & non-blocking
+      // Gateway B (Content Editors) follows editorWorkflow: 'both', 'sidebar_only', 'modal_only', 'silent'
       const isMediaScreen = this.isMediaLibrary();
-      const modalEnabled  = (parseInt(this.config.interceptor, 10) === 1) && !isMediaScreen;
+      const workflow = this.config.editorWorkflow || this.config.workflow || 'both';
+      const modalEnabled  = (parseInt(this.config.interceptor, 10) === 1) && !isMediaScreen && (workflow === 'both' || workflow === 'modal_only');
 
-      // Hook Plupload: silent on Media Library, modal-enabled only in editors when configured
+      // Hook Plupload: silent on Media Library & sidebar_only, modal-enabled only when requested
       this.hookPlupload(modalEnabled);
 
       // Hook Gutenberg and standard forms in content editor screens
@@ -339,7 +341,8 @@
                   <label class="r2g-control-label">Processing Engine:</label>
                   <div class="r2g-control-input">
                     <div class="r2g-btn-toggle-group">
-                      <button type="button" class="r2g-engine-btn" data-engine="resmush" title="reSmush.it API with automatic GD/Imagick fallback">reSmush.it (Recommended)</button>
+                      <button type="button" class="r2g-engine-btn" data-engine="smart" title="Smart Dual: reSmush for < 5MB, Server GD for >= 5MB">Smart Auto</button>
+                      <button type="button" class="r2g-engine-btn" data-engine="resmush" title="reSmush.it Cloud API">reSmush.it</button>
                       <button type="button" class="r2g-engine-btn" data-engine="server" title="Fast native server GD/Imagick">Server GD</button>
                       <button type="button" class="r2g-engine-btn" data-engine="none" title="Raw lossless offload without alteration">Lossless</button>
                     </div>

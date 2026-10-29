@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.08
+Stable tag: 2.0.09
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,7 +21,7 @@ It seamlessly combines:
 3. **Gated Setup Wizard Lifecycle**: 3-step setup with pre-filled scoped token creator, auto-derived root domain frontend URL, and media mode selection.
 4. **Cloudflare 1-Click Quick Connect & Auto-Discovery**: Auto-discovers Account ID, matching Zone ID, and R2 Buckets with 24-hour persistent transient caching.
 5. **Pure PHP Cloudflare R2 Offloader**: Lightweight, pure PHP AWS SigV4 implementation with zero heavy AWS SDKs or third-party bloat (< 35KB footprint).
-6. **Dual-Stage Image Optimizer**: Dual-engine image compression (reSmush.it cloud API + local GD/Imagick fallback), on-the-fly WebP and AVIF conversion, responsive srcset rewriting, and EXIF stripping.
+6. **Smart Dual-Stage Image Optimizer & Gateway Routing**: Dual-engine image compression with smart 5MB threshold routing (reSmush.it cloud API for < 5MB with zero server CPU load, and server GD/Imagick for >= 5MB to prevent API rejection), on-the-fly WebP and AVIF conversion, responsive srcset rewriting, EXIF stripping, and Gutenberg block inspector controls (Option B).
 7. **Rank Math & Yoast SEO Bridge**: Complete headless SEO delivery exposing fully-rendered `<head>`, structured JSON-LD schema, estimated reading times, and dynamic redirects via REST API.
 8. **Danger Zone Disconnect & Reset**: 1-click credential wipe and clean reset to fresh installation state.
 9. **Native GitHub Updates & Instant Rollback**: Built-in update pipeline powered by GitHub Releases (`iamgrisma/astropress`).
@@ -35,7 +35,14 @@ It seamlessly combines:
 
 == Changelog ==
 
-= 2.0.05 =
+= 2.0.09 =
+* Smart 5MB Dual Engine Routing: Added intelligent payload thresholding where images under 5MB automatically route to the free reSmush.it Cloud API for zero server CPU load, while images 5MB or larger route to Server GD/Imagick to prevent HTTP 413 and API rejection errors.
+* Option A (Automated Media Library & External Gates): Streamlined uploads across the WordPress Media Library (`upload.php`, `media-new.php`), REST API, XML-RPC, and CLI into a completely non-blocking, silent pipeline with zero queue freezing.
+* Option B (Gutenberg Block Inspector Extension): Added an AstroPress Image Inspector panel for `core/image` blocks in Gutenberg, providing real-time compression metrics (bytes and percentage saved), Cloudflare R2 sync status, format selection, quality slider, and 1-click on-demand re-compression.
+* Comprehensive Image Optimizer Settings: Expanded the Image Optimizer dashboard tab with granular controls for Primary Engine selection, Smart 5MB routing toggle, output formats (WebP, AVIF, JPEG, Keep Original), quick presets (Balanced, High Quality, Aggressive, Lossless), max width/height downscaling, EXIF stripping, auto-orientation, original file backup, and live compression tester.
+* Enhanced Media Modal Details Pane: Embedded interactive re-compression and R2 status badges directly into the WordPress Media Modal attachment details sidebar.
+
+= 2.0.08 =
 * Deep Architectural Debloat: Retired legacy TopNepali Headless class aliases and shims, eliminating over 640 lines of duplicate and dead code across PHP, JS, and CSS.
 * Purged Duplicate Database Writes: Removed unnecessary dual-writes to legacy `topnepali_headless_*` options across all settings forms.
 * Clean Cache Warmer Standardization: Fully migrated Warmer UI IDs, classes, and AJAX hooks to the unified `astropress-*` namespace.

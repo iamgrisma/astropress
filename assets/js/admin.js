@@ -673,7 +673,9 @@
       formData.append('format', $('#compress_format').val() || 'webp');
       formData.append('quality', $('#compress_quality').val() || 82);
       formData.append('max_width', $('#max_width').val() || 1920);
-      formData.append('engine', $('#compress_engine').val() || 'resmush');
+      formData.append('max_height', $('#max_height').val() || 0);
+      formData.append('engine', $('#compress_engine').val() || 'smart');
+      formData.append('smart_routing', $('input[name="smart_routing"]').is(':checked') ? 1 : 0);
 
       $btn.prop('disabled', true).text('Compressing...');
       $result.show().html('<p style="color:#64748b;">Processing image with selected engine and format...</p>');
@@ -697,7 +699,7 @@
                     <tr><td><strong>Original Size:</strong></td><td>${formatBytes(d.original_size)}</td></tr>
                     <tr><td><strong>Compressed Size:</strong></td><td>${formatBytes(d.compressed_size)}</td></tr>
                     <tr><td><strong>Reduction:</strong></td><td><span class="astropress-text-success" style="font-size:14px; font-weight:700;">-${d.percent}%</span> (${formatBytes(d.saved_bytes)} saved)</td></tr>
-                    <tr><td><strong>Engine:</strong></td><td><code>${d.engine_used || 'reSmush'}</code></td></tr>
+                    <tr><td><strong>Engine Used:</strong></td><td><code>${d.engine_used || 'smart'}</code>${d.engine_note ? `<div style="font-size:11px; color:#475569; margin-top:2px;">${d.engine_note}</div>` : ''}</td></tr>
                   </table>
                 </div>
               </div>
@@ -714,6 +716,78 @@
           $btn.prop('disabled', false).text('Test Image Compression');
         }
       });
+    });
+
+    // Quick Presets Selector
+    $(document).on('click', '.astropress-preset-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const quality = $btn.data('quality');
+      const format = $btn.data('format');
+      const width = $btn.data('width');
+
+      if (quality !== undefined) {
+        $('#compress_quality').val(quality);
+        $('#quality_val').text(quality + '%');
+      }
+      if (format !== undefined) {
+        $('#compress_format').val(format);
+      }
+      if (width !== undefined) {
+        $('#max_width').val(width);
+      }
+    });
+
+    // Media Library & Modal Attachment Re-compression
+    $(document).on('click', '.astropress-btn-recompress', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const id = $btn.data('id');
+      const reqEngine = $btn.data('engine') || 'smart';
+      const $cell = $('#astropress-compress-cell-' + id);
+
+      $btn.prop('disabled', true).text('Compressing...');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_recompress_attachment',
+          id: id,
+          engine: reqEngine,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success && res.data) {
+            const d = res.data;
+            if ($cell.length) {
+              const html = `
+                <span class="astropress-badge astropress-badge-both" style="margin-bottom:4px;"><span class="dashicons dashicons-yes" style="font-size:12px; width:12px; height:12px; line-height:12px;"></span> Optimal (${d.format || 'WEBP'})</span>
+                <div style="font-size:11px; color:#059669; font-weight:600;" title="${d.message || ''}">
+                  ${d.engine_used === 'resmush' ? 'reSmush.it' : 'Server GD'} -${d.percent}%
+                </div>
+              `;
+              $cell.html(html);
+            } else {
+              $btn.parent().html('<span style="color:#059669; font-size:12px; font-weight:600;"><span class="dashicons dashicons-yes"></span> Optimized (-' + d.percent + '%)</span>');
+            }
+          } else {
+            alert((res.data && res.data.message) ? res.data.message : 'Re-compression failed.');
+            $btn.prop('disabled', false).text('Retry');
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Network request error: ' + err);
+          $btn.prop('disabled', false).text('Retry');
+        }
+      });
+    });
+
+    $(document).on('click', '.astropress-link-toggle-recompress', function(e) {
+      e.preventDefault();
+      const id = $(this).data('id');
+      $('#astropress-compress-cell-' + id).find('.astropress-recompress-opts').toggle();
     });
 
     // ========================================================
