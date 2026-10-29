@@ -473,6 +473,50 @@ class AstroPress_Cache {
     }
 
     /**
+     * Get list of supported post types for cache invalidation
+     *
+     * @return array
+     */
+    public function get_supported_post_types() {
+        $defaults = array('post', 'page');
+        $public_custom = get_post_types(array('public' => true, '_builtin' => false), 'names');
+        $types = array_unique(array_merge($defaults, array_values((array) $public_custom)));
+        return (array) apply_filters('astropress_supported_post_types', $types);
+    }
+
+    /**
+     * Resolve public relative URL slug for any post or custom post type
+     *
+     * @param WP_Post|int $post
+     * @return string
+     */
+    public function get_post_relative_slug($post) {
+        if (is_numeric($post)) {
+            $post = get_post($post);
+        }
+        if (!$post) return '';
+
+        if ($post->post_type === 'page') {
+            return get_page_uri($post->ID);
+        }
+
+        $permalink = get_permalink($post);
+        if (!empty($permalink) && !is_wp_error($permalink)) {
+            $path = wp_parse_url($permalink, PHP_URL_PATH);
+            if (!empty($path)) {
+                return trim($path, '/');
+            }
+        }
+
+        $post_type_obj = get_post_type_object($post->post_type);
+        $slug = $post->post_name;
+        if ($post_type_obj && !empty($post_type_obj->rewrite['slug']) && $post->post_type !== 'post') {
+            $slug = trim($post_type_obj->rewrite['slug'], '/') . '/' . $slug;
+        }
+        return $slug;
+    }
+
+    /**
      * Hook: On Post / Page Save & Publish (Granular Purging)
      */
     public function on_save_post($post_id, $post, $update) {
@@ -484,30 +528,32 @@ class AstroPress_Cache {
         delete_post_meta($post_id, '_headless_rm_head');
 
         if ($post->post_status !== 'publish') return;
-        if (!in_array($post->post_type, array('post', 'page'))) return;
+        $supported_types = $this->get_supported_post_types();
+        if (!in_array($post->post_type, $supported_types, true)) return;
 
         if (!$this->core->should_purge_on_save()) return;
 
         $extra_urls = array('/'); // Root homepage always reflects latest posts stream
-        if ($post->post_type === 'post') {
-            // Category archives
-            $categories = get_the_category($post_id);
-            if (!empty($categories) && !is_wp_error($categories)) {
-                foreach ($categories as $cat) {
-                    $extra_urls[] = $this->get_term_path($cat);
-                    if ($cat->parent) {
-                        $parent = get_category($cat->parent);
-                        if ($parent && !is_wp_error($parent)) {
-                            $extra_urls[] = $this->get_term_path($parent);
+        if ($post->post_type !== 'page') {
+            $taxonomies = get_object_taxonomies($post->post_type, 'names');
+            foreach ($taxonomies as $tax_name) {
+                $terms = get_the_terms($post_id, $tax_name);
+                if (!empty($terms) && !is_wp_error($terms)) {
+                    foreach ($terms as $term) {
+                        $term_path = $this->get_term_path($term);
+                        if (!empty($term_path)) {
+                            $extra_urls[] = $term_path;
+                        }
+                        if (!empty($term->parent)) {
+                            $parent = get_term($term->parent, $tax_name);
+                            if ($parent && !is_wp_error($parent)) {
+                                $parent_path = $this->get_term_path($parent);
+                                if (!empty($parent_path)) {
+                                    $extra_urls[] = $parent_path;
+                                }
+                            }
                         }
                     }
-                }
-            }
-            // Tag archives
-            $tags = get_the_tags($post_id);
-            if (!empty($tags) && !is_wp_error($tags)) {
-                foreach ($tags as $tag) {
-                    $extra_urls[] = '/tag/' . $tag->slug;
                 }
             }
         }
@@ -524,7 +570,7 @@ class AstroPress_Cache {
             $extra_urls[] = '/blog';
         }
 
-        $slug = ($post->post_type === 'page') ? get_page_uri($post_id) : $post->post_name;
+        $slug = $this->get_post_relative_slug($post);
         $this->queue_invalidation($slug, $post->post_type, $update ? 'update' : 'publish', array_unique(array_filter($extra_urls)));
     }
 
@@ -534,13 +580,14 @@ class AstroPress_Cache {
     public function on_post_status_transition($new_status, $old_status, $post) {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
         if (wp_is_post_revision($post->ID)) return;
-        if (!in_array($post->post_type, array('post', 'page'), true)) return;
+        $supported_types = $this->get_supported_post_types();
+        if (!in_array($post->post_type, $supported_types, true)) return;
 
         // If an existing published post transitions to draft, private, or trash, purge its edge cache
         if ($old_status === 'publish' && $new_status !== 'publish') {
             delete_post_meta($post->ID, '_astropress_rm_head');
             delete_post_meta($post->ID, '_headless_rm_head');
-            $slug = ($post->post_type === 'page') ? get_page_uri($post->ID) : $post->post_name;
+            $slug = $this->get_post_relative_slug($post);
             $extra_urls = array('/', '/blogs', '/blog', '/feed', '/rss', '/rss.xml', '/sitemap.xml');
             $this->queue_invalidation($slug, $post->post_type, 'unpublish', $extra_urls);
         }
@@ -555,20 +602,22 @@ class AstroPress_Cache {
 
         $post = get_post($post_id);
         if (!$post) return;
+        $supported_types = $this->get_supported_post_types();
+        if (!in_array($post->post_type, $supported_types, true)) return;
         if (!$this->core->should_purge_on_save()) return;
 
         $extra_urls = array('/');
-        if ($post->post_type === 'post') {
-            $categories = get_the_category($post_id);
-            if (!empty($categories) && !is_wp_error($categories)) {
-                foreach ($categories as $cat) {
-                    $extra_urls[] = $this->get_term_path($cat);
-                }
-            }
-            $tags = get_the_tags($post_id);
-            if (!empty($tags) && !is_wp_error($tags)) {
-                foreach ($tags as $tag) {
-                    $extra_urls[] = '/tag/' . $tag->slug;
+        if ($post->post_type !== 'page') {
+            $taxonomies = get_object_taxonomies($post->post_type, 'names');
+            foreach ($taxonomies as $tax_name) {
+                $terms = get_the_terms($post_id, $tax_name);
+                if (!empty($terms) && !is_wp_error($terms)) {
+                    foreach ($terms as $term) {
+                        $term_path = $this->get_term_path($term);
+                        if (!empty($term_path)) {
+                            $extra_urls[] = $term_path;
+                        }
+                    }
                 }
             }
         }
@@ -582,7 +631,7 @@ class AstroPress_Cache {
             $extra_urls[] = '/blog';
         }
 
-        $slug = ($post->post_type === 'page') ? get_page_uri($post_id) : $post->post_name;
+        $slug = $this->get_post_relative_slug($post);
         $this->queue_invalidation($slug, $post->post_type, 'delete', array_unique(array_filter($extra_urls)));
     }
 
@@ -1333,7 +1382,7 @@ class AstroPress_Cache {
         $root_res = wp_remote_get($url, array(
             'timeout'            => 10,
             'redirection'        => 3,
-            'sslverify'          => false,
+            'sslverify'          => (bool) apply_filters('astropress_sslverify', true),
             'reject_unsafe_urls' => true,
             'headers'            => array(
                 'User-Agent' => 'AstroPress-Bridge-Detector/1.2.5 (WordPress/' . get_bloginfo('version') . ')',

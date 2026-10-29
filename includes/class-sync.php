@@ -301,7 +301,11 @@ class AstroPress_Sync {
             if (!empty($row->r2_key) && !empty($cdn_base)) {
                 $check_url = $cdn_base . '/' . ltrim($row->r2_key, '/');
                 if (AstroPress_Security::is_safe_external_url($check_url)) {
-                    $head_res = wp_remote_head($check_url, array('timeout' => 4, 'sslverify' => false, 'reject_unsafe_urls' => true));
+                    $head_res = wp_remote_head($check_url, array(
+                        'timeout'            => 4,
+                        'sslverify'          => (bool) apply_filters('astropress_sslverify', true),
+                        'reject_unsafe_urls' => true,
+                    ));
                     $code = wp_remote_retrieve_response_code($head_res);
                     if ($code === 200 || $code === 304) {
                         $verified_ok++;

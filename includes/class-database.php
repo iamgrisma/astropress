@@ -489,75 +489,98 @@ class AstroPress_Database {
         }
         $wpmcs_synced_ids = array_unique(array_map('intval', $wpmcs_synced_ids));
 
-        $attachments = $wpdb->get_results(
-            "SELECT ID, post_mime_type FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_status != 'trash'"
-        );
-
         $imported = 0;
         $found_wpmcs = 0;
         $found_offloaded = 0;
+        $batch_size = 500;
+        $offset = 0;
 
-        foreach ($attachments as $att) {
-            $id = (int) $att->ID;
-            $file_path = get_attached_file($id);
-            $has_local_file = !empty($file_path) && file_exists($file_path);
-            $local_size = $has_local_file ? filesize($file_path) : 0;
-            $is_dummy_placeholder = $has_local_file && ($local_size > 0 && $local_size < 300);
-
-            $is_wpmcs = in_array($id, $wpmcs_synced_ids);
-            $has_legacy_meta = (
-                get_post_meta($id, '_mcs_synced', true) ||
-                get_post_meta($id, '_media_cloud_sync_synced', true) ||
-                get_post_meta($id, '_cloud_url', true) ||
-                get_post_meta($id, '_amazonS3_info', true) ||
-                get_post_meta($id, '_r2g_synced', true) ||
-                get_post_meta($id, '_astropress_synced', true)
+        while (true) {
+            $attachments = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT ID, post_mime_type FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_status != 'trash' ORDER BY ID ASC LIMIT %d OFFSET %d",
+                    $batch_size,
+                    $offset
+                )
             );
 
-            $is_synced = $is_wpmcs || $has_legacy_meta || (!$has_local_file && !empty($file_path)) || $is_dummy_placeholder;
+            if (empty($attachments)) {
+                break;
+            }
 
-            if ($is_synced) {
-                if ($is_wpmcs) $found_wpmcs++;
-                if (!$has_local_file || $is_dummy_placeholder) $found_offloaded++;
+            // Prime the post meta cache for this entire batch in 1 single database query
+            $batch_ids = wp_list_pluck($attachments, 'ID');
+            if (function_exists('update_meta_cache')) {
+                update_meta_cache('post', $batch_ids);
+            }
 
-                $main_r2_key = class_exists('AstroPress_Media_Handler')
-                    ? AstroPress_Media_Handler::get_r2_key_from_path($file_path)
-                    : 'wp-content/uploads/' . basename($file_path ?: '');
+            foreach ($attachments as $att) {
+                $id = (int) $att->ID;
+                $file_path = get_attached_file($id);
+                $has_local_file = !empty($file_path) && file_exists($file_path);
+                $local_size = $has_local_file ? filesize($file_path) : 0;
+                $is_dummy_placeholder = $has_local_file && ($local_size > 0 && $local_size < 300);
 
-                $metadata = wp_get_attachment_metadata($id);
-                $thumb_count = !empty($metadata['sizes']) ? count($metadata['sizes']) : 0;
-                $file_size = ($has_local_file && !$is_dummy_placeholder) ? $local_size : ($metadata['filesize'] ?? 0);
-                $real_has_local = $has_local_file && !$is_dummy_placeholder;
+                $is_wpmcs = in_array($id, $wpmcs_synced_ids);
+                $has_legacy_meta = (
+                    get_post_meta($id, '_mcs_synced', true) ||
+                    get_post_meta($id, '_media_cloud_sync_synced', true) ||
+                    get_post_meta($id, '_cloud_url', true) ||
+                    get_post_meta($id, '_amazonS3_info', true) ||
+                    get_post_meta($id, '_r2g_synced', true) ||
+                    get_post_meta($id, '_astropress_synced', true)
+                );
 
-                self::upsert($id, array(
-                    'r2_key'        => $main_r2_key,
-                    'file_name'     => basename($file_path ?: ''),
-                    'mime_type'     => $att->post_mime_type,
-                    'file_size'     => $file_size,
-                    'original_size' => $file_size,
-                    'status'        => 'synced',
-                    'has_local'     => $real_has_local ? 1 : 0,
-                    'thumb_count'   => $thumb_count,
-                    'synced_at'     => current_time('mysql'),
-                ));
+                $is_synced = $is_wpmcs || $has_legacy_meta || (!$has_local_file && !empty($file_path)) || $is_dummy_placeholder;
 
-                update_post_meta($id, '_astropress_synced', 1);
-                update_post_meta($id, '_astropress_key', $main_r2_key);
-                update_post_meta($id, '_r2g_synced', 1);
-                update_post_meta($id, '_r2g_key', $main_r2_key);
-                if (!$real_has_local) {
-                    update_post_meta($id, '_astropress_local_deleted', 1);
-                    update_post_meta($id, '_r2g_local_deleted', 1);
+                if ($is_synced) {
+                    if ($is_wpmcs) $found_wpmcs++;
+                    if (!$has_local_file || $is_dummy_placeholder) $found_offloaded++;
+
+                    $main_r2_key = class_exists('AstroPress_Media_Handler')
+                        ? AstroPress_Media_Handler::get_r2_key_from_path($file_path)
+                        : 'wp-content/uploads/' . basename($file_path ?: '');
+
+                    $metadata = wp_get_attachment_metadata($id);
+                    $thumb_count = !empty($metadata['sizes']) ? count($metadata['sizes']) : 0;
+                    $file_size = ($has_local_file && !$is_dummy_placeholder) ? $local_size : ($metadata['filesize'] ?? 0);
+                    $real_has_local = $has_local_file && !$is_dummy_placeholder;
+
+                    self::upsert($id, array(
+                        'r2_key'        => $main_r2_key,
+                        'file_name'     => basename($file_path ?: ''),
+                        'mime_type'     => $att->post_mime_type,
+                        'file_size'     => $file_size,
+                        'original_size' => $file_size,
+                        'status'        => 'synced',
+                        'has_local'     => $real_has_local ? 1 : 0,
+                        'thumb_count'   => $thumb_count,
+                        'synced_at'     => current_time('mysql'),
+                    ));
+
+                    update_post_meta($id, '_astropress_synced', 1);
+                    update_post_meta($id, '_astropress_key', $main_r2_key);
+                    update_post_meta($id, '_r2g_synced', 1);
+                    update_post_meta($id, '_r2g_key', $main_r2_key);
+                    if (!$real_has_local) {
+                        update_post_meta($id, '_astropress_local_deleted', 1);
+                        update_post_meta($id, '_r2g_local_deleted', 1);
+                    }
+
+                    $imported++;
+                } else {
+                    self::upsert($id, array(
+                        'file_name' => basename($file_path ?: ''),
+                        'mime_type' => $att->post_mime_type,
+                        'status'    => 'pending',
+                        'has_local' => 1,
+                    ));
                 }
+            }
 
-                $imported++;
-            } else {
-                self::upsert($id, array(
-                    'file_name' => basename($file_path ?: ''),
-                    'mime_type' => $att->post_mime_type,
-                    'status'    => 'pending',
-                    'has_local' => 1,
-                ));
+            $offset += count($attachments);
+            if (count($attachments) < $batch_size) {
+                break;
             }
         }
 

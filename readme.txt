@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.10
+Stable tag: 2.0.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.11 =
+* Strict SSL Certificate Verification: Enforced default HTTPS TLS certificate validation (`sslverify => true`) across all remote HTTP requests (warmer sitemap crawling, frontend detection, and CDN health auditing) with an extensible `astropress_sslverify` filter.
+* Autoload Option Protection: Fixed background warmer job state options to explicitly disable WordPress autoload (`autoload = false`), preventing large URL queue arrays from degrading memory on every request.
+* Bounded SQL Queries with Pagination: Added limits and cursor chunking to post, page, and taxonomy queries in the cache warmer and database migration tools, preventing PHP out-of-memory errors on large sites.
+* Custom Post Type (CPT) & Taxonomy Invalidation: Added extensible `astropress_supported_post_types` filter and dynamic taxonomy resolution, enabling automatic edge cache purging across all custom post types and custom taxonomy terms.
+* Complete Uninstall Cleanup: Updated uninstall lifecycle to purge all active `astropress_*` configuration keys, unschedule active background cron workers, and drop modern postmeta keys upon plugin deletion.
 
 = 2.0.10 =
 * Fixed Temp File Extension Detection for reSmush.it API: Resolved an issue where upload preview and test tools passed extensionless PHP temp files (`/tmp/phpXXXXXX`), causing reSmush.it to reject uploads with "files cannot be sent to reSmush.it (it accepts JPG, PNG, GIF, BMP, TIFF only)".

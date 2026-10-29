@@ -3191,11 +3191,11 @@ class AstroPress_Admin {
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Cloudflare R2 Bucket', 'astropress'); ?></strong></td>
-                        <td><code><?php echo esc_html(get_option('r2g_bucket', 'None')); ?></code></td>
+                        <td><code><?php echo esc_html(get_option('astropress_r2_bucket', get_option('r2g_bucket', 'None'))); ?></code></td>
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Custom CDN Host', 'astropress'); ?></strong></td>
-                        <td><code><?php echo esc_html(get_option('r2g_custom_domain', 'Origin Uploads')); ?></code></td>
+                        <td><code><?php echo esc_html(get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', 'Origin Uploads'))); ?></code></td>
                     </tr>
                     <tr>
                         <td><strong><?php esc_html_e('Image Engine', 'astropress'); ?></strong></td>

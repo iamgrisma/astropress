@@ -79,7 +79,7 @@ class AstroPress_Warmer {
 
         $res = wp_remote_get($clean_url, array(
             'timeout'             => 10,
-            'sslverify'           => false,
+            'sslverify'           => (bool) apply_filters('astropress_sslverify', true),
             'reject_unsafe_urls'  => true,
             'headers'             => array(
                 'User-Agent' => 'AstroPress-Sitemap-Crawler/1.0',
@@ -93,7 +93,7 @@ class AstroPress_Warmer {
                 $fe_url = rtrim($this->core->get_frontend_url(), '/') . '/' . ltrim(parse_url($clean_url, PHP_URL_PATH), '/');
                 $fe_res = wp_remote_get($fe_url, array(
                     'timeout'             => 10,
-                    'sslverify'           => false,
+                    'sslverify'           => (bool) apply_filters('astropress_sslverify', true),
                     'headers'             => array(
                         'User-Agent' => 'AstroPress-Sitemap-Crawler/1.0',
                         'Accept'     => 'application/xml,text/xml,*/*',
@@ -229,7 +229,8 @@ class AstroPress_Warmer {
         $seen = array();
 
         if ($preset === 'all_posts') {
-            $posts = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC");
+            $max_posts = (int) apply_filters('astropress_warmer_max_posts', 2000);
+            $posts = $wpdb->get_results($wpdb->prepare("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC LIMIT %d", $max_posts));
             foreach ($posts as $p) {
                 $url = '/' . ltrim($p->post_name, '/');
                 if (!isset($seen[$url])) {
@@ -245,7 +246,8 @@ class AstroPress_Warmer {
 
         if ($preset === 'all_pages') {
             $front_page_id = (int) get_option('page_on_front');
-            $pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC");
+            $max_pages = (int) apply_filters('astropress_warmer_max_pages', 1000);
+            $pages = $wpdb->get_results($wpdb->prepare("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC LIMIT %d", $max_pages));
             foreach ($pages as $p) {
                 if ((int) $p->ID === $front_page_id) {
                     $url = '/';
@@ -297,7 +299,8 @@ class AstroPress_Warmer {
             $seen['/'] = $seen['/blogs'] = $seen['/blog'] = $seen['/rss.xml'] = $seen['/feed.xml'] = $seen['/sitemap.xml'] = true;
 
             $front_page_id = (int) get_option('page_on_front');
-            $pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC");
+            $max_pages = (int) apply_filters('astropress_warmer_max_pages', 1000);
+            $pages = $wpdb->get_results($wpdb->prepare("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC LIMIT %d", $max_pages));
             foreach ($pages as $p) {
                 if ((int) $p->ID === $front_page_id) {
                     $url = '/';
@@ -329,7 +332,8 @@ class AstroPress_Warmer {
                 }
             }
 
-            $posts = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC");
+            $max_posts = (int) apply_filters('astropress_warmer_max_posts', 2000);
+            $posts = $wpdb->get_results($wpdb->prepare("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC LIMIT %d", $max_posts));
             foreach ($posts as $p) {
                 $url = '/' . ltrim($p->post_name, '/');
                 if (!isset($seen[$url])) {
@@ -542,8 +546,8 @@ class AstroPress_Warmer {
             'updated_at' => current_time('mysql'),
         );
 
-        update_option(self::OPTION_BG_JOB, $job);
-        update_option(self::LEGACY_OPTION_BG_JOB, $job);
+        update_option(self::OPTION_BG_JOB, $job, false);
+        update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
 
         wp_clear_scheduled_hook('astropress_warm_bg_worker');
         wp_clear_scheduled_hook('topnepali_warm_bg_worker');
@@ -697,8 +701,8 @@ class AstroPress_Warmer {
                 'meta'    => 'Background job paused by administrator',
                 'success' => false,
             );
-            update_option(self::OPTION_BG_JOB, $job);
-            update_option(self::LEGACY_OPTION_BG_JOB, $job);
+            update_option(self::OPTION_BG_JOB, $job, false);
+            update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
             wp_clear_scheduled_hook('astropress_warm_bg_worker');
             wp_clear_scheduled_hook('topnepali_warm_bg_worker');
             return true;
@@ -719,8 +723,8 @@ class AstroPress_Warmer {
                 'meta'    => 'Background job resumed by administrator',
                 'success' => true,
             );
-            update_option(self::OPTION_BG_JOB, $job);
-            update_option(self::LEGACY_OPTION_BG_JOB, $job);
+            update_option(self::OPTION_BG_JOB, $job, false);
+            update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
             wp_clear_scheduled_hook('astropress_warm_bg_worker');
             wp_schedule_single_event(time(), 'astropress_warm_bg_worker');
             if (function_exists('spawn_cron')) {
@@ -745,8 +749,8 @@ class AstroPress_Warmer {
                 'meta'    => 'Background warming terminated by administrator',
                 'success' => false,
             );
-            update_option(self::OPTION_BG_JOB, $job);
-            update_option(self::LEGACY_OPTION_BG_JOB, $job);
+            update_option(self::OPTION_BG_JOB, $job, false);
+            update_option(self::LEGACY_OPTION_BG_JOB, $job, false);
             wp_clear_scheduled_hook('astropress_warm_bg_worker');
             wp_clear_scheduled_hook('topnepali_warm_bg_worker');
             return true;

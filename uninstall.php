@@ -35,13 +35,48 @@ function astropress_uninstall_site() {
         'astropress_lscwp_sync',
         'astropress_warm_delay',
         'astropress_warm_batch_size',
+        'astropress_warm_bg_job',
         'astropress_subdomain_shield',
         'astropress_subdomain_noindex',
+        'astropress_setup_completed',
+        'astropress_media_mode',
+        'astropress_cf_api_token',
+        'astropress_cf_zone_id',
+        'astropress_cf_account_id',
+        'astropress_cf_deploy_hook',
+        'astropress_cf_purge_mode',
+        'astropress_cf_ruleset_id',
+        'astropress_cf_rule_ids',
+        'astropress_webhook_logs',
+        'astropress_failed_webhooks',
         'astropress_r2_account_id',
         'astropress_r2_access_key',
         'astropress_r2_secret_key',
         'astropress_r2_bucket',
         'astropress_r2_custom_domain',
+        'astropress_path_structure',
+        'astropress_path_prefix',
+        'astropress_upload_sizes',
+        'astropress_cleanup_scope',
+        'astropress_auto_upload',
+        'astropress_rewrite_urls',
+        'astropress_delete_from_r2',
+        'astropress_storage_mode',
+        'astropress_compress_engine',
+        'astropress_compress_enabled',
+        'astropress_compress_format',
+        'astropress_compress_quality',
+        'astropress_max_width',
+        'astropress_max_height',
+        'astropress_strip_exif',
+        'astropress_auto_orient',
+        'astropress_backup_original',
+        'astropress_smart_routing',
+        'astropress_interceptor_enabled',
+        'astropress_active_preset',
+        'astropress_upload_workflow',
+        'astropress_db_version',
+        'astropress_404_logs',
         'astropress_last_known_latest_release',
         'astropress_last_known_releases',
         'astropress_v109_migrated',
@@ -113,6 +148,9 @@ function astropress_uninstall_site() {
 
     // 3. Clear scheduled crons
     wp_clear_scheduled_hook('astropress_warmer_cron');
+    wp_clear_scheduled_hook('astropress_warm_bg_worker');
+    wp_clear_scheduled_hook('astropress_retry_webhooks');
+    wp_clear_scheduled_hook('topnepali_warm_bg_worker');
     wp_clear_scheduled_hook('r2g_warmer_cron');
 
     // 4. Optional deep cleanup: drop custom tables and remove postmeta if opted in
@@ -126,6 +164,14 @@ function astropress_uninstall_site() {
         }
 
         $meta_keys = array(
+            '_astropress_synced',
+            '_astropress_synced_at',
+            '_astropress_key',
+            '_astropress_keys',
+            '_astropress_local_deleted',
+            '_astropress_optimized',
+            '_astropress_opt_info',
+            '_astropress_sizes_synced',
             '_astropress_rm_head',
             '_headless_rm_head',
             '_r2g_synced',
