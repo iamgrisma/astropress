@@ -554,50 +554,46 @@
       self.syncAllControls();
 
       // Clean old event listeners
-      $modal.off('click mousedown pointerdown');
-      $modal.find('*').off('click mousedown pointerdown touchstart input change');
+      $modal.off('.r2g');
       $(document).off('keydown.r2gmodal');
 
-      $modal.find('.r2g-modal-card').on('click pointerdown mousedown touchstart', function(e) {
-        e.stopPropagation();
-      });
-
-      $modal.find('.r2g-format-btn').off('click').on('click', function(e) {
+      // Delegated click handlers for format, engine, and storage selection
+      $modal.on('click.r2g', '.r2g-format-btn', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        self.setFormat($(this).data('format'));
+        const fmt = $(this).attr('data-format') || $(this).data('format');
+        if (fmt) self.setFormat(fmt);
       });
 
-      $modal.find('.r2g-engine-btn').off('click').on('click', function(e) {
+      $modal.on('click.r2g', '.r2g-engine-btn', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        self.setEngine($(this).data('engine'));
+        const eng = $(this).attr('data-engine') || $(this).data('engine');
+        if (eng) self.setEngine(eng);
       });
 
-      $modal.find('.r2g-storage-btn').off('click').on('click', function(e) {
+      $modal.on('click.r2g', '.r2g-storage-btn', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        self.setStorageMode($(this).data('storage'));
+        const st = $(this).attr('data-storage') || $(this).data('storage');
+        if (st) self.setStorageMode(st);
       });
 
-      $modal.find('.r2g-quality-slider')
-        .off('pointerdown mousedown touchstart input change')
-        .on('pointerdown mousedown touchstart', function(e) {
-          e.stopPropagation();
-        })
-        .on('input change', function(e) {
-          e.stopPropagation();
-          self.setQuality($(this).val(), this);
-        });
+      // Quality slider live badge & value updates
+      $modal.on('input.r2g change.r2g', '.r2g-quality-slider', function(e) {
+        self.setQuality($(this).val(), this);
+      });
 
-      $modal.find('.r2g-batch-thumb-item').off('click').on('click', function(e) {
+      // Batch thumbnail navigation
+      $modal.on('click.r2g', '.r2g-batch-thumb-item', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        const idx = parseInt($(this).data('idx'), 10) || 0;
+        const idx = parseInt($(this).attr('data-idx') || $(this).data('idx'), 10) || 0;
         updateFileDisplay(idx);
       });
 
-      $modal.find('#r2g-btn-preview-compress').off('click').on('click', function(e) {
+      // Live compression preview action
+      $modal.on('click.r2g', '#r2g-btn-preview-compress', function(e) {
         e.preventDefault();
         e.stopPropagation();
         const currentFile = files[activeIndex];
@@ -612,7 +608,8 @@
         return true;
       };
 
-      $modal.find('#r2g-btn-modal-close, #r2g-btn-modal-cancel').off('click').on('click', function(e) {
+      // Modal close & cancel actions
+      $modal.on('click.r2g', '#r2g-btn-modal-close, #r2g-btn-modal-cancel', function(e) {
         e.preventDefault();
         e.stopPropagation();
         if (self.previewInProgress) return;
@@ -620,7 +617,8 @@
         if (typeof onCancel === 'function') onCancel();
       });
 
-      $modal.off('click').on('click', function(e) {
+      // Close on backdrop overlay click
+      $modal.on('click.r2g', function(e) {
         if ($(e.target).is('#r2g-interceptor-modal')) {
           if (self.previewInProgress) return;
           e.preventDefault();
@@ -629,6 +627,7 @@
         }
       });
 
+      // Escape key dismissal
       $(document).on('keydown.r2gmodal', function(e) {
         if (e.key === 'Escape' || e.keyCode === 27) {
           if (self.previewInProgress) return;
@@ -637,7 +636,8 @@
         }
       });
 
-      $modal.find('#r2g-btn-modal-proceed').off('click').on('click', function(e) {
+      // Proceed upload button
+      $modal.on('click.r2g', '#r2g-btn-modal-proceed', function(e) {
         e.preventDefault();
         e.stopPropagation();
         if (self.previewInProgress) return;
