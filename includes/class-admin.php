@@ -3713,7 +3713,7 @@ class AstroPress_Admin {
                         <td>
                             <fieldset>
                                 <label><input type="checkbox" name="strip_exif" value="1" <?php checked($strip_exif, 1); ?> /> <?php esc_html_e('Strip EXIF camera metadata for privacy and extra byte reduction', 'astropress'); ?></label><br />
-                                <label><input type="checkbox" name="interceptor_enabled" value="1" <?php checked($interceptor, 1); ?> /> <?php esc_html_e('Enable client-side upload interceptor bar for instant visual upload status', 'astropress'); ?></label>
+                                <label><input type="checkbox" name="interceptor_enabled" value="1" <?php checked($interceptor, 1); ?> /> <?php esc_html_e('Enable interactive upload modal in content editors (Media Library uploads remain streamlined and automatic)', 'astropress'); ?></label>
                             </fieldset>
                         </td>
                     </tr>

@@ -72,7 +72,16 @@
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     },
 
+    isMediaLibrary: function() {
+      const p = (typeof window.pagenow !== 'undefined') ? window.pagenow : '';
+      const pathname = (typeof window.location !== 'undefined' && window.location.pathname) ? window.location.pathname : '';
+      return p === 'upload' || p === 'media-new' || pathname.indexOf('upload.php') !== -1 || pathname.indexOf('media-new.php') !== -1;
+    },
+
     init: function() {
+      // Dynamically resolve configuration at init time to respect localized options
+      this.config = window.astropress_compress_config || window.r2g_compress_config || (window.astropressConfig && window.astropressConfig.compress) || this.config;
+
       this.format = this.normalizeFormat(this.config.format || 'webp');
       this.quality = parseInt(this.config.quality, 10) || 82;
       this.compress = (this.config.compress !== undefined) ? parseInt(this.config.compress, 10) : 1;
@@ -83,9 +92,15 @@
       this.syncCookies();
       this.bindNetworkHeaders();
 
-      // Optional visual modal
-      if (parseInt(this.config.interceptor, 10) === 1) {
-        this.hookPlupload();
+      // In the Media Library, bulk uploads are streamlined and silent without modal interruptions
+      const isMediaScreen = this.isMediaLibrary();
+      const modalEnabled  = (parseInt(this.config.interceptor, 10) === 1) && !isMediaScreen;
+
+      // Hook Plupload: silent on Media Library, modal-enabled only in editors when configured
+      this.hookPlupload(modalEnabled);
+
+      // Hook Gutenberg and standard forms in content editor screens
+      if (modalEnabled) {
         this.hookGutenberg();
         this.hookBrowserForm();
       }
@@ -649,7 +664,7 @@
       $modal.addClass('r2g-modal-active');
     },
 
-    hookPlupload: function() {
+    hookPlupload: function(enableModal) {
       const self = this;
 
       const bindToUploader = function(uploader) {
@@ -662,6 +677,16 @@
           Object.assign(up.settings.multipart_params, self.uploadSettings());
           self.syncCookies();
         };
+
+        // Always inject R2 offload and compression params right before each file upload
+        uploader.bind('BeforeUpload', function(up, file) {
+          applyParams(up);
+        });
+
+        // In Media Library or when modal is disabled, let Plupload upload naturally without queue pausing
+        if (!enableModal) {
+          return;
+        }
 
         if (typeof uploader.addFile === 'function' && !uploader._r2g_add_file_wrapped) {
           uploader._r2g_add_file_wrapped = true;
@@ -687,11 +712,22 @@
         const startQueue = function(up) {
           up._r2g_hold_start = false;
           up._r2g_allow_start = true;
-          try {
-            up.start();
-          } finally {
-            up._r2g_allow_start = false;
+          const queuedStatus = (typeof plupload !== 'undefined' && plupload.QUEUED) ? plupload.QUEUED : 1;
+          if (Array.isArray(up.files)) {
+            up.files.forEach(function(f) {
+              if (f.status !== 5 && f.status !== 2) { // plupload.DONE = 5, plupload.UPLOADING = 2
+                f.status = queuedStatus;
+              }
+            });
           }
+          if (up.total && Array.isArray(up.files)) {
+            up.total.queued = up.files.filter(function(f) { return f.status === queuedStatus; }).length;
+          }
+          try { up.trigger('QueueChanged'); up.refresh(); } catch (e) {}
+          setTimeout(function() {
+            try { up.start(); } catch (e) {}
+            setTimeout(function() { up._r2g_allow_start = false; }, 100);
+          }, 30);
         };
 
         uploader.bind('FilesAdded', function(up, files) {
@@ -711,11 +747,6 @@
             imageFiles,
             function() {
               applyParams(up);
-              const queuedStatus = (typeof plupload !== 'undefined' && plupload.QUEUED) ? plupload.QUEUED : 1;
-              files.forEach(function(f) {
-                f.status = queuedStatus;
-              });
-              try { up.trigger('QueueChanged'); up.refresh(); } catch (e) {}
               startQueue(up);
             },
             function() {
@@ -729,10 +760,6 @@
               try { up.trigger('QueueChanged'); up.refresh(); } catch (e) {}
             }
           );
-        });
-
-        uploader.bind('BeforeUpload', function(up, file) {
-          applyParams(up);
         });
       };
 
