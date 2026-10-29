@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.13
+Stable tag: 2.0.14
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,11 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.14 =
+* Trait-Based Admin Decomposition: Modularized `class-admin.php` from 3,061 lines down to 765 lines by extracting 4 single-responsibility traits (`trait-admin-ajax-cloudflare.php`, `trait-admin-ajax-r2.php`, `trait-admin-settings.php`, `trait-admin-preflight.php`).
+* Dead & Orphan Logic Cleanup: Purged obsolete legacy documentation recipe strings (`get_cf_permissions_recipe_text`), hardcoded R2 token URL generators (`get_cf_r2_tokens_url`), and redundant tab delegators (`render_tab_bridge`).
+* Optimal Architecture & Isolation: Every admin component is now strictly under 890 lines, ensuring clean separation of concerns and maintainability.
 
 = 2.0.13 =
 * Architectural De-monolithization: Decomposed monolithic `class-admin.php` by extracting 12 dedicated partial view templates into `includes/admin/views/` (reducing `class-admin.php` by ~1,740 lines from 4,802 down to 3,061 lines).
