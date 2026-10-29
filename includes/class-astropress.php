@@ -483,7 +483,7 @@ class AstroPress {
                 update_option('r2g_compress_engine', 'resmush');
             }
             if (get_option('r2g_interceptor_enabled') === false) {
-                update_option('r2g_interceptor_enabled', 0);
+                update_option('r2g_interceptor_enabled', 1);
             }
             update_option('astropress_v122_migrated', 1);
         }

@@ -225,26 +225,32 @@ class AstroPress_Admin {
      * @param string $hook
      */
     public function enqueue_admin_assets($hook) {
-        $is_astropress_page = (strpos($hook, 'astropress') !== false || strpos($hook, 'r2-by-grisma') !== false || strpos($hook, 'topnepali-headless') !== false);
-        $is_media_page = ($hook === 'upload.php' || $hook === 'media-new.php');
+        $screen      = function_exists('get_current_screen') ? get_current_screen() : null;
+        $screen_base = $screen ? (string) $screen->base : '';
 
-        if (!$is_astropress_page && !$is_media_page) {
+        $is_astropress_page = (
+            strpos($hook, 'astropress') !== false ||
+            strpos($hook, 'r2-by-grisma') !== false ||
+            strpos($hook, 'topnepali-headless') !== false
+        );
+
+        $allowed_media_hooks = array('upload.php', 'media-new.php', 'post.php', 'post-new.php', 'page.php', 'page-new.php', 'wp_enqueue_media');
+        $is_editor_or_media  = (
+            in_array($hook, $allowed_media_hooks, true) ||
+            in_array($screen_base, array('post', 'upload', 'media', 'edit'), true) ||
+            did_action('wp_enqueue_media')
+        );
+
+        if (!$is_astropress_page && !$is_editor_or_media) {
             return;
         }
 
+        // Always enqueue Admin CSS on AstroPress, Editor, and Media screens for UI & Interceptor modal styling
         wp_enqueue_style(
             'astropress-admin-css',
             ASTROPRESS_URL . 'assets/css/admin.css',
             array(),
             ASTROPRESS_VERSION
-        );
-
-        wp_enqueue_script(
-            'astropress-admin-js',
-            ASTROPRESS_URL . 'assets/js/admin.js',
-            array('jquery'),
-            ASTROPRESS_VERSION,
-            true
         );
 
         $compress_config = array(
@@ -256,23 +262,35 @@ class AstroPress_Admin {
             'quality'      => (int) get_option('r2g_compress_quality', 82),
             'maxWidth'     => (int) get_option('r2g_max_width', 1920),
             'ajax_url'     => admin_url('admin-ajax.php'),
-            'nonce'        => wp_create_nonce('astropress_admin_nonce'),
+            'nonce'        => wp_create_nonce('r2g_admin_nonce'),
         );
 
-        wp_localize_script('astropress-admin-js', 'astropressConfig', array(
-            'ajaxUrl'      => admin_url('admin-ajax.php'),
-            'nonce'        => wp_create_nonce('astropress_admin_nonce'),
-            'legacyNonce'  => wp_create_nonce('topnepali_admin_nonce'),
-            'r2Nonce'      => wp_create_nonce('r2g_admin_nonce'),
-            'frontendUrl'  => $this->core->get_frontend_url(),
-            'defaultDelay' => $this->core->get_warm_delay(),
-            'defaultBatch' => $this->core->get_warm_batch_size(),
-            'version'      => ASTROPRESS_VERSION,
-            'compress'     => $compress_config,
-            'allowedRoots' => $this->get_allowed_domain_roots(),
-        ));
+        // Enqueue AstroPress Dashboard script only on AstroPress settings screens
+        if ($is_astropress_page) {
+            wp_enqueue_script(
+                'astropress-admin-js',
+                ASTROPRESS_URL . 'assets/js/admin.js',
+                array('jquery'),
+                ASTROPRESS_VERSION,
+                true
+            );
 
-        if ((int) get_option('r2g_interceptor_enabled', 1) === 1 || $is_astropress_page) {
+            wp_localize_script('astropress-admin-js', 'astropressConfig', array(
+                'ajaxUrl'      => admin_url('admin-ajax.php'),
+                'nonce'        => wp_create_nonce('astropress_admin_nonce'),
+                'legacyNonce'  => wp_create_nonce('topnepali_admin_nonce'),
+                'r2Nonce'      => wp_create_nonce('r2g_admin_nonce'),
+                'frontendUrl'  => $this->core->get_frontend_url(),
+                'defaultDelay' => $this->core->get_warm_delay(),
+                'defaultBatch' => $this->core->get_warm_batch_size(),
+                'version'      => ASTROPRESS_VERSION,
+                'compress'     => $compress_config,
+                'allowedRoots' => $this->get_allowed_domain_roots(),
+            ));
+        }
+
+        // Enqueue Upload Interceptor on all media & editor pages or when enabled
+        if ((int) get_option('r2g_interceptor_enabled', 1) === 1 || $is_editor_or_media || $is_astropress_page) {
             wp_enqueue_script(
                 'astropress-upload-interceptor',
                 ASTROPRESS_URL . 'assets/js/upload-interceptor.js',
@@ -280,6 +298,10 @@ class AstroPress_Admin {
                 ASTROPRESS_VERSION,
                 true
             );
+
+            // Localize both modern and legacy config objects directly to the interceptor script
+            wp_localize_script('astropress-upload-interceptor', 'astropress_compress_config', $compress_config);
+            wp_localize_script('astropress-upload-interceptor', 'r2g_compress_config', $compress_config);
         }
     }
 
@@ -292,7 +314,7 @@ class AstroPress_Admin {
     }
 
     public function on_wp_enqueue_media() {
-        $this->enqueue_admin_assets('upload.php');
+        $this->enqueue_admin_assets('wp_enqueue_media');
     }
 
     /**

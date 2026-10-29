@@ -9,7 +9,7 @@
   if (typeof window === 'undefined') return;
 
   const R2G_UploadManager = {
-    config: window.astropress_compress_config || window.r2g_compress_config || {
+    config: window.astropress_compress_config || window.r2g_compress_config || (window.astropressConfig && window.astropressConfig.compress) || {
       engine: 'resmush',
       storageMode: 'both',
       interceptor: 0,
