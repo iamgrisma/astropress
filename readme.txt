@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.2.3
+Stable tag: 2.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,15 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.3.0 =
+* 3-Stage Progressive Setup Pipeline: Re-architected setup into 3 distinct, progressive stages (Connection & Hosting Target, Revalidation & Deploy Hook, Media & Storage) with separate save buttons for each stage plus a global Save All action.
+* Token Capability Inspection & Access Verification: Added visual capability cards verifying essential permissions (Zone Read & Cache Purge) and optional features (Pages, R2 Storage, DNS) before allowing configuration.
+* Hosting Target Platform Selector: Added dedicated selection for Cloudflare Pages, Cloudflare Worker, or Custom SSR / VPS with automated project and domain auto-detection.
+* In-App Deploy Hook Tutorial & Secret Generator: Added dedicated controls to generate 32-character random keys, paste Pages Deploy Hooks with in-app location tutorial, and safely push secrets to Cloudflare Pages.
+* Build Latency & Handshake Gating Warning: Prominently warns that Cloudflare Pages builds take 1–2 minutes to compile, preventing false 401 errors during premature handshake tests.
+* Invalidation Tab Fixes: Added missing Deploy Hook and Secret inputs with show/hide toggles in the Cloudflare Invalidation tab, and updated live handshake tests to pass form inputs directly.
+* Smart R2 Bucket Auto-Matching: Intelligently auto-selects matching R2 buckets based on selected Pages project and frontend domain names.
 
 = 2.2.3 =
 * Dedicated REVALIDATE_SECRET Management & Rotation: Restored clear UI controls to view, copy, and rotate the shared revalidation secret with 1-click 32-character cryptographic randomization and visibility toggles.
