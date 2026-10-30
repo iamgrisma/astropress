@@ -268,6 +268,12 @@ trait AstroPress_Admin_Settings {
                 }
             }
 
+            // Cloudflare Pages Deploy Hook (if specified in onboarding)
+            $deploy_hook = esc_url_raw(trim(wp_unslash($_POST['onboard_cf_deploy_hook'] ?? '')));
+            if (!empty($deploy_hook)) {
+                update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, $deploy_hook);
+            }
+
             // Revalidation Secret (if specified in onboarding)
             $raw_secret = trim(wp_unslash($_POST['onboard_revalidate_secret'] ?? ''));
             if (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {

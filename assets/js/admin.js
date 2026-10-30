@@ -891,6 +891,22 @@
       $(this).prop('disabled', true).text('Cancelling...');
     });
 
+    // Auto-save unified warmer pacing & batch size preferences on change
+    $(document).on('change', '#astropress-warm-delay, #astropress-warm-batch-size', function() {
+      var d = parseInt($('#astropress-warm-delay').val(), 10) || 1000;
+      var b = parseInt($('#astropress-warm-batch-size').val(), 10) || 5;
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        data: {
+          action: 'astropress_save_warmer_settings',
+          warm_delay: d,
+          warm_batch_size: b,
+          nonce: nonce
+        }
+      });
+    });
+
     // --- 6.2 WP-CRON BACKGROUND ASYNC WARMER ---
     $startBgWarmBtn.on('click', async function(e) {
       e.preventDefault();
@@ -1498,6 +1514,7 @@
         dataType: 'json',
         data: {
           action: 'astropress_trigger_deploy_hook',
+          deploy_hook: $('#astropress_cf_deploy_hook').val()?.trim() || '',
           nonce: nonce,
         },
         success: function(res) {
@@ -2486,7 +2503,14 @@
     // 9.2 Purge Entire Cloudflare Zone Edge Cache
     $(document).on('click', '#astropress-purge-all-zone-btn, #astropress-purge-cf-now, button[name="astropress_purge_global"]', function(e) {
       e.preventDefault();
-      if (!confirm('Are you sure you want to purge the ENTIRE Cloudflare Zone edge cache? This will clear all cached HTML, assets, and images globally.')) {
+      const confirmed = window.confirm(
+        "CRITICAL CACHE PURGE WARNING:\n\n" +
+        "You are about to purge the ENTIRE Cloudflare Zone edge cache across all global edge locations.\n\n" +
+        "- All cached static HTML, API responses, and assets will be instantly evicted from edge servers.\n" +
+        "- This may cause a temporary spike in origin server CPU and traffic until edge caches warm up.\n\n" +
+        "Are you sure you want to proceed with full edge eviction?"
+      );
+      if (!confirmed) {
         return;
       }
 

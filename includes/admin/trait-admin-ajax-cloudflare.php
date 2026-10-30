@@ -44,12 +44,33 @@ trait AstroPress_Admin_Ajax_Cloudflare {
     public function ajax_trigger_deploy_hook() {
         $this->verify_admin_ajax();
 
+        $hook_url = isset($_POST['deploy_hook']) ? esc_url_raw(trim(wp_unslash($_POST['deploy_hook']))) : '';
+        if (!empty($hook_url)) {
+            update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, $hook_url);
+        }
+
         $success = $this->core->cache->trigger_deploy_hook('Manual Trigger from AstroPress Admin');
         if ($success) {
-            wp_send_json_success(array('message' => esc_html__('Cloudflare Pages deploy hook triggered successfully.', 'astropress')));
+            wp_send_json_success(array('message' => esc_html__('Cloudflare Pages deploy hook saved and triggered successfully.', 'astropress')));
         } else {
             wp_send_json_error(array('message' => esc_html__('Deploy hook trigger failed. Verify your Deploy Hook URL.', 'astropress')));
         }
+    }
+
+    /**
+     * AJAX: Auto-save unified Warmer Pacing and Batch Size
+     */
+    public function ajax_save_warmer_settings() {
+        $this->verify_admin_ajax();
+        if (isset($_POST['warm_delay'])) {
+            $delay = max(200, absint($_POST['warm_delay']));
+            update_option(AstroPress::OPTION_WARM_DELAY, $delay);
+        }
+        if (isset($_POST['warm_batch_size'])) {
+            $batch = max(1, min(10, absint($_POST['warm_batch_size'])));
+            update_option(AstroPress::OPTION_WARM_BATCH_SIZE, $batch);
+        }
+        wp_send_json_success();
     }
 
     /**

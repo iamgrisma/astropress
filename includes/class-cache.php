@@ -1440,23 +1440,33 @@ class AstroPress_Cache {
             $body = json_decode(wp_remote_retrieve_body($response), true);
 
             if ($code === 200 && !empty($body['success'])) {
-                if (!empty($body['result']) && is_array($body['result'])) {
-                    foreach ($body['result'] as $d) {
-                        if (!empty($d['domain'])) {
-                            $status_val = 'active';
-                            if (isset($d['status'])) {
-                                if (is_array($d['status'])) {
-                                    $status_val = $d['status']['ssl'] ?? ($d['status']['ownership'] ?? 'active');
-                                } elseif (is_string($d['status'])) {
-                                    $status_val = $d['status'];
-                                }
+                $raw_list = array();
+                if (!empty($body['result'])) {
+                    if (isset($body['result']['domains']) && is_array($body['result']['domains'])) {
+                        $raw_list = $body['result']['domains'];
+                    } elseif (isset($body['result'][0]) && is_array($body['result'][0])) {
+                        $raw_list = $body['result'];
+                    } elseif (isset($body['result']['domain'])) {
+                        $raw_list = array($body['result']);
+                    } elseif (is_array($body['result'])) {
+                        $raw_list = $body['result'];
+                    }
+                }
+                foreach ($raw_list as $d) {
+                    if (is_array($d) && !empty($d['domain'])) {
+                        $status_val = 'active';
+                        if (isset($d['status'])) {
+                            if (is_array($d['status'])) {
+                                $status_val = $d['status']['ssl'] ?? ($d['status']['ownership'] ?? ($d['status']['state'] ?? 'active'));
+                            } elseif (is_string($d['status'])) {
+                                $status_val = $d['status'];
                             }
-                            $domains[] = array(
-                                'domain'  => $d['domain'],
-                                'enabled' => !empty($d['enabled']),
-                                'status'  => $status_val,
-                            );
                         }
+                        $domains[] = array(
+                            'domain'  => $d['domain'],
+                            'enabled' => !empty($d['enabled']),
+                            'status'  => $status_val,
+                        );
                     }
                 }
             } else {
@@ -1554,11 +1564,12 @@ class AstroPress_Cache {
         }
 
         $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
-        // Cloudflare R2 custom domain API expects: domain, minTLS ONLY.
-        // DO NOT include zoneId or enabled, which causes Cloudflare API to reject with 400 Bad Request.
+        // Cloudflare R2 custom domain API expects: domain and zoneId (both required), with optional enabled and minTLS
         $payload = array(
-            'domain' => $host,
-            'minTLS' => '1.2',
+            'domain'  => (string) $host,
+            'zoneId'  => (string) $zone_id,
+            'enabled' => true,
+            'minTLS'  => '1.2',
         );
 
         $res = wp_remote_post($endpoint, array(

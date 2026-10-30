@@ -281,6 +281,7 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_attach_r2_custom_domain() {
         $this->verify_admin_ajax();
 
+        $token = trim(sanitize_text_field($_POST['token'] ?? ''));
         if (empty($token) || strpos($token, '••••') !== false) {
             $token = $this->core->get_cf_api_token();
         }

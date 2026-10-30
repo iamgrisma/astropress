@@ -76,16 +76,21 @@ if (!defined('ABSPATH')) {
                 </div>
 
                 <div style="flex:1 1 200px; min-width:180px;">
+                    <?php
+                    $saved_delay = (int) $this->core->get_warm_delay();
+                    $saved_batch = (int) $this->core->get_warm_batch_size();
+                    ?>
                     <label for="astropress-warm-delay" style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">
-                        <?php esc_html_e('Gap Between Requests:', 'astropress'); ?>
+                        <?php esc_html_e('Gap Between Requests (Pacing):', 'astropress'); ?>
                     </label>
                     <select id="astropress-warm-delay" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
-                        <option value="300"><?php esc_html_e('300ms (0.3s - Ultra Fast / High Performance)', 'astropress'); ?></option>
-                        <option value="500"><?php esc_html_e('500ms (0.5s - Fast / Normal Server)', 'astropress'); ?></option>
-                        <option value="1000" selected><?php esc_html_e('1,000ms (1.0s - Recommended Balanced)', 'astropress'); ?></option>
-                        <option value="1500"><?php esc_html_e('1,500ms (1.5s - Moderate Shared Host)', 'astropress'); ?></option>
-                        <option value="2000"><?php esc_html_e('2,000ms (2.0s - Low Impact Server)', 'astropress'); ?></option>
-                        <option value="3000"><?php esc_html_e('3,000ms (3.0s - Conservative Safe)', 'astropress'); ?></option>
+                        <option value="200" <?php selected($saved_delay, 200); ?>><?php esc_html_e('200ms (0.2s - Ultra Turbo / High Performance)', 'astropress'); ?></option>
+                        <option value="300" <?php selected($saved_delay, 300); ?>><?php esc_html_e('300ms (0.3s - Very Fast)', 'astropress'); ?></option>
+                        <option value="500" <?php selected($saved_delay, 500); ?>><?php esc_html_e('500ms (0.5s - Fast / Normal Server)', 'astropress'); ?></option>
+                        <option value="1000" <?php selected($saved_delay, 1000); ?>><?php esc_html_e('1,000ms (1.0s - Recommended Balanced)', 'astropress'); ?></option>
+                        <option value="1500" <?php selected($saved_delay, 1500); ?>><?php esc_html_e('1,500ms (1.5s - Moderate Shared Host)', 'astropress'); ?></option>
+                        <option value="2000" <?php selected($saved_delay, 2000); ?>><?php esc_html_e('2,000ms (2.0s - Low Impact Server)', 'astropress'); ?></option>
+                        <option value="3000" <?php selected($saved_delay, 3000); ?>><?php esc_html_e('3,000ms (3.0s - Conservative Safe)', 'astropress'); ?></option>
                     </select>
                 </div>
 
@@ -94,9 +99,10 @@ if (!defined('ABSPATH')) {
                         <?php esc_html_e('Batch Size (URLs / Request):', 'astropress'); ?>
                     </label>
                     <select id="astropress-warm-batch-size" style="width:100%; font-size:13px; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;">
-                        <option value="2"><?php esc_html_e('2 URLs / Batch (Gentle)', 'astropress'); ?></option>
-                        <option value="5" selected><?php esc_html_e('5 URLs / Batch (Recommended)', 'astropress'); ?></option>
-                        <option value="10"><?php esc_html_e('10 URLs / Batch (Fast Turbo)', 'astropress'); ?></option>
+                        <option value="1" <?php selected($saved_batch, 1); ?>><?php esc_html_e('1 URL / Batch (Ultra Gentle)', 'astropress'); ?></option>
+                        <option value="2" <?php selected($saved_batch, 2); ?>><?php esc_html_e('2 URLs / Batch (Gentle)', 'astropress'); ?></option>
+                        <option value="5" <?php selected($saved_batch, 5); ?>><?php esc_html_e('5 URLs / Batch (Recommended)', 'astropress'); ?></option>
+                        <option value="10" <?php selected($saved_batch, 10); ?>><?php esc_html_e('10 URLs / Batch (Fast Turbo)', 'astropress'); ?></option>
                     </select>
                 </div>
             </div>

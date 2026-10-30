@@ -187,6 +187,14 @@ if (!defined('ABSPATH')) {
                         <p class="field-help"><?php esc_html_e('Optional: AstroPress automatically authenticates using internal crypto tokens. If your Cloudflare Pages/Workers environment defines REVALIDATE_SECRET, enter it here and click Test Handshake.', 'astropress'); ?></p>
                         <div id="onboard-handshake-status" style="margin-top:8px;"></div>
                     </div>
+
+                    <div class="wizard-field" style="margin-top:14px;">
+                        <label for="onboard_cf_deploy_hook"><strong><?php esc_html_e('Cloudflare Pages Deploy Hook (Optional)', 'astropress'); ?></strong></label>
+                        <div class="wizard-input-row">
+                            <input type="url" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo esc_attr($this->core->get_cf_deploy_hook()); ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." />
+                        </div>
+                        <p class="field-help"><?php esc_html_e('Optional: Automatically triggers a static frontend rebuild in Cloudflare Pages when full edge cache purges occur.', 'astropress'); ?></p>
+                    </div>
                 </section>
 
                 <!-- STEP 3: Media Storage Mode -->

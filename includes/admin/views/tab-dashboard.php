@@ -98,7 +98,7 @@ if (!defined('ABSPATH')) {
                     <button type="submit" name="astropress_purge_custom_url" class="button button-secondary">
                         <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge URL', 'astropress'); ?>
                     </button>
-                    <button type="submit" name="astropress_purge_global" class="button button-secondary" onclick="return confirm('<?php esc_attr_e('Purge entire website cache across all Cloudflare Edge POPs?', 'astropress'); ?>');">
+                    <button type="submit" name="astropress_purge_global" class="button button-secondary" onclick="return confirm('<?php esc_attr_e('CRITICAL CACHE PURGE WARNING:\n\nPurging the entire Cloudflare Zone edge cache will evict all cached HTML and assets across every global edge location, temporarily increasing origin server CPU load.\n\nProceed with full edge eviction?', 'astropress'); ?>');">
                         <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge All Zone', 'astropress'); ?>
                     </button>
                 </form>
