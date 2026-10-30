@@ -1217,22 +1217,20 @@ class AstroPress_Cache {
             return array('success' => false, 'message' => sprintf(esc_html__('Could not read Pages project "%s": %s', 'astropress'), $project_name, $err));
         }
 
-        $project_data = $get_body['result'] ?? array();
-        $prod_env = $project_data['deployment_configs']['production']['env_vars'] ?? array();
-        $prev_env = $project_data['deployment_configs']['preview']['env_vars'] ?? array();
-
-        // 2. Merge new variables into production and preview maps
-        // Sensitive keys (REVALIDATE_SECRET) are stored as encrypted secret_text in Cloudflare Pages
+        // 2. Build isolated PATCH map for ONLY our targeted variables.
+        // Cloudflare Pages API preserves all omitted existing environment variables and secrets
+        // (variables are only deleted if their value is explicitly set to null).
+        // Sending back existing secrets from GET would corrupt them because GET omits secret values.
+        $target_env = array();
         foreach ($env_vars as $k => $v) {
             $var_type = ($k === 'REVALIDATE_SECRET') ? 'secret_text' : 'plain_text';
-            $prod_env[$k] = array('value' => (string) $v, 'type' => $var_type);
-            $prev_env[$k] = array('value' => (string) $v, 'type' => $var_type);
+            $target_env[$k] = array('value' => (string) $v, 'type' => $var_type);
         }
 
         $patch_payload = array(
             'deployment_configs' => array(
-                'production' => array('env_vars' => $prod_env),
-                'preview'    => array('env_vars' => $prev_env),
+                'production' => array('env_vars' => $target_env),
+                'preview'    => array('env_vars' => $target_env),
             ),
         );
 
@@ -1256,7 +1254,7 @@ class AstroPress_Cache {
         if ($patch_code === 200 && !empty($patch_body['success'])) {
             return array(
                 'success' => true,
-                'message' => sprintf(esc_html__('Successfully synced %d environment variable(s) to Cloudflare Pages project "%s" (Production & Preview)!', 'astropress'), count($env_vars), $project_name),
+                'message' => sprintf(esc_html__('Successfully synced %d environment variable(s) to Cloudflare Pages project "%s" (Production & Preview)! All existing project variables and secrets were preserved untouched.', 'astropress'), count($env_vars), $project_name),
             );
         }
 

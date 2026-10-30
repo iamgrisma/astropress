@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.2.2
+Stable tag: 2.2.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,13 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.2.3 =
+* Dedicated REVALIDATE_SECRET Management & Rotation: Restored clear UI controls to view, copy, and rotate the shared revalidation secret with 1-click 32-character cryptographic randomization and visibility toggles.
+* Deploy Hook Verification Gating: Gated 1-click Cloudflare Pages secret synchronization so it requires a verified, working Deploy Hook (HTTP 200) before syncing. Added clear instructions detailing where to generate Deploy Hooks in Cloudflare Dashboard and explaining why rebuilds are required for secret activation.
+* Safe Environment Variable Patch: Fixed variable wiping vulnerability in `sync_pages_env`. The patch now exclusively updates targeted keys (`REVALIDATE_SECRET`, `WP_API_URL`, `API_URL`, `CDN_MEDIA_URL`) without echoing back existing `secret_text` objects, preserving all other project environment variables (e.g., `PUBLIC_GA_ID`, custom secrets) 100% untouched.
+* Disconnect Blind Discovery Auto-Sync: Removed aggressive background syncing during token connection; project selection and secret synchronization are now explicit, user-controlled actions.
+* JavaScript Crash Fix: Resolved `ReferenceError: isWizard is not defined` when triggering Deploy Hook from Cloudflare settings.
 
 = 2.2.2 =
 * R2 Custom Domain 10040 Fix: Resolved Cloudflare API 10040 error when attaching custom domains to R2 buckets by resolving and supplying valid zoneId via discovery cache, targeted root domain search, and active zone iteration.

@@ -158,6 +158,69 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
         <!-- Live Diagnostics Output Boxes -->
         <div id="astropress-webhook-test-result" style="margin-top:14px; display:none;"></div>
         <div id="astropress-deploy-status" style="margin-top:14px; display:none;"></div>
+
+        <!-- Secret Management & Cloudflare Pages Sync -->
+        <div style="margin-top:16px; padding-top:16px; border-top:1px solid #e2e8f0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                <label for="astropress_revalidate_secret" style="font-weight:600; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+                    <span class="dashicons dashicons-shield" style="color:#16a34a;"></span>
+                    <span><?php esc_html_e('Astro Webhook Secret (REVALIDATE_SECRET):', 'astropress'); ?></span>
+                </label>
+                <span id="astropress-key-badge" style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:12px; background:<?php echo $this->core->has_custom_secret() ? '#ecfdf5; color:#166534; border:1px solid #bbf7d0;' : '#fef3c7; color:#92400e; border:1px solid #fde68a;'; ?>">
+                    <span class="dashicons <?php echo $this->core->has_custom_secret() ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>
+                    <span><?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Auto-Generated Secret', 'astropress'); ?></span>
+                </span>
+            </div>
+
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                <div style="position:relative; flex:1; min-width:240px;">
+                    <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo esc_attr($this->core->get_custom_secret() ?: $this->core->get_secret()); ?>" class="regular-text" style="width:100%; padding-right:58px;" autocomplete="new-password" />
+                    <div style="position:absolute; right:6px; top:50%; transform:translateY(-50%); display:flex; gap:2px;">
+                        <button type="button" class="astropress-toggle-pw" data-target="#astropress_revalidate_secret" style="background:none; border:none; color:#64748b; cursor:pointer;" title="<?php esc_attr_e('Show / Hide', 'astropress'); ?>">
+                            <span class="dashicons dashicons-visibility"></span>
+                        </button>
+                        <button type="button" class="astropress-copy-btn" data-target="#astropress_revalidate_secret" style="background:none; border:none; color:#64748b; cursor:pointer;" title="<?php esc_attr_e('Copy Secret', 'astropress'); ?>">
+                            <span class="dashicons dashicons-clipboard"></span>
+                        </button>
+                    </div>
+                </div>
+                <button type="button" class="button button-secondary" id="astropress-generate-secret-btn" title="<?php esc_attr_e('Rotate or generate a strong 32-character secret', 'astropress'); ?>">
+                    <span class="dashicons dashicons-randomize" style="vertical-align:-2px;"></span> <?php esc_html_e('Rotate / Generate Secret', 'astropress'); ?>
+                </button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px;">
+                <div>
+                    <span style="font-weight:600; font-size:12px; color:#1e293b; display:block;">
+                        <span class="dashicons dashicons-cloud" style="color:#0284c7; vertical-align:-2px;"></span>
+                        <?php esc_html_e('Cloudflare Pages Secret Sync:', 'astropress'); ?>
+                        <code><?php echo esc_html($this->core->get_cf_pages_project() ?: 'No project linked'); ?></code>
+                    </span>
+                    <span style="font-size:11px; color:#64748b;">
+                        <?php esc_html_e('Pushes REVALIDATE_SECRET (as secret_text) and auto-triggers Deploy Hook to activate.', 'astropress'); ?>
+                    </span>
+                </div>
+                <div>
+                    <input type="hidden" id="astropress_cf_pages_project_val" value="<?php echo esc_attr($this->core->get_cf_pages_project()); ?>" />
+                    <button type="button" class="button button-primary astropress-sync-pages-btn" id="astropress-sync-pages-btn" data-input="#astropress_cf_pages_project_val" data-secret="#astropress_revalidate_secret" data-status="#astropress-pages-sync-status" <?php echo $this->core->has_cf_deploy_hook() ? '' : 'disabled="disabled"'; ?>>
+                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Sync Secret to Cloudflare Pages', 'astropress'); ?>
+                    </button>
+                </div>
+            </div>
+
+            <div id="astropress-sync-lock-notice" style="margin-top:6px; font-size:11px; color:#b45309; <?php echo $this->core->has_cf_deploy_hook() ? 'display:none;' : ''; ?>">
+                <span class="dashicons dashicons-lock" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
+                <strong><?php esc_html_e('Deploy Hook Verification Required:', 'astropress'); ?></strong>
+                <?php esc_html_e('Deploy Hook must be tested and verified before syncing secrets to Cloudflare Pages.', 'astropress'); ?>
+            </div>
+
+            <div style="margin-top:6px; font-size:11px; color:#15803d; display:flex; align-items:center; gap:4px;">
+                <span class="dashicons dashicons-yes-alt" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>
+                <span><?php esc_html_e('Safe Patch Guarantee: Preserves all existing Cloudflare Pages environment variables completely untouched.', 'astropress'); ?></span>
+            </div>
+
+            <div id="astropress-pages-sync-status" style="margin-top:8px; display:none;"></div>
+        </div>
     </div>
 
     <!-- Automatic Purge Triggers Card -->

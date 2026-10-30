@@ -22,6 +22,8 @@ $custom_domain     = AstroPress_Admin::get_r2_option('custom_domain', '');
 $media_mode        = get_option(AstroPress::OPTION_MEDIA_MODE, 'r2');
 $pages_project     = $this->core->get_cf_pages_project();
 $has_deploy_hook   = $this->core->has_cf_deploy_hook();
+$custom_secret     = $this->core->get_custom_secret();
+$has_custom_secret = $this->core->has_custom_secret();
 $allowed_roots     = $this->get_allowed_domain_roots();
 $allowed_roots_str = !empty($allowed_roots) ? implode(', ', $allowed_roots) : 'your site domain';
 
@@ -138,21 +140,122 @@ foreach ($checks as $c) {
                 <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;"><?php esc_html_e('Canonical URL of your public Astro website (e.g. https://topnepali.com).', 'astropress'); ?></p>
             </div>
 
-            <!-- Cloudflare Pages Deploy Hook -->
-            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                    <label for="onboard_cf_deploy_hook" style="font-weight:600; font-size:12px; color:#334155;">
-                        <?php esc_html_e('Cloudflare Pages Deploy Hook (Optional & AES-256 Protected):', 'astropress'); ?>
+            <!-- Cloudflare Pages Deploy Hook (Required for Secret Sync) -->
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                    <label for="onboard_cf_deploy_hook" style="font-weight:600; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+                        <span class="dashicons dashicons-cloud-upload" style="color:#0284c7;"></span>
+                        <span><?php esc_html_e('Cloudflare Pages Deploy Hook (Required for Secret Sync):', 'astropress'); ?></span>
                     </label>
-                    <button type="button" class="button button-secondary button-small" id="onboard-test-deploy-btn">
+                    <span id="onboard-deploy-badge" style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:12px; background:<?php echo $has_deploy_hook ? '#ecfdf5; color:#166534; border:1px solid #bbf7d0;' : '#fef3c7; color:#92400e; border:1px solid #fde68a;'; ?>">
+                        <span class="dashicons <?php echo $has_deploy_hook ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>
+                        <span class="status-text"><?php echo $has_deploy_hook ? esc_html__('Configured (Test to Verify)', 'astropress') : esc_html__('Verification Required', 'astropress'); ?></span>
+                    </span>
+                </div>
+
+                <!-- Guidance / Where to get deploy hook alert -->
+                <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:12px; margin-bottom:12px; font-size:12px; color:#1e40af; line-height:1.5;">
+                    <div style="font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                        <span class="dashicons dashicons-info" style="font-size:16px; width:16px; height:16px;"></span>
+                        <span><?php esc_html_e('Where to get your Cloudflare Pages Deploy Hook:', 'astropress'); ?></span>
+                    </div>
+                    <ol style="margin:4px 0 6px 18px; padding:0;">
+                        <li><?php esc_html_e('Log into Cloudflare Dashboard &rarr; Workers & Pages &rarr; click your Astro project.', 'astropress'); ?></li>
+                        <li><?php esc_html_e('Go to Settings &rarr; Builds & deployments &rarr; scroll to Deploy hooks.', 'astropress'); ?></li>
+                        <li><?php esc_html_e('Click "Add deploy hook", choose your production branch (e.g. main), and copy the URL.', 'astropress'); ?></li>
+                    </ol>
+                    <div style="color:#2563eb; font-size:11px;">
+                        <strong><?php esc_html_e('Why is this required?', 'astropress'); ?></strong> <?php esc_html_e('Cloudflare Pages only loads newly updated environment variables into your live Astro frontend when a new build is deployed. Having a verified Deploy Hook ensures that syncing secrets will immediately trigger a rebuild, activating your revalidation bridge with zero downtime and no 401 errors.', 'astropress'); ?>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <div style="position:relative; flex:1;">
+                        <input type="password" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo $has_deploy_hook ? '••••••••••••••••••••••••••••••••' : ''; ?>" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." class="regular-text" style="width:100%; padding-right:32px;" autocomplete="new-password" />
+                        <button type="button" class="astropress-toggle-pw" data-target="#onboard_cf_deploy_hook" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; color:#64748b; cursor:pointer;" title="<?php esc_attr_e('Show / Hide', 'astropress'); ?>">
+                            <span class="dashicons dashicons-visibility"></span>
+                        </button>
+                    </div>
+                    <button type="button" class="button button-secondary" id="onboard-test-deploy-btn">
                         <span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Deploy Hook', 'astropress'); ?>
                     </button>
                 </div>
-                <input type="password" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo $has_deploy_hook ? '••••••••••••••••••••••••••••••••' : ''; ?>" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." class="regular-text" style="width:100%;" autocomplete="new-password" />
-                <div id="onboard-deploy-quick-status" style="margin-top:6px; display:none;"></div>
-                <p style="font-size:11px; color:#64748b; margin:4px 0 0 0;">
-                    <?php esc_html_e('Triggered once during setup to rebuild Cloudflare Pages with new environment variables. Everyday post updates use instant on-demand /api/revalidate without rebuilds.', 'astropress'); ?>
+                <div id="onboard-deploy-quick-status" style="margin-top:8px; display:none;"></div>
+            </div>
+
+            <!-- Astro Webhook Secret (REVALIDATE_SECRET) & Cloudflare Pages Sync -->
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                    <label for="onboard_secret" style="font-weight:600; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+                        <span class="dashicons dashicons-shield" style="color:#16a34a;"></span>
+                        <span><?php esc_html_e('Astro Webhook Secret (REVALIDATE_SECRET):', 'astropress'); ?></span>
+                    </label>
+                    <span id="onboard-secret-badge" style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:12px; background:<?php echo $has_custom_secret ? '#ecfdf5; color:#166534; border:1px solid #bbf7d0;' : '#fef3c7; color:#92400e; border:1px solid #fde68a;'; ?>">
+                        <span class="dashicons <?php echo $has_custom_secret ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>
+                        <span><?php echo $has_custom_secret ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Auto-Generated Secret', 'astropress'); ?></span>
+                    </span>
+                </div>
+                <p style="font-size:12px; color:#64748b; margin:0 0 10px 0; line-height:1.4;">
+                    <?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Protects your frontend from unauthorized cache purging.', 'astropress'); ?>
                 </p>
+
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <div style="position:relative; flex:1; min-width:240px;">
+                        <input type="password" id="onboard_secret" name="onboard_revalidate_secret" value="<?php echo esc_attr($custom_secret ?: $this->core->get_secret()); ?>" class="regular-text" style="width:100%; padding-right:58px;" autocomplete="new-password" />
+                        <div style="position:absolute; right:6px; top:50%; transform:translateY(-50%); display:flex; gap:2px;">
+                            <button type="button" class="astropress-toggle-pw" data-target="#onboard_secret" style="background:none; border:none; color:#64748b; cursor:pointer;" title="<?php esc_attr_e('Show / Hide', 'astropress'); ?>">
+                                <span class="dashicons dashicons-visibility"></span>
+                            </button>
+                            <button type="button" class="astropress-copy-btn" data-target="#onboard_secret" style="background:none; border:none; color:#64748b; cursor:pointer;" title="<?php esc_attr_e('Copy Secret', 'astropress'); ?>">
+                                <span class="dashicons dashicons-clipboard"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" class="button button-secondary" id="onboard-generate-secret-btn" title="<?php esc_attr_e('Generate or rotate a new cryptographically secure 32-character secret', 'astropress'); ?>">
+                        <span class="dashicons dashicons-randomize" style="vertical-align:-2px;"></span> <?php esc_html_e('Rotate / Generate Secret', 'astropress'); ?>
+                    </button>
+                </div>
+
+                <!-- Rotate notice -->
+                <div style="margin-top:8px; font-size:11px; color:#64748b;">
+                    <span class="dashicons dashicons-info" style="font-size:14px; width:14px; height:14px; vertical-align:-2px; color:#0284c7;"></span>
+                    <strong><?php esc_html_e('Secret Exposed or Needs Rotation?', 'astropress'); ?></strong> <?php esc_html_e('Click "Rotate / Generate Secret", then click "Sync REVALIDATE_SECRET to Cloudflare Pages" below.', 'astropress'); ?>
+                </div>
+
+                <!-- 1-Click Sync to Cloudflare Pages Action -->
+                <div style="margin-top:14px; padding-top:14px; border-top:1px dashed #cbd5e1;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <div>
+                            <strong style="display:block; font-size:13px; color:#0f172a;">
+                                <span class="dashicons dashicons-cloud" style="color:#0284c7; vertical-align:-2px;"></span> <?php esc_html_e('Cloudflare Pages Environment Variable Sync:', 'astropress'); ?>
+                            </strong>
+                            <span style="font-size:12px; color:#64748b;">
+                                <?php esc_html_e('Pushes REVALIDATE_SECRET (as encrypted secret_text) & WP_API_URL to Pages, then auto-triggers Deploy Hook.', 'astropress'); ?>
+                            </span>
+                        </div>
+                        <div>
+                            <button type="button" class="button button-primary astropress-sync-pages-btn" id="onboard-sync-pages-btn" data-input="#onboard_cf_pages_project" data-secret="#onboard_secret" data-deploy="#onboard_cf_deploy_hook" data-status="#onboard-pages-sync-status" <?php echo $has_deploy_hook ? '' : 'disabled="disabled"'; ?> style="display:flex; align-items:center; gap:6px;">
+                                <span class="dashicons dashicons-update"></span>
+                                <span class="btn-text"><?php esc_html_e('Sync REVALIDATE_SECRET to Cloudflare Pages', 'astropress'); ?></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Deploy Hook Gating Notice -->
+                    <div id="onboard-sync-lock-notice" style="margin-top:8px; font-size:11px; color:#b45309; <?php echo $has_deploy_hook ? 'display:none;' : ''; ?>">
+                        <span class="dashicons dashicons-lock" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
+                        <strong><?php esc_html_e('Deploy Hook Verification Required:', 'astropress'); ?></strong>
+                        <?php esc_html_e('Please enter and test your Cloudflare Pages Deploy Hook above to unlock 1-click secret synchronization.', 'astropress'); ?>
+                    </div>
+
+                    <!-- Safe Sync Guarantee -->
+                    <div style="margin-top:6px; font-size:11px; color:#15803d; display:flex; align-items:center; gap:4px;">
+                        <span class="dashicons dashicons-yes-alt" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>
+                        <span><?php esc_html_e('Safe Patch Guarantee: Modifies only REVALIDATE_SECRET and WP_API_URL. All existing Cloudflare Pages environment variables (PUBLIC_*, custom secrets, etc.) are strictly preserved.', 'astropress'); ?></span>
+                    </div>
+
+                    <div id="onboard-pages-sync-status" style="margin-top:10px; display:none;"></div>
+                </div>
             </div>
         </div>
 

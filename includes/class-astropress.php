@@ -22,8 +22,8 @@ class AstroPress {
      */
     private static $instance = null;
 
-    const VERSION            = '2.2.2';
-    const ASTROPRESS_VERSION = '2.2.2';
+    const VERSION            = '2.2.3';
+    const ASTROPRESS_VERSION = '2.2.3';
 
     // Headless Bridge Option Keys
     const OPTION_SETUP_COMPLETED   = 'astropress_setup_completed';
@@ -248,6 +248,25 @@ class AstroPress {
      */
     public function has_custom_secret() {
         return !empty($this->get_custom_secret());
+    }
+
+    /**
+     * Set, encrypt, and persist a custom revalidate secret
+     *
+     * @param string $secret
+     * @return string
+     */
+    public function set_custom_secret($secret) {
+        $secret = sanitize_text_field(trim((string) $secret));
+        if (empty($secret)) {
+            delete_option(self::OPTION_SECRET);
+            delete_option('astropress_headless_secret');
+            $this->cached_secret = '';
+        } else {
+            update_option(self::OPTION_SECRET, AstroPress_Encryption::encrypt($secret));
+            $this->cached_secret = $secret;
+        }
+        return $secret;
     }
 
     /**

@@ -54,9 +54,15 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
         $success = $this->core->cache->trigger_deploy_hook('Manual Trigger from AstroPress Admin');
         if ($success) {
-            wp_send_json_success(array('message' => esc_html__('Cloudflare Pages deploy hook validated and triggered successfully (Build queued on Cloudflare Pages).', 'astropress')));
+            wp_send_json_success(array(
+                'verified' => true,
+                'message'  => esc_html__('Cloudflare Pages deploy hook validated and triggered successfully (Build queued on Cloudflare Pages).', 'astropress'),
+            ));
         } else {
-            wp_send_json_error(array('message' => esc_html__('Deploy hook trigger failed. Verify your Deploy Hook URL or network connection.', 'astropress')));
+            wp_send_json_error(array(
+                'verified' => false,
+                'message'  => esc_html__('Deploy hook trigger failed. Verify your Deploy Hook URL or network connection.', 'astropress'),
+            ));
         }
     }
 
@@ -237,25 +243,12 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             $secret = $this->core->generate_secret();
         }
 
-        // 3. Pages Project Environment Sync (if Pages exists or provided)
-        $pages_target = !empty($pages_proj) ? $pages_proj : ($pages_projects[0]['name'] ?? $this->core->get_cf_pages_project());
-        $pages_synced = false;
-        if (!empty($pages_target) && !empty($account_id)) {
-            $env_vars = array(
-                'REVALIDATE_SECRET' => $secret,
-                'WP_API_URL'        => home_url(),
-                'API_URL'           => home_url(),
-            );
-            $r2_domain = self::get_r2_option('custom_domain', '');
-            if (!empty($r2_domain)) {
-                $env_vars['CDN_MEDIA_URL'] = 'https://' . ltrim($r2_domain, 'https://');
-            }
-            $sync_res = $this->core->cache->sync_pages_env($pages_target, $env_vars, $account_id, $token);
-            if (!empty($sync_res['success'])) {
-                $pages_synced = true;
-                update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_target);
-            }
+        // 3. Pages Project: Persist target if explicitly selected by user
+        $pages_target = !empty($pages_proj) ? $pages_proj : $this->core->get_cf_pages_project();
+        if (!empty($pages_target)) {
+            update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_target);
         }
+        $pages_synced = false;
 
         // Check if selected Pages project matches frontend URL domain
         $domain_mismatch = false;
@@ -479,11 +472,26 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             wp_send_json_error(array('message' => esc_html__('Cloudflare Pages project name is required.', 'astropress')));
         }
 
+        // Save deploy hook if provided
+        $raw_deploy_hook = trim(sanitize_text_field($_POST['deploy_hook'] ?? ''));
+        if (!empty($raw_deploy_hook) && strpos($raw_deploy_hook, '••••') === false) {
+            $clean_hook = esc_url_raw($raw_deploy_hook);
+            if (!empty($clean_hook)) {
+                update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, AstroPress_Encryption::encrypt($clean_hook));
+            }
+        }
+
+        // Verify deploy hook is configured before allowing secret sync
+        if (!$this->core->has_cf_deploy_hook()) {
+            wp_send_json_error(array(
+                'message' => esc_html__('Cloudflare Pages Deploy Hook is required before syncing secrets so your Astro frontend rebuilds and activates the secret immediately. Please enter and test your Deploy Hook first.', 'astropress')
+            ));
+        }
+
         // Auto-save or generate secret
         $raw_secret = trim(sanitize_text_field($_POST['secret'] ?? ''));
         if (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {
-            update_option(AstroPress::OPTION_SECRET, AstroPress_Encryption::encrypt($raw_secret));
-            $revalidate_secret = $raw_secret;
+            $revalidate_secret = $this->core->set_custom_secret($raw_secret);
         } else {
             $revalidate_secret = $this->core->get_revalidate_secret();
             if (empty($revalidate_secret)) {

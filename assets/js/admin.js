@@ -1513,11 +1513,13 @@
               $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Deploy Hook Active (Encrypted)');
             }
             let successHtml = '<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Verified:</strong> ' + escapeHtml(res.data.message);
-            if (isWizard) {
-              successHtml += '<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; color:#166534;">Build is now compiling on Cloudflare Pages. Once finished (~30-60s), click <strong>Test Handshake</strong> above to verify your frontend!</div>';
-            }
+            successHtml += '<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; color:#166534;">Build is now compiling on Cloudflare Pages. Deploy Hook is verified and active!</div>';
             successHtml += '</div>';
             $status.html(successHtml);
+
+            // Unlock secret sync button
+            $('#astropress-sync-pages-btn').prop('disabled', false).removeAttr('disabled');
+            $('#astropress-sync-lock-notice').slideUp(150);
           } else {
             $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + escapeHtml(res.data?.message || 'Deploy hook trigger failed.') + '</div>');
           }
@@ -2066,20 +2068,56 @@
       });
     });
 
+    // Helper: Password Field Show/Hide Visibility Toggle
+    $(document).on('click', '.astropress-toggle-pw', function(e) {
+      e.preventDefault();
+      const targetSel = $(this).data('target');
+      const $target = $(targetSel);
+      const $icon = $(this).find('.dashicons');
+      if ($target.attr('type') === 'password') {
+        $target.attr('type', 'text');
+        $icon.removeClass('dashicons-visibility').addClass('dashicons-hidden');
+      } else {
+        $target.attr('type', 'password');
+        $icon.removeClass('dashicons-hidden').addClass('dashicons-visibility');
+      }
+    });
+
+    // Helper: 1-Click Clipboard Copy
+    $(document).on('click', '.astropress-copy-btn', function(e) {
+      e.preventDefault();
+      const targetSel = $(this).data('target');
+      const $target = $(targetSel);
+      const val = $target.val()?.trim() || '';
+      if (val && !val.startsWith('•••')) {
+        const $icon = $(this).find('.dashicons');
+        navigator.clipboard.writeText(val).then(function() {
+          $icon.removeClass('dashicons-clipboard').addClass('dashicons-yes-alt').css('color', '#15803d');
+          setTimeout(function() {
+            $icon.removeClass('dashicons-yes-alt').addClass('dashicons-clipboard').css('color', '');
+          }, 1500);
+        });
+      }
+    });
+
     // 8d. 1-Click Zero-Touch Sync Environment Variables to Cloudflare Pages
     $(document).on('click', '.astropress-sync-pages-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
       const inputSelector = $btn.data('input') || '#onboard_cf_pages_project';
       const secretSelector = $btn.data('secret') || '#onboard_secret';
+      const deploySelector = $btn.data('deploy') || '#onboard_cf_deploy_hook';
       const statusSelector = $btn.data('status') || '#onboard-pages-sync-status';
 
       const $projInput = $(inputSelector);
       const $secInput = $(secretSelector);
+      const $depInput = $(deploySelector);
       const $status = $(statusSelector);
       const projectName = $projInput.val()?.trim();
       const rawSecret = $secInput.val()?.trim() || '';
       const secretVal = (!rawSecret.startsWith('•••')) ? rawSecret : '';
+      const rawDeploy = $depInput.val()?.trim() || '';
+      const deployVal = (!rawDeploy.startsWith('•••')) ? rawDeploy : '';
 
       if (!projectName) {
         $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please specify your Cloudflare Pages Project Name first.</div>').slideDown(150);
@@ -2089,7 +2127,7 @@
 
       const origHtml = $btn.html();
       $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Syncing to Pages...');
-      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Syncing REVALIDATE_SECRET & WP_API_URL to Cloudflare Pages project <strong>' + escapeHtml(projectName) + '</strong>...</div>').slideDown(150);
+      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Syncing REVALIDATE_SECRET & WP_API_URL to Cloudflare Pages project <strong>' + escapeHtml(projectName) + '</strong> (Safe Patch)...</div>').slideDown(150);
 
       $.ajax({
         url: ajaxurl,
@@ -2099,6 +2137,7 @@
           action: 'astropress_sync_pages_env',
           project_name: projectName,
           secret: secretVal,
+          deploy_hook: deployVal,
           nonce: nonce
         },
         success: function(res) {
@@ -2495,6 +2534,12 @@
         success: function(res) {
           if (res.success) {
             $status.html('<span style="color:#15803d; font-weight:600; font-size:12px;"><span class="dashicons dashicons-yes-alt"></span> ' + escapeHtml(res.data?.message || 'Deploy hook triggered successfully! Build queued on Cloudflare Pages.') + '</span>');
+            // Unlock secret sync button
+            $('#onboard-sync-pages-btn').prop('disabled', false).removeAttr('disabled');
+            $('#onboard-sync-lock-notice').slideUp(150);
+            $('#onboard-deploy-badge').css({'background': '#ecfdf5', 'color': '#166534', 'border-color': '#bbf7d0'});
+            $('#onboard-deploy-badge .dashicons').removeClass('dashicons-warning').addClass('dashicons-yes-alt');
+            $('#onboard-deploy-badge .status-text').text('Verified & Active (HTTP 200)');
           } else {
             $status.html('<span style="color:#b91c1c; font-weight:600; font-size:12px;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(res.data?.message || 'Deploy hook trigger failed.') + '</span>');
           }
