@@ -683,13 +683,6 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: Cloudflare Edge & Modern Ruleset Cache Rules Manager
-     */
-    public function render_tab_cache_rules() {
-        $this->render_tab_cloudflare();
-    }
-
-    /**
      * Tab: Unified Cloudflare & Edge Cache
      */
     public function render_tab_cloudflare() {
@@ -704,10 +697,17 @@ class AstroPress_Admin {
     }
 
     /**
-     * Tab: General Settings & Danger Zone
+     * Legacy Alias for Cloudflare & Edge Cache
+     */
+    public function render_tab_cache_rules() {
+        $this->render_tab_cloudflare();
+    }
+
+    /**
+     * Legacy Alias for Settings (merged into Cloudflare tab)
      */
     public function render_tab_settings() {
-        $this->render_view('tab-settings');
+        $this->render_tab_cloudflare();
     }
 
 

@@ -132,24 +132,30 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_test_connection() {
         $this->verify_admin_ajax();
 
-        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: self::get_r2_option('account_id', '');
-        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: self::get_r2_option('access_key', '');
+        $raw_account   = trim(sanitize_text_field($_POST['account_id'] ?? ''));
+        $account_id    = ($raw_account !== '' && $raw_account !== 'undefined') ? $raw_account : self::get_r2_option('account_id', '');
+        $raw_access    = trim(sanitize_text_field($_POST['access_key'] ?? ''));
+        $access_key    = ($raw_access !== '' && $raw_access !== 'undefined') ? $raw_access : self::get_r2_option('access_key', '');
         $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
 
-        if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
+        if (!empty($posted_secret) && $posted_secret !== 'undefined' && strpos($posted_secret, '••••') === false) {
             $secret_key = $posted_secret;
         } else {
             $secret_enc = self::get_r2_option('secret_key', '');
             $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
         }
 
-        $cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
-        if (empty($cf_token) || strpos($cf_token, '••••') !== false) {
+        $raw_cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
+        if (!empty($raw_cf_token) && $raw_cf_token !== 'undefined' && strpos($raw_cf_token, '••••') === false) {
+            $cf_token = $raw_cf_token;
+        } else {
             $cf_token = $this->core->get_cf_api_token();
         }
 
-        $bucket        = sanitize_text_field($_POST['bucket'] ?? '') ?: self::get_r2_option('bucket', '');
-        $custom_domain = sanitize_text_field($_POST['custom_domain'] ?? '') ?: self::get_r2_option('custom_domain', '');
+        $raw_bucket    = trim(sanitize_text_field($_POST['bucket'] ?? ''));
+        $bucket        = ($raw_bucket !== '' && $raw_bucket !== 'undefined') ? $raw_bucket : self::get_r2_option('bucket', '');
+        $raw_domain    = trim(sanitize_text_field($_POST['custom_domain'] ?? ''));
+        $custom_domain = ($raw_domain !== '' && $raw_domain !== 'undefined') ? $raw_domain : self::get_r2_option('custom_domain', '');
 
         $has_s3 = !empty($access_key) && !empty($secret_key);
         $has_cf = !empty($cf_token);
@@ -639,11 +645,13 @@ trait AstroPress_Admin_Ajax_R2 {
         }
 
         $result = $this->core->cache->get_r2_custom_domains($bucket_name, $account_id, $token);
-        if (!empty($result['success']) && !empty($result['primary'])) {
-            // Update stored custom domain
-            update_option('astropress_r2_custom_domain', $result['primary']);
-            if (get_option('r2g_custom_domain', null) !== null) {
-                update_option('r2g_custom_domain', $result['primary']);
+        if (!empty($result['success'])) {
+            if (!empty($result['primary'])) {
+                // Update stored custom domain
+                update_option('astropress_r2_custom_domain', $result['primary']);
+                if (get_option('r2g_custom_domain', null) !== null) {
+                    update_option('r2g_custom_domain', $result['primary']);
+                }
             }
             wp_send_json_success($result);
         } else {

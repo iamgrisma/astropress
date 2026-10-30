@@ -729,6 +729,10 @@ class AstroPress_Cache {
 
         $extra_urls = array('/'); // Root homepage always reflects latest posts stream
         if ($post->post_type !== 'page') {
+            // Editorial blogs and article archives always reflect latest published posts
+            $extra_urls[] = '/blogs';
+            $extra_urls[] = '/blog';
+
             $taxonomies = get_object_taxonomies($post->post_type, 'names');
             foreach ($taxonomies as $tax_name) {
                 $terms = get_the_terms($post_id, $tax_name);
@@ -760,8 +764,6 @@ class AstroPress_Cache {
             $extra_urls[] = '/rss';
             $extra_urls[] = '/rss.xml';
             $extra_urls[] = '/feed.xml';
-            $extra_urls[] = '/blogs';
-            $extra_urls[] = '/blog';
         }
 
         $slug = $this->get_post_relative_slug($post);
@@ -818,6 +820,9 @@ class AstroPress_Cache {
 
         $extra_urls = array('/');
         if ($post->post_type !== 'page') {
+            $extra_urls[] = '/blogs';
+            $extra_urls[] = '/blog';
+
             $taxonomies = get_object_taxonomies($post->post_type, 'names');
             foreach ($taxonomies as $tax_name) {
                 $terms = get_the_terms($post_id, $tax_name);
@@ -835,10 +840,10 @@ class AstroPress_Cache {
         if ($this->core->should_purge_feeds()) {
             $extra_urls[] = '/sitemap.xml';
             $extra_urls[] = '/sitemap_index.xml';
+            $extra_urls[] = '/feed';
+            $extra_urls[] = '/rss';
             $extra_urls[] = '/rss.xml';
             $extra_urls[] = '/feed.xml';
-            $extra_urls[] = '/blogs';
-            $extra_urls[] = '/blog';
         }
 
         $slug = $this->get_post_relative_slug($post);
@@ -1432,23 +1437,25 @@ class AstroPress_Cache {
         $code = wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
-        if ($code === 200 && !empty($body['success']) && !empty($body['result'])) {
+        if ($code === 200 && !empty($body['success'])) {
             $domains = array();
-            foreach ($body['result'] as $d) {
-                if (!empty($d['domain'])) {
-                    $status_val = 'active';
-                    if (isset($d['status'])) {
-                        if (is_array($d['status'])) {
-                            $status_val = $d['status']['ssl'] ?? ($d['status']['ownership'] ?? 'active');
-                        } elseif (is_string($d['status'])) {
-                            $status_val = $d['status'];
+            if (!empty($body['result']) && is_array($body['result'])) {
+                foreach ($body['result'] as $d) {
+                    if (!empty($d['domain'])) {
+                        $status_val = 'active';
+                        if (isset($d['status'])) {
+                            if (is_array($d['status'])) {
+                                $status_val = $d['status']['ssl'] ?? ($d['status']['ownership'] ?? 'active');
+                            } elseif (is_string($d['status'])) {
+                                $status_val = $d['status'];
+                            }
                         }
+                        $domains[] = array(
+                            'domain'  => $d['domain'],
+                            'enabled' => !empty($d['enabled']),
+                            'status'  => $status_val,
+                        );
                     }
-                    $domains[] = array(
-                        'domain'  => $d['domain'],
-                        'enabled' => !empty($d['enabled']),
-                        'status'  => $status_val,
-                    );
                 }
             }
             $primary = !empty($domains[0]['domain']) ? $domains[0]['domain'] : '';
@@ -1456,7 +1463,7 @@ class AstroPress_Cache {
                 'success' => true,
                 'domains' => $domains,
                 'primary' => $primary,
-                'message' => !empty($primary) ? sprintf(esc_html__('Found custom domain: %s', 'astropress'), $primary) : esc_html__('No custom domains found for this bucket.', 'astropress'),
+                'message' => !empty($primary) ? sprintf(esc_html__('Found custom domain: %s', 'astropress'), $primary) : esc_html__('No custom domains attached to this bucket yet.', 'astropress'),
             );
         }
 
@@ -1464,7 +1471,7 @@ class AstroPress_Cache {
             'success' => false,
             'domains' => array(),
             'primary' => '',
-            'message' => !empty($body['errors'][0]['message']) ? $body['errors'][0]['message'] : sprintf(esc_html__('No custom domains attached (HTTP %d)', 'astropress'), $code),
+            'message' => !empty($body['errors'][0]['message']) ? $body['errors'][0]['message'] : sprintf(esc_html__('Could not query custom domains (HTTP %d)', 'astropress'), $code),
         );
     }
 
@@ -1517,10 +1524,21 @@ class AstroPress_Cache {
             }
         }
 
+        if (empty($zone_id)) {
+            return array(
+                'success' => false,
+                'message' => sprintf(
+                    esc_html__('Cloudflare Zone ID could not be identified for domain "%s". Please ensure this domain is added as an active zone in your Cloudflare account and your API token has "Zone > Zone: Read" permission.', 'astropress'),
+                    $host
+                ),
+            );
+        }
+
         $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
-        // Cloudflare R2 custom domain API expects strictly: domain, enabled, and optional minTLS
+        // Cloudflare R2 custom domain API expects: domain, zoneId, enabled, and optional minTLS
         $payload = array(
             'domain'  => $host,
+            'zoneId'  => $zone_id,
             'enabled' => true,
             'minTLS'  => '1.2',
         );

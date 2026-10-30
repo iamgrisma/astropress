@@ -157,18 +157,19 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
         <h4 style="margin:0 0 10px 0; font-size:13px; color:#1e293b;">
             <?php esc_html_e('Active Ruleset Rules on Cloudflare:', 'astropress'); ?>
         </h4>
-        <div id="astropress-rules-table-container" class="astropress-table-responsive">
-            <?php if ($is_cf_ready): ?>
+        <?php if ($is_cf_ready): ?>
+            <div id="astropress-rules-table-container" class="astropress-table-responsive">
                 <p style="color:#64748b; font-size:13px;">
                     <span class="spinner is-active" style="float:none; margin:0 6px 0 0;"></span>
                     <?php esc_html_e('Loading active cache rules from Cloudflare Ruleset API...', 'astropress'); ?>
                 </p>
-            <?php else: ?>
-                <p style="color:#64748b; font-size:13px; font-style:italic;">
-                    <?php esc_html_e('Rules will be listed once Cloudflare Scoped Token and Zone ID are connected in the Setup Wizard.', 'astropress'); ?>
-                </p>
-            <?php endif; ?>
-        </div>
+            </div>
+        <?php else: ?>
+            <div class="astropress-table-responsive" style="padding:16px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:6px; color:#64748b; font-size:13px;">
+                <span class="dashicons dashicons-info" style="vertical-align:-2px;"></span>
+                <?php esc_html_e('Rules will be listed once Cloudflare Scoped Token and Zone ID are connected in the Setup Wizard.', 'astropress'); ?>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 

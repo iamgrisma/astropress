@@ -375,6 +375,12 @@ class AstroPress {
 
     public function get_cf_api_token() {
         $val = get_option(self::OPTION_CF_API_TOKEN, '');
+        if (empty($val)) {
+            $val = get_option('topnepali_headless_cf_api_token', '');
+            if (!empty($val)) {
+                update_option(self::OPTION_CF_API_TOKEN, $val);
+            }
+        }
         if (!empty($val)) {
             $dec = AstroPress_Encryption::decrypt($val);
             return !empty($dec) ? $dec : $val;

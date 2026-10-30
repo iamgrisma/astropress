@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.18
+Stable tag: 2.0.19
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,18 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.19 =
+* R2 Custom Domain Auto-Detection & Autofill: Querying R2 custom domains now distinguishes between clean buckets (no custom domains linked yet) and API errors. Automatically suggests `media.<domain>` and autofills on bucket selection, enabling seamless 1-click CNAME creation.
+* Reliable 1-Click CNAME & R2 Attachment: Cloudflare R2 `POST /domains/custom` payload now validates and includes required `zoneId`, preventing Cloudflare 10040 "JSON not well formed" errors.
+* Fully Functional R2 Tab & Test Connection: Added complete bucket selection dropdown, CDN domain input, discovery, and inline bucket creation directly in R2 tab. Eliminated premature "Please select or enter an R2 Bucket name" error on connection test.
+* Cloudflare Cache Tab Credentials Fallback: Added automatic legacy fallback for `topnepali_headless_cf_api_token` in `get_cf_api_token()`. Non-configured states render an actionable Setup Wizard card rather than throwing raw AJAX errors.
+* Complete Debloating & Dead Code Removal: Purged duplicate `tab-settings.php` and orphaned `tab-cache-rules.php`, removed dead forwarding methods in `class-admin.php`, and streamlined 7 flat navigation tabs.
+
+= 2.0.18 =
+* Navigation Flattening: Replaced 2-tier navigation pills with a clean, responsive 1-tier flat tab bar (Overview, Setup Wizard, Cloudflare & Cache, Cloudflare R2, Image Optimizer, SEO & Security, Tools & Logs).
+* Cloudflare Cache Tab Unification: Merged Ruleset Engine Cache Rules, Invalidation Policies, and Danger Zone into a single unified tab.
+* Onboarding Auto-Attach: Automatically triggers R2 custom domain attachment and DNS CNAME creation when saving the Setup Wizard with a custom domain.
 
 = 2.0.17 =
 * Red Team CSRF Defense: Enforced dual-token verification (`astropress_purge_single_nonce` / `topnepali_purge_single_nonce` and `astropress_purge_all_nonce` / `topnepali_purge_all_nonce`) on admin bar quick purge actions.

@@ -177,6 +177,7 @@ trait AstroPress_Admin_Settings {
             update_option('astropress_r2_rewrite_urls', $rewrite_urls);
             update_option('astropress_r2_delete_from_r2', $delete_from_r2);
             update_option('astropress_storage_mode', $storage_mode);
+            update_option('astropress_r2_storage_mode', $storage_mode);
 
             // Conditional legacy sync: only write r2g_* if legacy keys already exist in database
             if (get_option('r2g_account_id', null) !== null && !empty($account_id)) {
@@ -342,7 +343,7 @@ trait AstroPress_Admin_Settings {
                     update_option('astropress_r2_custom_domain', $clean_domain);
                     update_option('r2g_custom_domain', $clean_domain);
 
-                    $token_for_r2 = !empty($raw_token) ? $raw_token : $this->core->get_cf_api_token();
+                    $token_for_r2 = (!empty($cf_token) && strpos($cf_token, '••••') === false) ? $cf_token : $this->core->get_cf_api_token();
                     $zone_for_r2  = !empty($cf_zone_id) ? $cf_zone_id : $this->core->get_cf_zone_id();
                     $acc_for_r2   = !empty($account_id) ? $account_id : $this->core->get_r2_account_id();
                     if (!empty($bucket) && !empty($token_for_r2) && !empty($acc_for_r2)) {
