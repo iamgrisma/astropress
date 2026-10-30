@@ -63,6 +63,7 @@ class AstroPress_Updater {
         add_filter('auto_update_plugin', array($this, 'filter_auto_update_plugin'), 10, 2);
         add_filter('upgrader_source_selection', array($this, 'fix_unzipped_folder_name'), 10, 4);
         add_filter('upgrader_package_options', array($this, 'filter_upgrader_package_options'), 10, 1);
+        add_filter('update_plugin_complete_actions', array($this, 'filter_update_plugin_complete_actions'), 10, 2);
 
         // Admin actions & AJAX
         if (is_admin()) {
@@ -169,8 +170,43 @@ class AstroPress_Updater {
         $item->icons        = array();
         $item->banners      = array();
 
-        // Check if remote version is strictly higher than current
-        if (version_compare(ASTROPRESS_VERSION, $latest['version'], '<')) {
+        // Check if a specific target version is requested for rollback or manual switch
+        $target_version = null;
+        if (!empty($_REQUEST['astropress_target_version'])) {
+            $target_version = sanitize_text_field(wp_unslash($_REQUEST['astropress_target_version']));
+        } elseif (!empty($_REQUEST['r2g_target_version'])) {
+            $target_version = sanitize_text_field(wp_unslash($_REQUEST['r2g_target_version']));
+        }
+
+        $plugin_arg = !empty($_REQUEST['plugin']) ? wp_unslash($_REQUEST['plugin']) : '';
+        $is_target_plugin = empty($plugin_arg) || (
+            strpos($plugin_arg, self::PLUGIN_SLUG) !== false ||
+            strpos($plugin_arg, 'r2-by-grisma') !== false ||
+            strpos($plugin_arg, 'headless') !== false
+        );
+
+        if (!empty($target_version) && $is_target_plugin) {
+            $tag = (strpos($target_version, 'v') === 0) ? $target_version : 'v' . $target_version;
+            $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $tag);
+
+            $all_releases = $this->get_all_releases();
+            if (!empty($all_releases) && is_array($all_releases)) {
+                foreach ($all_releases as $rel) {
+                    if ($rel['version'] === $target_version && !empty($rel['package'])) {
+                        $package_url = $rel['package'];
+                        break;
+                    }
+                }
+            }
+
+            $item->new_version = $target_version;
+            $item->package     = $package_url;
+
+            $transient->response[$plugin_file] = $item;
+            if (isset($transient->no_update[$plugin_file])) {
+                unset($transient->no_update[$plugin_file]);
+            }
+        } elseif (version_compare(ASTROPRESS_VERSION, $latest['version'], '<')) {
             $transient->response[$plugin_file] = $item;
             if (isset($transient->no_update[$plugin_file])) {
                 unset($transient->no_update[$plugin_file]);
@@ -191,10 +227,15 @@ class AstroPress_Updater {
             'topnepali-headless/topnepali-headless.php',
         );
         foreach ($alternate_keys as $alt_key) {
-            if ($alt_key !== $plugin_file && (isset($transient->checked[$alt_key]) || isset($transient->response[$alt_key]) || isset($transient->no_update[$alt_key]))) {
+            if ($alt_key !== $plugin_file && (isset($transient->checked[$alt_key]) || isset($transient->response[$alt_key]) || isset($transient->no_update[$alt_key]) || (!empty($plugin_arg) && $plugin_arg === $alt_key))) {
                 $alt_item = clone $item;
                 $alt_item->plugin = $alt_key;
-                if (version_compare(ASTROPRESS_VERSION, $latest['version'], '<')) {
+                if (!empty($target_version) && $is_target_plugin) {
+                    $transient->response[$alt_key] = $alt_item;
+                    if (isset($transient->no_update[$alt_key])) {
+                        unset($transient->no_update[$alt_key]);
+                    }
+                } elseif (version_compare(ASTROPRESS_VERSION, $latest['version'], '<')) {
                     $transient->response[$alt_key] = $alt_item;
                     if (isset($transient->no_update[$alt_key])) {
                         unset($transient->no_update[$alt_key]);
@@ -539,14 +580,14 @@ class AstroPress_Updater {
      */
     public function filter_upgrader_package_options($options) {
         $target_version = null;
-        if (!empty($_GET['astropress_target_version'])) {
-            $target_version = sanitize_text_field($_GET['astropress_target_version']);
-        } elseif (!empty($_GET['r2g_target_version'])) {
-            $target_version = sanitize_text_field($_GET['r2g_target_version']);
+        if (!empty($_REQUEST['astropress_target_version'])) {
+            $target_version = sanitize_text_field(wp_unslash($_REQUEST['astropress_target_version']));
+        } elseif (!empty($_REQUEST['r2g_target_version'])) {
+            $target_version = sanitize_text_field(wp_unslash($_REQUEST['r2g_target_version']));
         }
 
-        $plugin_arg = !empty($_GET['plugin']) ? $_GET['plugin'] : '';
-        if ($target_version && (strpos($plugin_arg, self::PLUGIN_SLUG) !== false || strpos($plugin_arg, 'r2-by-grisma') !== false)) {
+        $plugin_arg = !empty($_REQUEST['plugin']) ? wp_unslash($_REQUEST['plugin']) : '';
+        if ($target_version && (empty($plugin_arg) || strpos($plugin_arg, self::PLUGIN_SLUG) !== false || strpos($plugin_arg, 'r2-by-grisma') !== false || strpos($plugin_arg, 'headless') !== false)) {
             $tag = (strpos($target_version, 'v') === 0) ? $target_version : 'v' . $target_version;
 
             // Direct release asset URL
@@ -564,9 +605,31 @@ class AstroPress_Updater {
             }
 
             $options['package'] = $package_url;
+            $options['clear_destination'] = true;
         }
 
         return $options;
+    }
+
+    /**
+     * Action links after plugin upgrade/rollback completion
+     *
+     * @param array $update_actions
+     * @param string $plugin
+     * @return array
+     */
+    public function filter_update_plugin_complete_actions($update_actions, $plugin) {
+        if ($plugin === $this->get_plugin_basename() || stripos($plugin, self::PLUGIN_SLUG) !== false) {
+            $custom_actions = array(
+                'astropress_updates' => sprintf(
+                    '<a href="%s" target="_parent">%s</a>',
+                    esc_url(admin_url('admin.php?page=astropress&tab=tools&sub=updates')),
+                    esc_html__('Return to AstroPress Updates & Rollback', 'astropress')
+                ),
+            );
+            return array_merge($custom_actions, (array) $update_actions);
+        }
+        return $update_actions;
     }
 
     /**
@@ -639,16 +702,18 @@ class AstroPress_Updater {
                 wp_update_plugins();
             }
 
-            $redirect_tab = !empty($_GET['tab']) ? sanitize_key($_GET['tab']) : 'updates';
+            $redirect_tab  = !empty($_GET['tab']) ? sanitize_key($_GET['tab']) : 'tools';
+            $redirect_sub  = !empty($_GET['sub']) ? sanitize_key($_GET['sub']) : 'updates';
             $redirect_page = !empty($_GET['page']) ? sanitize_key($_GET['page']) : 'astropress';
-            $redirect_url = add_query_arg(
-                array(
-                    'page'    => $redirect_page,
-                    'tab'     => $redirect_tab,
-                    'checked' => '1',
-                ),
-                admin_url('admin.php')
+            $redirect_args = array(
+                'page'    => $redirect_page,
+                'tab'     => $redirect_tab,
+                'checked' => '1',
             );
+            if (!empty($redirect_sub)) {
+                $redirect_args['sub'] = $redirect_sub;
+            }
+            $redirect_url = add_query_arg($redirect_args, admin_url('admin.php'));
             wp_safe_redirect($redirect_url);
             exit;
     }

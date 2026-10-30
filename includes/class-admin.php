@@ -533,6 +533,14 @@ class AstroPress_Admin {
             }
         }
 
+        // Support direct tab=updates navigation -> mapped to tools sub=updates
+        if ($active_tab === 'updates') {
+            $active_tab = 'tools';
+            if (!isset($_GET['sub'])) {
+                $_GET['sub'] = 'updates';
+            }
+        }
+
         $notice = get_transient('astropress_notice');
         if ($notice) {
             delete_transient('astropress_notice');
