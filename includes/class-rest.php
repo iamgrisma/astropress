@@ -52,6 +52,7 @@ class AstroPress_REST {
         // Enable Rank Math native REST API post meta and headless support
         add_filter('rank_math/rest/enable_post_meta', '__return_true');
         add_filter('rank_math/frontend/headless', '__return_true');
+        add_filter('rest_pre_dispatch', array($this, 'filter_rank_math_get_head_url'), 10, 3);
 
         // Expose rendered head HTML in /wp/v2/posts and /wp/v2/pages
         register_rest_field(array('post', 'page'), 'head', array(
@@ -239,6 +240,31 @@ class AstroPress_REST {
         }
 
         return $response;
+    }
+
+    /**
+     * Map frontend domain to WordPress home domain for Rank Math /getHead endpoint
+     * Prevents "Invalid parameter(s): url" 400 error when Astro queries with its own production domain.
+     *
+     * @param mixed $result
+     * @param WP_REST_Server $server
+     * @param WP_REST_Request $request
+     * @return mixed
+     */
+    public function filter_rank_math_get_head_url($result, $server, $request) {
+        if ($request->get_route() === '/rankmath/v1/getHead') {
+            $url = $request->get_param('url');
+            $fe_url = $this->core->get_frontend_url();
+            if (!empty($url) && !empty($fe_url)) {
+                $fe_host = wp_parse_url($fe_url, PHP_URL_HOST);
+                $wp_host = wp_parse_url(home_url(), PHP_URL_HOST);
+                if ($fe_host && $wp_host && $fe_host !== $wp_host && strpos($url, $fe_host) !== false) {
+                    $rewritten = str_replace($fe_host, $wp_host, $url);
+                    $request->set_param('url', $rewritten);
+                }
+            }
+        }
+        return $result;
     }
 
     /**
