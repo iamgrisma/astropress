@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.2.0
+Stable tag: 2.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,8 +18,8 @@ Universal WordPress Headless Bridge & Native Cloudflare R2 Offloader for Astro o
 It seamlessly combines:
 1. **Direct Cloudflare Edge POP Purge**: Eliminates middleman webhooks and shared secrets. Purges Cloudflare Zone POP Edge caches directly via Cloudflare API v4 on content changes.
 2. **Cloudflare Ruleset Cache Rules Manager**: Direct management of modern Cloudflare Ruleset Engine Zone Cache Rules (`http_request_cache_settings`), with 1-click presets for Astro SSR, Static Assets, and R2 Media CDN.
-3. **Gated Setup Wizard Lifecycle**: 3-step setup with pre-filled scoped token creator, auto-derived root domain frontend URL, and media mode selection.
-4. **Cloudflare 1-Click Quick Connect & Auto-Discovery**: Auto-discovers Account ID, matching Zone ID, and R2 Buckets with 24-hour persistent transient caching.
+3. **Gated Setup Wizard Lifecycle**: 2-stage zero-friction pipeline with pre-filled scoped token creator, auto-derived root domain frontend URL, and media mode selection.
+4. **Cloudflare 1-Click Quick Connect & Auto-Discovery**: Auto-discovers Account ID, matching Zone ID, Pages projects, and R2 Buckets with 24-hour persistent transient caching.
 5. **Pure PHP Cloudflare R2 Offloader**: Lightweight, pure PHP AWS SigV4 implementation with zero heavy AWS SDKs or third-party bloat (< 35KB footprint).
 6. **Smart Dual-Stage Image Optimizer & Gateway Routing**: Dual-engine image compression with smart 5MB threshold routing (reSmush.it cloud API for < 5MB with zero server CPU load, and server GD/Imagick for >= 5MB to prevent API rejection), on-the-fly WebP and AVIF conversion, responsive srcset rewriting, EXIF stripping, and Gutenberg block inspector controls (Option B).
 7. **Rank Math & Yoast SEO Bridge**: Complete headless SEO delivery exposing fully-rendered `<head>`, structured JSON-LD schema, estimated reading times, and dynamic redirects via REST API.
@@ -35,11 +35,14 @@ It seamlessly combines:
 
 == Changelog ==
 
-= 2.2.0 =
-* Radical Simplification to 2-Stage Headless Flow: Collapsed multi-step micro-actions and 13 fragmented buttons down to two simple orchestrated steps: "Connect & Auto-Configure" (Card 1) and "Enable Media Offload & Launch" (Card 2).
-* Backend Orchestration Engine: Introduced `ajax_orchestrate_connect` and `ajax_orchestrate_r2`, executing token verification, Zone & Account discovery, secure secret generation, Pages environment variable syncing, deploy hook triggers, R2 custom domain attachment, DNS CNAME proxying, and frontend handshake in single unified calls.
-* Eliminated Redundant Forms & Buttons: Completely purged the obsolete `astropress-apply-cf-btn` button and its forced browser page reload, eliminating duplicate forms and unlinked controls across Setup Wizard and runtime views.
-* Instant Setup Completion & Dashboard Handshake: Completing R2 offloading automatically marks setup complete and transitions cleanly to the Overview diagnostics hub.
+= 2.2.1 =
+* Cloudflare Pages Project Select Dropdown: Replaced manual project text input with a reactive `<select>` dropdown populated directly from Cloudflare Pages API. Selecting a project automatically syncs variables and pre-fills the canonical Frontend URL from the project's production domains.
+* Pages & Astro Site Compatibility Verification: Added automatic validation confirming that the frontend URL host belongs to the selected Cloudflare Pages project. Detailed error messaging for HTTP 404 (missing `/api/revalidate.ts`) and HTTP 401 (secret mismatch).
+* Deploy Hook Tester in Wizard: Added interactive "Test Deploy Hook" button directly inside the Setup Wizard with immediate build queue feedback.
+* Encrypted Secret Storage (`secret_text`): Updated Cloudflare Pages environment variable sync to assign `type: "secret_text"` to `REVALIDATE_SECRET`, encrypting it at rest and concealing it in the Cloudflare dashboard.
+* Transparent R2 Domain Setup & Confirmation: Wizard auto-detects existing custom domains attached to R2 buckets via Cloudflare API. For new domains, adds an explicit confirmation checkbox before creating DNS CNAME records.
+* Cache Warmer Design Unification: Decoupled misplaced cache rule deploy buttons from the Warmer tab; unified UI to match the clean flat design system with link to Cache Rules & Presets.
+* Invalidation Tab Revamp: Replaced duplicate setup inputs with a real-time Webhook Handshake Diagnostics Console displaying exact HTTP status codes, latency in milliseconds, and actionable diagnostics.
 
 = 2.1.5 =
 * Concealed & Encrypted Deploy Hook: Protected Cloudflare Pages deploy hook credentials with AES-256 encryption at rest and bullet masking (`••••••••••••••••••••••••••••••••`) across Setup Wizard and Cloudflare settings.

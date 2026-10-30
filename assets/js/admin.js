@@ -2311,6 +2311,199 @@
     });
 
     // 3. Stage 1: Orchestrated Connect & Auto-Configure
+    // Dynamic Pages project selection: auto-populate Frontend URL
+    $(document).on('change', '#onboard_cf_pages_project', function() {
+      const val = $(this).val();
+      if (val === '__custom__') {
+        $('#onboard-pages-custom-wrap').show();
+      } else {
+        $('#onboard-pages-custom-wrap').hide();
+        const domains = $(this).find('option:selected').data('domains');
+        if (domains) {
+          const firstDomain = String(domains).split(',')[0].trim();
+          if (firstDomain) {
+            $('#onboard_frontend_url').val('https://' + firstDomain);
+          }
+        }
+      }
+    });
+
+    // Deploy Hook Tester in Wizard
+    $(document).on('click', '#onboard-test-deploy-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#onboard-deploy-quick-status');
+      const hook = $('#onboard_cf_deploy_hook').val()?.trim() || '';
+
+      if (!hook && !$('#onboard_cf_deploy_hook').val()?.includes('•••')) {
+        alert('Please enter a Cloudflare Pages Deploy Hook URL first.');
+        $('#onboard_cf_deploy_hook').focus();
+        return;
+      }
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
+      $status.show().html('<span style="color:#0284c7; font-size:12px;"><span class="dashicons dashicons-update spin"></span> Triggering Cloudflare Pages build...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_trigger_deploy_hook',
+          deploy_hook: hook,
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<span style="color:#15803d; font-weight:600; font-size:12px;"><span class="dashicons dashicons-yes-alt"></span> ' + escapeHtml(res.data?.message || 'Deploy hook triggered successfully! Build queued on Cloudflare Pages.') + '</span>');
+          } else {
+            $status.html('<span style="color:#b91c1c; font-weight:600; font-size:12px;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(res.data?.message || 'Deploy hook trigger failed.') + '</span>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> Error: ' + escapeHtml(err) + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> Test Deploy Hook');
+        }
+      });
+    });
+
+    // Astro Handshake Tester in Wizard
+    $(document).on('click', '#onboard-test-handshake-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#onboard-handshake-quick-status');
+      const frontendUrl = $('#onboard_frontend_url').val()?.trim() || '';
+
+      if (!frontendUrl) {
+        alert('Please enter an Astro Frontend URL first.');
+        $('#onboard_frontend_url').focus();
+        return;
+      }
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
+      $status.show().html('<span style="color:#0284c7; font-size:12px;"><span class="dashicons dashicons-update spin"></span> Testing /api/revalidate handshake...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_test_key',
+          frontend_url: frontendUrl,
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<div style="margin-top:4px; padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt"></span> <strong>Astro Handshake Verified (HTTP 200 OK)</strong> &bull; Latency: ' + (res.data?.latency_ms || 0) + 'ms</div>');
+          } else {
+            let msg = res.data?.message || 'Handshake failed.';
+            if (res.data?.guidance) {
+              msg += '<div style="margin-top:2px; font-size:11px; color:#7f1d1d;">' + escapeHtml(res.data.guidance) + '</div>';
+            }
+            $status.html('<div style="margin-top:4px; padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> ' + msg + '</div>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<span style="color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> Network error: ' + escapeHtml(err) + '</span>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> Test Astro Handshake');
+        }
+      });
+    });
+
+    // R2 Bucket Dropdown change: auto-detect attached domains
+    $(document).on('change', '#onboard_r2_bucket', function() {
+      const val = $(this).val();
+      const $status = $('#onboard-bucket-domain-status');
+      if (val === '__custom__') {
+        $('#onboard-custom-bucket-wrap').show();
+        $status.hide();
+        return;
+      }
+      $('#onboard-custom-bucket-wrap').hide();
+      if (!val) {
+        $status.hide();
+        return;
+      }
+
+      $status.show().html('<span style="color:#0284c7;"><span class="dashicons dashicons-update spin"></span> Checking attached domains for bucket ' + escapeHtml(val) + '...</span>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_detect_r2_custom_domain',
+          bucket_name: val,
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success && res.data && res.data.primary) {
+            $('#onboard_r2_custom_domain').val(res.data.primary);
+            $status.html('<span style="color:#15803d; font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Custom domain <code>' + escapeHtml(res.data.primary) + '</code> is already attached to this bucket (Active on Cloudflare).</span>');
+          } else {
+            $status.html('<span style="color:#b45309; font-weight:600;"><span class="dashicons dashicons-info" style="vertical-align:-2px;"></span> No custom domain attached yet. Confirm below to attach and create proxied DNS CNAME.</span>');
+          }
+        },
+        error: function() {
+          $status.hide();
+        }
+      });
+    });
+
+    // Invalidation Tab: Live Webhook Handshake Tester
+    $(document).on('click', '#astropress-test-webhook-handshake-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $res = $('#astropress-webhook-test-result');
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing Handshake...');
+      $res.show().html('<div style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin"></span> Dispatching test webhook to Astro /api/revalidate...</div>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_test_key',
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success) {
+            $res.html(
+              '<div style="padding:12px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:13px;">' +
+              '<div style="font-weight:700;"><span class="dashicons dashicons-yes-alt"></span> Webhook Handshake Verified (HTTP ' + (res.data?.code || 200) + ' OK)</div>' +
+              '<div style="font-size:12px; margin-top:4px; color:#166534;">' + escapeHtml(res.data?.message || '') + ' &bull; <strong>Latency:</strong> ' + (res.data?.latency_ms || 0) + 'ms</div>' +
+              '</div>'
+            );
+          } else {
+            let msg = res.data?.message || 'Handshake failed.';
+            let details = res.data?.guidance ? '<div style="margin-top:4px; font-size:11px; color:#7f1d1d;">' + escapeHtml(res.data.guidance) + '</div>' : '';
+            $res.html(
+              '<div style="padding:12px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:13px;">' +
+              '<div style="font-weight:700;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(msg) + '</div>' +
+              details +
+              '</div>'
+            );
+          }
+        },
+        error: function(xhr, status, err) {
+          $res.html(
+            '<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;">' +
+            '<span class="dashicons dashicons-warning"></span> Network error: ' + escapeHtml(err) +
+            '</div>'
+          );
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> Send Test Handshake Webhook');
+        }
+      });
+    });
+
+    // 1. Stage 1: Connect & Auto-Configure
     $(document).on('click', '#onboard-connect-all-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
@@ -2318,7 +2511,10 @@
       const token = $('#onboard_cf_api_token').val()?.trim() || '';
       const frontendUrl = $('#onboard_frontend_url').val()?.trim() || '';
       const deployHook = $('#onboard_cf_deploy_hook').val()?.trim() || '';
-      const pagesProj = $('#onboard_cf_pages_project').val()?.trim() || '';
+      let pagesProj = $('#onboard_cf_pages_project').val()?.trim() || '';
+      if (pagesProj === '__custom__') {
+        pagesProj = $('#onboard_cf_pages_project_custom').val()?.trim() || '';
+      }
 
       if (!token && !$('#onboard_cf_api_token').val()?.includes('•••')) {
         alert('Please paste your Cloudflare API Token.');
@@ -2353,28 +2549,44 @@
             html += '<div style="font-weight:700; font-size:14px; margin-bottom:8px;"><span class="dashicons dashicons-yes-alt"></span> ' + escapeHtml(d.message) + '</div>';
             html += '<div style="display:grid; grid-template-columns:1fr; gap:6px; color:#166534; font-size:12px;">';
             html += '<div><strong>Cloudflare Zone:</strong> ' + escapeHtml(d.zone_name) + ' (Edge POP cache purge active)</div>';
-            html += '<div><strong>Astro Webhook Secret:</strong> AES-256 protected & synced</div>';
+            html += '<div><strong>Astro Webhook Secret:</strong> Stored with secret_text encryption & synced</div>';
             if (d.pages_project) {
               html += '<div><strong>Cloudflare Pages:</strong> Project <code>' + escapeHtml(d.pages_project) + '</code> synced</div>';
             }
             if (d.handshake_ok) {
               html += '<div><strong>Frontend Handshake:</strong> ' + escapeHtml(d.frontend_url) + '/api/revalidate (HTTP 200 OK)</div>';
-            } else if (d.handshake_code > 0) {
-              html += '<div><strong>Frontend Reachable:</strong> HTTP ' + d.handshake_code + ' (Will auto-activate once Pages deployment finishes)</div>';
+            } else if (d.handshake_details) {
+              html += '<div style="color:#92400e;"><strong>Frontend Status:</strong> ' + escapeHtml(d.handshake_details) + '</div>';
+            }
+            if (d.domain_mismatch) {
+              html += '<div style="color:#b45309; margin-top:4px;"><span class="dashicons dashicons-warning"></span> <strong>Domain Notice:</strong> Frontend URL does not match custom domains of Pages project "' + escapeHtml(d.pages_project) + '". Verify project selection.</div>';
             }
             html += '</div></div>';
             $status.html(html);
 
+            // Populate discovered Pages projects if dropdown is sparse
+            if (d.pages_projects && d.pages_projects.length > 0) {
+              const $pSelect = $('#onboard_cf_pages_project');
+              if ($pSelect.find('option').length <= 2) {
+                $pSelect.find('option:not([value="__custom__"]):not([value=""])').remove();
+                d.pages_projects.forEach(function(p) {
+                  const domStr = (p.domains || []).join(',');
+                  $pSelect.append('<option value="' + escapeHtml(p.name) + '" data-domains="' + escapeHtml(domStr) + '">' + escapeHtml(p.name) + '</option>');
+                });
+                if (d.pages_project) {
+                  $pSelect.val(d.pages_project);
+                }
+              }
+            }
+
             // Populate discovered buckets for Stage 2
             if (d.buckets && d.buckets.length > 0) {
-              const $bList = $('#onboard-buckets-list');
-              $bList.empty();
+              const $bSelect = $('#onboard_r2_bucket');
+              $bSelect.find('option:not([value="__custom__"]):not([value=""])').remove();
               d.buckets.forEach(function(b) {
-                $bList.append('<option value="' + escapeHtml(b) + '">' + escapeHtml(b) + '</option>');
+                $bSelect.append('<option value="' + escapeHtml(b) + '">' + escapeHtml(b) + '</option>');
               });
-              if (!$('#onboard_r2_bucket').val()) {
-                $('#onboard_r2_bucket').val(d.buckets[0]);
-              }
+              $bSelect.val(d.buckets[0]).trigger('change');
             }
 
             // Unlock Stage 2
@@ -2396,14 +2608,18 @@
       });
     });
 
-    // 4. Stage 2: Orchestrated R2 Offload Activation & Setup Completion
+    // 2. Stage 2: Orchestrated R2 Offload Activation & Setup Completion
     $(document).on('click', '#onboard-enable-r2-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
       const $status = $('#onboard-r2-result-status');
       const mode = $('#onboard_media_mode').val();
-      const bucket = $('#onboard_r2_bucket').val()?.trim() || '';
+      let bucket = $('#onboard_r2_bucket').val()?.trim() || '';
+      if (bucket === '__custom__') {
+        bucket = $('#onboard_r2_bucket_custom').val()?.trim() || '';
+      }
       const domain = $('#onboard_r2_custom_domain').val()?.trim() || '';
+      const confirmAttach = $('#onboard_confirm_attach_domain').is(':checked') ? 1 : 0;
 
       if (mode === 'r2' && !bucket) {
         alert('Please enter or select an R2 Bucket name.');
@@ -2422,6 +2638,7 @@
           action: 'astropress_orchestrate_r2',
           bucket: (mode === 'r2' ? bucket : ''),
           custom_domain: (mode === 'r2' ? domain : ''),
+          confirm_attach_domain: confirmAttach,
           nonce: nonce,
         },
         success: function(res) {

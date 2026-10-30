@@ -1222,9 +1222,11 @@ class AstroPress_Cache {
         $prev_env = $project_data['deployment_configs']['preview']['env_vars'] ?? array();
 
         // 2. Merge new variables into production and preview maps
+        // Sensitive keys (REVALIDATE_SECRET) are stored as encrypted secret_text in Cloudflare Pages
         foreach ($env_vars as $k => $v) {
-            $prod_env[$k] = array('value' => (string) $v, 'type' => 'plain_text');
-            $prev_env[$k] = array('value' => (string) $v, 'type' => 'plain_text');
+            $var_type = ($k === 'REVALIDATE_SECRET') ? 'secret_text' : 'plain_text';
+            $prod_env[$k] = array('value' => (string) $v, 'type' => $var_type);
+            $prev_env[$k] = array('value' => (string) $v, 'type' => $var_type);
         }
 
         $patch_payload = array(

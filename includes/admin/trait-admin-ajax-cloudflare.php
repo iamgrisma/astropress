@@ -205,21 +205,30 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 $p_body = json_decode(wp_remote_retrieve_body($p_res), true);
                 if (!empty($p_body['result'])) {
                     foreach ($p_body['result'] as $p) {
+                        $p_domains = array();
+                        if (!empty($p['domains']) && is_array($p['domains'])) {
+                            $p_domains = array_map('sanitize_text_field', $p['domains']);
+                        }
+                        if (!empty($p['subdomain']) && !in_array($p['subdomain'], $p_domains, true)) {
+                            $p_domains[] = sanitize_text_field($p['subdomain']);
+                        }
                         $pages_projects[] = array(
                             'name'      => sanitize_text_field($p['name'] ?? ''),
                             'subdomain' => sanitize_text_field($p['subdomain'] ?? ''),
+                            'domains'   => $p_domains,
                         );
                     }
                 }
             }
         }
 
-        // Cache discovery
+        // Cache discovery with pages projects & domains
         set_transient('astropress_cf_discovery_cache', array(
-            'account_id' => $account_id,
-            'zone_id'    => $matched_zone['id'] ?? '',
-            'zone_name'  => $matched_zone['name'] ?? '',
-            'buckets'    => $buckets,
+            'account_id'     => $account_id,
+            'zone_id'        => $matched_zone['id'] ?? '',
+            'zone_name'      => $matched_zone['name'] ?? '',
+            'buckets'        => $buckets,
+            'pages_projects' => $pages_projects,
         ), 86400);
 
         // 2. Secret Generation / Retrieval
@@ -245,6 +254,30 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             if (!empty($sync_res['success'])) {
                 $pages_synced = true;
                 update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_target);
+            }
+        }
+
+        // Check if selected Pages project matches frontend URL domain
+        $domain_mismatch = false;
+        $matched_project_domains = array();
+        if (!empty($pages_target) && !empty($pages_projects)) {
+            foreach ($pages_projects as $proj) {
+                if ($proj['name'] === $pages_target) {
+                    $matched_project_domains = $proj['domains'];
+                    break;
+                }
+            }
+            if (!empty($matched_project_domains) && !empty($fe_host)) {
+                $found = false;
+                foreach ($matched_project_domains as $pd) {
+                    if (strtolower($pd) === strtolower($fe_host) || str_ends_with(strtolower($fe_host), '.' . strtolower($pd))) {
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    $domain_mismatch = true;
+                }
             }
         }
 
@@ -284,20 +317,36 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             update_option(AstroPress::OPTION_CONNECTED, '1');
         }
 
+        $handshake_details = '';
+        if ($handshake_ok) {
+            $handshake_details = esc_html__('Astro /api/revalidate endpoint verified (HTTP 200 OK).', 'astropress');
+        } elseif ($handshake_code === 404) {
+            $handshake_details = esc_html__('Frontend reachable, but /api/revalidate route returned 404 Not Found. Ensure src/pages/api/revalidate.ts is created in your Astro repository.', 'astropress');
+        } elseif ($handshake_code === 401 || $handshake_code === 403) {
+            $handshake_details = esc_html__('Astro frontend rejected secret (HTTP 401/403). Secret will take effect once Cloudflare Pages rebuild finishes.', 'astropress');
+        } elseif ($handshake_code === 0) {
+            $handshake_details = sprintf(esc_html__('Could not reach frontend: %s', 'astropress'), is_wp_error($t_res) ? $t_res->get_error_message() : 'Timeout');
+        } else {
+            $handshake_details = sprintf(esc_html__('Frontend returned HTTP %d.', 'astropress'), $handshake_code);
+        }
+
         wp_send_json_success(array(
-            'message'          => esc_html__('Connection orchestrated successfully!', 'astropress'),
-            'zone_name'        => $matched_zone['name'] ?? ($root_zone_search ?: 'Zone Detected'),
-            'zone_id'          => $matched_zone['id'] ?? '',
-            'account_id'       => $account_id,
-            'frontend_url'     => $frontend_url,
-            'secret'           => $secret,
-            'pages_project'    => $pages_target,
-            'pages_synced'     => $pages_synced,
-            'deploy_triggered' => $deploy_triggered,
-            'handshake_code'   => $handshake_code,
-            'handshake_ok'     => $handshake_ok,
-            'buckets'          => $buckets,
-            'pages_projects'   => $pages_projects,
+            'message'           => esc_html__('Connection orchestrated successfully!', 'astropress'),
+            'zone_name'         => $matched_zone['name'] ?? ($root_zone_search ?: 'Zone Detected'),
+            'zone_id'           => $matched_zone['id'] ?? '',
+            'account_id'        => $account_id,
+            'frontend_url'      => $frontend_url,
+            'secret'            => $secret,
+            'pages_project'     => $pages_target,
+            'pages_synced'      => $pages_synced,
+            'deploy_triggered'  => $deploy_triggered,
+            'handshake_code'    => $handshake_code,
+            'handshake_ok'      => $handshake_ok,
+            'handshake_details' => $handshake_details,
+            'domain_mismatch'   => $domain_mismatch,
+            'project_domains'   => $matched_project_domains,
+            'buckets'           => $buckets,
+            'pages_projects'    => $pages_projects,
         ));
     }
 
@@ -349,13 +398,30 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         update_option('astropress_compress_enabled', 1);
 
         $attached_domain = false;
+        $confirm_attach  = isset($_POST['confirm_attach_domain']) ? !empty($_POST['confirm_attach_domain']) : true;
+
         // 3. Attach Custom Domain & Create DNS CNAME (if custom domain specified)
         if (!empty($clean_domain) && !empty($token) && !empty($account_id) && !empty($zone_id)) {
             update_option('astropress_r2_custom_domain', $clean_domain);
             update_option('r2g_custom_domain', $clean_domain);
 
-            $attach_res = $this->core->cache->attach_r2_custom_domain($bucket, $clean_domain, $zone_id, '', $account_id, $token);
-            $attached_domain = !empty($attach_res['success']);
+            // Verify if domain is already attached to avoid redundant API creation calls
+            $existing_domains = $this->core->cache->get_r2_custom_domains($bucket, $account_id, $token);
+            $already_attached = false;
+            if (!empty($existing_domains['domains'])) {
+                foreach ($existing_domains['domains'] as $ed) {
+                    if (strcasecmp($ed['domain'] ?? '', $clean_domain) === 0) {
+                        $already_attached = true;
+                        $attached_domain  = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$already_attached && $confirm_attach) {
+                $attach_res = $this->core->cache->attach_r2_custom_domain($bucket, $clean_domain, $zone_id, '', $account_id, $token);
+                $attached_domain = !empty($attach_res['success']);
+            }
 
             // Sync CDN_MEDIA_URL to Cloudflare Pages if project exists
             $pages_proj = $this->core->get_cf_pages_project();
@@ -605,9 +671,17 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                     $can_pages = true;
                     if (!empty($p_body['result']) && is_array($p_body['result'])) {
                         foreach ($p_body['result'] as $p) {
+                            $p_domains = array();
+                            if (!empty($p['domains']) && is_array($p['domains'])) {
+                                $p_domains = array_map('sanitize_text_field', $p['domains']);
+                            }
+                            if (!empty($p['subdomain']) && !in_array($p['subdomain'], $p_domains, true)) {
+                                $p_domains[] = sanitize_text_field($p['subdomain']);
+                            }
                             $pages_projects[] = array(
                                 'name'      => sanitize_text_field($p['name'] ?? ''),
                                 'subdomain' => sanitize_text_field($p['subdomain'] ?? ''),
+                                'domains'   => $p_domains,
                             );
                         }
                     }

@@ -38,6 +38,7 @@ if (empty($custom_domain) && !empty($allowed_roots[0])) {
 // Check cached discovery
 $cached_discovery = get_transient('astropress_cf_discovery_cache');
 $cached_buckets   = !empty($cached_discovery['buckets']) ? $cached_discovery['buckets'] : array();
+$cached_projects  = !empty($cached_discovery['pages_projects']) ? $cached_discovery['pages_projects'] : array();
 
 $all_pass = true;
 $failed_reasons = array();
@@ -88,43 +89,70 @@ foreach ($checks as $c) {
                     <input type="password" id="onboard_cf_api_token" name="onboard_cf_api_token" value="<?php echo !empty($cf_token) ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Paste Cloudflare API Token here...', 'astropress'); ?>" autocomplete="new-password" style="width:100%; max-width:100%;" />
                 </div>
                 <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">
-                    <?php esc_html_e('Requires Zone Cache Purge, Cache Rules, DNS, Zone Read, and R2 Storage permissions.', 'astropress'); ?>
+                    <?php esc_html_e('Requires Zone Cache Purge, Cache Rules, DNS, Zone Read, Pages, and R2 Storage permissions.', 'astropress'); ?>
                     <a href="<?php echo esc_url($this->get_cf_token_template_url()); ?>" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:600;">
                         <?php esc_html_e('Create pre-filled token on Cloudflare &rarr;', 'astropress'); ?>
                     </a>
                 </p>
             </div>
 
+            <!-- Cloudflare Pages Project Selection -->
+            <div>
+                <label for="onboard_cf_pages_project" style="display:block; font-weight:600; margin-bottom:6px; color:#334155;">
+                    <?php esc_html_e('Cloudflare Pages Project:', 'astropress'); ?>
+                </label>
+                <select id="onboard_cf_pages_project" name="onboard_cf_pages_project" style="width:100%; max-width:100%;">
+                    <option value=""><?php esc_html_e('-- Select Cloudflare Pages Project (Auto-Discovered) --', 'astropress'); ?></option>
+                    <?php foreach ($cached_projects as $cp): ?>
+                        <?php 
+                        $p_name = is_array($cp) ? ($cp['name'] ?? '') : $cp;
+                        $p_domains = is_array($cp) ? implode(',', ($cp['domains'] ?? array())) : '';
+                        $p_first_domain = !empty($p_domains) ? explode(',', $p_domains)[0] : '';
+                        ?>
+                        <option value="<?php echo esc_attr($p_name); ?>" data-domains="<?php echo esc_attr($p_domains); ?>" <?php selected($pages_project, $p_name); ?>>
+                            <?php echo esc_html($p_name); ?><?php echo !empty($p_first_domain) ? ' (' . esc_html($p_first_domain) . ')' : ''; ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <option value="__custom__" <?php selected($pages_project === '__custom__'); ?>><?php esc_html_e('+ Custom Frontend / Cloudflare Worker', 'astropress'); ?></option>
+                </select>
+                <div id="onboard-pages-custom-wrap" style="display:none; margin-top:8px;">
+                    <input type="text" id="onboard_cf_pages_project_custom" placeholder="e.g. topnepali-election" class="regular-text" style="width:100%;" />
+                </div>
+                <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">
+                    <?php esc_html_e('Selecting your project automatically syncs REVALIDATE_SECRET and pre-selects your frontend domain.', 'astropress'); ?>
+                </p>
+            </div>
+
             <!-- Astro Frontend URL -->
             <div>
-                <label for="onboard_frontend_url" style="display:block; font-weight:600; margin-bottom:6px; color:#334155;">
-                    <?php esc_html_e('Astro Frontend URL:', 'astropress'); ?>
-                </label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                    <label for="onboard_frontend_url" style="font-weight:600; color:#334155;">
+                        <?php esc_html_e('Astro Frontend URL:', 'astropress'); ?>
+                    </label>
+                    <button type="button" class="button button-secondary button-small" id="onboard-test-handshake-btn">
+                        <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Astro Handshake', 'astropress'); ?>
+                    </button>
+                </div>
                 <input type="url" id="onboard_frontend_url" name="onboard_frontend_url" value="<?php echo esc_attr($frontend_url); ?>" class="regular-text" placeholder="https://example.com" style="width:100%; max-width:100%;" required />
+                <div id="onboard-handshake-quick-status" style="margin-top:6px; display:none;"></div>
                 <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;"><?php esc_html_e('Canonical URL of your public Astro website (e.g. https://topnepali.com).', 'astropress'); ?></p>
             </div>
 
-            <!-- Collapsible Optional Settings (Deploy Hook & Pages Project) -->
-            <div style="border-top:1px dashed #e2e8f0; padding-top:12px;">
-                <button type="button" class="button button-link" id="onboard-toggle-advanced-btn" style="padding:0; font-size:12px; color:#0284c7; text-decoration:none;">
-                    <span class="dashicons dashicons-arrow-right-alt2" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
-                    <?php esc_html_e('Optional: Cloudflare Pages Deploy Hook & Project Settings', 'astropress'); ?>
-                </button>
-                <div id="onboard-advanced-wrap" style="display:none; margin-top:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
-                    <div style="margin-bottom:12px;">
-                        <label for="onboard_cf_pages_project" style="display:block; font-weight:600; font-size:12px; margin-bottom:4px; color:#334155;">
-                            <?php esc_html_e('Cloudflare Pages Project Name (for 1-Click Environment Sync):', 'astropress'); ?>
-                        </label>
-                        <input type="text" id="onboard_cf_pages_project" name="onboard_cf_pages_project" value="<?php echo esc_attr($pages_project); ?>" placeholder="e.g. topnepali-election (auto-discovered if left blank)" class="regular-text" style="width:100%;" list="onboard-pages-projects-list" />
-                        <datalist id="onboard-pages-projects-list"></datalist>
-                    </div>
-                    <div>
-                        <label for="onboard_cf_deploy_hook" style="display:block; font-weight:600; font-size:12px; margin-bottom:4px; color:#334155;">
-                            <?php esc_html_e('Cloudflare Pages Deploy Hook (for Full Static Rebuilds):', 'astropress'); ?>
-                        </label>
-                        <input type="password" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo $has_deploy_hook ? '••••••••••••••••••••••••••••••••' : ''; ?>" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." class="regular-text" style="width:100%;" autocomplete="new-password" />
-                    </div>
+            <!-- Cloudflare Pages Deploy Hook -->
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                    <label for="onboard_cf_deploy_hook" style="font-weight:600; font-size:12px; color:#334155;">
+                        <?php esc_html_e('Cloudflare Pages Deploy Hook (Optional & AES-256 Protected):', 'astropress'); ?>
+                    </label>
+                    <button type="button" class="button button-secondary button-small" id="onboard-test-deploy-btn">
+                        <span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Deploy Hook', 'astropress'); ?>
+                    </button>
                 </div>
+                <input type="password" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo $has_deploy_hook ? '••••••••••••••••••••••••••••••••' : ''; ?>" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." class="regular-text" style="width:100%;" autocomplete="new-password" />
+                <div id="onboard-deploy-quick-status" style="margin-top:6px; display:none;"></div>
+                <p style="font-size:11px; color:#64748b; margin:4px 0 0 0;">
+                    <?php esc_html_e('Triggered once during setup to rebuild Cloudflare Pages with new environment variables. Everyday post updates use instant on-demand /api/revalidate without rebuilds.', 'astropress'); ?>
+                </p>
             </div>
         </div>
 
@@ -172,15 +200,23 @@ foreach ($checks as $c) {
                     <label for="onboard_r2_bucket" style="display:block; font-weight:600; font-size:13px; margin-bottom:4px; color:#334155;">
                         <?php esc_html_e('R2 Bucket Name:', 'astropress'); ?>
                     </label>
-                    <div style="display:flex; gap:8px;">
-                        <input type="text" id="onboard_r2_bucket" name="onboard_r2_bucket" value="<?php echo esc_attr($bucket); ?>" placeholder="e.g. topnepali-media or select discovered" class="regular-text" style="flex:1;" list="onboard-buckets-list" />
-                        <datalist id="onboard-buckets-list">
-                            <?php foreach ($cached_buckets as $cb): ?>
+                    <select id="onboard_r2_bucket" name="onboard_r2_bucket" style="width:100%; max-width:100%;">
+                        <?php if (!empty($bucket)): ?>
+                            <option value="<?php echo esc_attr($bucket); ?>" selected><?php echo esc_html($bucket); ?> (Current)</option>
+                        <?php else: ?>
+                            <option value=""><?php esc_html_e('-- Select Discovered R2 Bucket --', 'astropress'); ?></option>
+                        <?php endif; ?>
+                        <?php foreach ($cached_buckets as $cb): ?>
+                            <?php if ($cb !== $bucket): ?>
                                 <option value="<?php echo esc_attr($cb); ?>"><?php echo esc_html($cb); ?></option>
-                            <?php endforeach; ?>
-                        </datalist>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                        <option value="__custom__"><?php esc_html_e('+ Enter Custom / New Bucket Name', 'astropress'); ?></option>
+                    </select>
+                    <div id="onboard-custom-bucket-wrap" style="display:none; margin-top:8px;">
+                        <input type="text" id="onboard_r2_bucket_custom" placeholder="my-media-bucket" class="regular-text" style="width:100%;" />
                     </div>
-                    <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;"><?php esc_html_e('Discovered from your Cloudflare account or enter a new bucket name.', 'astropress'); ?></p>
+                    <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;"><?php esc_html_e('Discovered from your Cloudflare account or specify a new bucket.', 'astropress'); ?></p>
                 </div>
 
                 <!-- Custom CDN Domain -->
@@ -189,8 +225,14 @@ foreach ($checks as $c) {
                         <?php esc_html_e('Custom CDN Domain:', 'astropress'); ?>
                     </label>
                     <input type="text" id="onboard_r2_custom_domain" name="onboard_r2_custom_domain" value="<?php echo esc_attr($custom_domain); ?>" placeholder="media.example.com" class="regular-text" style="width:100%; max-width:100%;" />
-                    <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">
-                        <?php printf(esc_html__('AstroPress will automatically attach this domain to your bucket and configure the Cloudflare DNS CNAME record (e.g. %s).', 'astropress'), '<code>media.' . esc_html($allowed_roots[0] ?? 'example.com') . '</code>'); ?>
+                    <div id="onboard-bucket-domain-status" style="margin-top:6px; font-size:12px;"></div>
+                    
+                    <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; color:#334155; cursor:pointer;">
+                        <input type="checkbox" id="onboard_confirm_attach_domain" name="onboard_confirm_attach_domain" value="1" checked />
+                        <span><?php esc_html_e('Attach this domain to R2 bucket & automatically create proxied DNS CNAME on Cloudflare', 'astropress'); ?></span>
+                    </label>
+                    <p style="font-size:11px; color:#64748b; margin:4px 0 0 0;">
+                        <?php printf(esc_html__('Must be a subdomain of your root zone (e.g. %s). Uncheck if DNS is managed externally.', 'astropress'), '<code>media.' . esc_html($allowed_roots[0] ?? 'example.com') . '</code>'); ?>
                     </p>
                 </div>
             </div>

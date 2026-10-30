@@ -106,80 +106,90 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
     </div>
 
 <?php elseif ($sub === 'invalidation'): ?>
-    <!-- Sub-tab 3: Invalidation Triggers & Deploy Hooks -->
+    <!-- Sub-tab 3: Invalidation Triggers & Live Webhook Console -->
+    <div class="astropress-card" style="max-width:960px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0; font-size:15px; color:#1e293b; display:flex; align-items:center; gap:8px;">
+                <span class="dashicons dashicons-admin-network" style="color:#0284c7;"></span>
+                <span><?php esc_html_e('Live Webhook Handshake & Edge Diagnostics', 'astropress'); ?></span>
+            </h3>
+            <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-secondary button-small">
+                <span class="dashicons dashicons-welcome-learn-more" style="vertical-align:-2px;"></span> <?php esc_html_e('Manage Credentials in Wizard', 'astropress'); ?> &rarr;
+            </a>
+        </div>
+        <p style="margin:0 0 16px 0; color:#64748b; font-size:13px; line-height:1.5;">
+            <?php esc_html_e('Test your Astro /api/revalidate endpoint and Cloudflare Pages deploy hook to verify real-time cache purge connectivity.', 'astropress'); ?>
+        </p>
+
+        <!-- Current Configuration Status Grid -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:16px;">
+            <div>
+                <span style="display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;"><?php esc_html_e('Frontend Revalidate Route:', 'astropress'); ?></span>
+                <code style="display:block; margin-top:4px; font-size:12px; word-break:break-all;"><?php echo esc_html(rtrim($frontend, '/') . '/api/revalidate'); ?></code>
+            </div>
+            <div>
+                <span style="display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;"><?php esc_html_e('Webhook Secret:', 'astropress'); ?></span>
+                <span style="display:inline-block; margin-top:4px; font-size:12px; font-weight:600; color:#166534;">
+                    <span class="dashicons dashicons-shield" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
+                    <?php echo $this->core->has_custom_secret() ? esc_html__('AES-256 Protected & Synced', 'astropress') : esc_html__('No Secret Configured', 'astropress'); ?>
+                </span>
+            </div>
+            <div>
+                <span style="display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;"><?php esc_html_e('Cloudflare Pages Project:', 'astropress'); ?></span>
+                <code style="display:block; margin-top:4px; font-size:12px;"><?php echo esc_html($this->core->get_cf_pages_project() ?: 'Not linked'); ?></code>
+            </div>
+            <div>
+                <span style="display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;"><?php esc_html_e('Deploy Hook:', 'astropress'); ?></span>
+                <span style="display:inline-block; margin-top:4px; font-size:12px; font-weight:600; color:<?php echo $this->core->has_cf_deploy_hook() ? '#166534' : '#64748b'; ?>;">
+                    <?php echo $this->core->has_cf_deploy_hook() ? esc_html__('Configured (Encrypted)', 'astropress') : esc_html__('Optional / Not set', 'astropress'); ?>
+                </span>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button type="button" class="button button-primary" id="astropress-test-webhook-handshake-btn">
+                <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Send Test Handshake Webhook', 'astropress'); ?>
+            </button>
+            <button type="button" class="button button-secondary" id="astropress-trigger-deploy-now">
+                <span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Cloudflare Pages Deploy Hook', 'astropress'); ?>
+            </button>
+        </div>
+
+        <!-- Live Diagnostics Output Boxes -->
+        <div id="astropress-webhook-test-result" style="margin-top:14px; display:none;"></div>
+        <div id="astropress-deploy-status" style="margin-top:14px; display:none;"></div>
+    </div>
+
+    <!-- Automatic Purge Triggers Card -->
     <div class="astropress-card" style="max-width:960px; margin-bottom:20px;">
         <h3 style="margin:0 0 4px 0; font-size:15px; color:#1e293b;">
-            <?php esc_html_e('Cache Invalidation Triggers & Webhook Policies', 'astropress'); ?>
+            <?php esc_html_e('Automatic Edge Purge & Invalidation Triggers', 'astropress'); ?>
         </h3>
         <p style="margin:0 0 16px 0; color:#64748b; font-size:13px;">
-            <?php esc_html_e('Define when WordPress should dispatch cache invalidation webhooks to your Astro frontend and purge Cloudflare Edge.', 'astropress'); ?>
+            <?php esc_html_e('Select which WordPress publishing and editing actions should automatically purge Cloudflare Edge POP caches and dispatch invalidation webhooks.', 'astropress'); ?>
         </p>
 
         <form method="post" action="">
             <?php wp_nonce_field('astropress_automation_action', 'astropress_automation_nonce'); ?>
             <table class="form-table">
                 <tr>
-                    <th scope="row"><?php esc_html_e('Automatic Purge Triggers', 'astropress'); ?></th>
+                    <th scope="row"><?php esc_html_e('Trigger Rules', 'astropress'); ?></th>
                     <td>
                         <fieldset>
-                            <label><input type="checkbox" name="purge_on_save" value="1" <?php checked($this->core->should_purge_on_save()); ?> /> <?php esc_html_e('Purge post / page cache on publish, update or trash', 'astropress'); ?></label><br />
-                            <label><input type="checkbox" name="purge_feeds" value="1" <?php checked($this->core->should_purge_feeds()); ?> /> <?php esc_html_e('Purge RSS and Atom feeds on new post publication', 'astropress'); ?></label><br />
-                            <label><input type="checkbox" name="purge_taxonomy" value="1" <?php checked($this->core->should_purge_taxonomy()); ?> /> <?php esc_html_e('Purge category and tag archives when terms are edited', 'astropress'); ?></label><br />
-                            <label><input type="checkbox" name="purge_menu" value="1" <?php checked($this->core->should_purge_menu()); ?> /> <?php esc_html_e('Purge global cache when navigation menus are updated', 'astropress'); ?></label><br />
-                            <label><input type="checkbox" name="debounce_enabled" value="1" <?php checked($this->core->should_debounce_webhooks()); ?> /> <?php esc_html_e('Debounce requests (batch multiple invalidations into a single payload)', 'astropress'); ?></label><br />
-                            <label><input type="checkbox" name="cf_cache_tags_enabled" value="1" <?php checked((bool) get_option('astropress_cf_cache_tags_enabled', false)); ?> /> <?php esc_html_e('Purge Cloudflare Cache-Tags (Surrogate-Key instant purging)', 'astropress'); ?></label><br />
-                            <label><input type="checkbox" name="lscwp_sync" value="1" <?php checked($this->core->should_sync_lscwp()); ?> /> <?php esc_html_e('Synchronize with LiteSpeed Cache purge events', 'astropress'); ?></label>
+                            <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="purge_on_save" value="1" <?php checked($this->core->should_purge_on_save()); ?> /> <strong><?php esc_html_e('Post & Page Updates', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Purge cache on publish, update, trash, or restore', 'astropress'); ?></label>
+                            <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="purge_feeds" value="1" <?php checked($this->core->should_purge_feeds()); ?> /> <strong><?php esc_html_e('RSS & Atom Feeds', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Purge feed URLs when new articles are published', 'astropress'); ?></label>
+                            <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="purge_taxonomy" value="1" <?php checked($this->core->should_purge_taxonomy()); ?> /> <strong><?php esc_html_e('Taxonomy Archives', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Purge category and tag archives when terms are edited', 'astropress'); ?></label>
+                            <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="purge_menu" value="1" <?php checked($this->core->should_purge_menu()); ?> /> <strong><?php esc_html_e('Navigation Menus', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Purge global frontend cache when menus change', 'astropress'); ?></label>
+                            <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="debounce_enabled" value="1" <?php checked($this->core->should_debounce_webhooks()); ?> /> <strong><?php esc_html_e('Smart Debouncing', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Batch multiple rapid edits into a single webhook payload', 'astropress'); ?></label>
+                            <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="cf_cache_tags_enabled" value="1" <?php checked((bool) get_option('astropress_cf_cache_tags_enabled', false)); ?> /> <strong><?php esc_html_e('Cloudflare Cache-Tags', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Instant surrogate-key purging across Cloudflare Enterprise/Pro POPs', 'astropress'); ?></label>
+                            <label style="display:block;"><input type="checkbox" name="lscwp_sync" value="1" <?php checked($this->core->should_sync_lscwp()); ?> /> <strong><?php esc_html_e('LiteSpeed Cache Sync', 'astropress'); ?></strong> &mdash; <?php esc_html_e('Forward LiteSpeed Cache purge events to Cloudflare and Astro', 'astropress'); ?></label>
                         </fieldset>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row"><label for="astropress_revalidate_secret"><?php esc_html_e('Astro Webhook Secret', 'astropress'); ?></label></th>
-                    <td>
-                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
-                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank to auto-generate or paste custom secret', 'astropress'); ?>" autocomplete="new-password" style="flex:1; min-width:240px;" />
-                            <button type="button" class="button button-secondary" id="astropress-generate-secret-btn" title="<?php esc_attr_e('Generate strong 32-character secret', 'astropress'); ?>">
-                                <span class="dashicons dashicons-randomize"></span> <?php esc_html_e('Generate Secret', 'astropress'); ?>
-                            </button>
-                            <span id="astropress-key-badge" style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
-                                <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('No Secret (Open Endpoint)', 'astropress'); ?>
-                            </span>
-                        </div>
-                        <p class="description"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Protects your frontend from unauthorized cache purges and DoS cache stampedes.', 'astropress'); ?></p>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row"><label for="astropress_cf_pages_project"><?php esc_html_e('Cloudflare Pages 1-Click Sync', 'astropress'); ?></label></th>
-                    <td>
-                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
-                            <input type="text" id="astropress_cf_pages_project" name="cf_pages_project" value="<?php echo esc_attr($this->core->get_cf_pages_project()); ?>" class="regular-text" placeholder="Pages project name (e.g. topnepali-election)" style="flex:1; min-width:240px;" />
-                            <button type="button" class="button button-primary astropress-sync-pages-btn" data-input="#astropress_cf_pages_project" data-secret="#astropress_revalidate_secret" data-status="#astropress-pages-sync-status">
-                                <span class="dashicons dashicons-update"></span> <?php esc_html_e('Sync to Cloudflare Pages', 'astropress'); ?>
-                            </button>
-                        </div>
-                        <p class="description"><?php esc_html_e('Automatically pushes REVALIDATE_SECRET, WP_API_URL, and CDN_MEDIA_URL to your Cloudflare Pages project (Production & Preview) via Cloudflare API. Eliminates manual copy-pasting in Cloudflare dashboard.', 'astropress'); ?></p>
-                        <div id="astropress-pages-sync-status" style="margin-top:8px; display:none;"></div>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row"><label for="astropress_cf_deploy_hook"><?php esc_html_e('Cloudflare Pages Deploy Hook', 'astropress'); ?></label></th>
-                    <td>
-                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
-                            <input type="password" id="astropress_cf_deploy_hook" name="cf_deploy_hook" value="<?php echo $this->core->has_cf_deploy_hook() ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." autocomplete="new-password" style="flex:1; min-width:240px;" />
-                            <button type="button" class="button button-secondary" id="astropress-trigger-deploy-now">
-                                <span class="dashicons dashicons-cloud-upload"></span> <?php esc_html_e('Save & Test Deploy', 'astropress'); ?>
-                            </button>
-                            <span id="astropress-deploy-badge" style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
-                                <?php echo $this->core->has_cf_deploy_hook() ? esc_html__('Deploy Hook Active (Encrypted)', 'astropress') : esc_html__('No Deploy Hook', 'astropress'); ?>
-                            </span>
-                        </div>
-                        <p class="description"><?php esc_html_e('Concealed & encrypted at rest. Triggers an automatic zero-downtime rebuild in Cloudflare Pages when syncing environment variables or executing a full cache purge.', 'astropress'); ?></p>
-                        <div id="astropress-deploy-status" style="margin-top:8px; display:none;"></div>
                     </td>
                 </tr>
             </table>
 
-            <p class="submit">
-                <button type="submit" name="astropress_save_automation" class="button button-primary"><?php esc_html_e('Save Invalidation Policies', 'astropress'); ?></button>
+            <p class="submit" style="margin-top:16px; padding-top:16px; border-top:1px solid #f1f5f9;">
+                <button type="submit" name="astropress_save_automation" class="button button-primary"><?php esc_html_e('Save Invalidation Triggers', 'astropress'); ?></button>
             </p>
         </form>
     </div>
