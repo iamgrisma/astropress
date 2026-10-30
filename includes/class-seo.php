@@ -1438,21 +1438,42 @@ class AstroPress_SEO {
 
         $canonical = $raw_canonical ? str_replace($this->get_origin_hosts(), $frontend_url, $raw_canonical) : null;
 
-        // Check Rank Math redirections table for term slug
+        // Check Rank Math redirections table for exact term path match
         $redirect_to = null;
         $redirect_code = '301';
         global $wpdb;
         if (!empty($wpdb) && !empty($wpdb->prefix)) {
             $table_name = $wpdb->prefix . 'rank_math_redirections';
             if ($wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name) {
-                $slug = $term->slug;
-                $row = $wpdb->get_row($wpdb->prepare(
-                    "SELECT url_to, header_code FROM {$table_name} WHERE status = 'active' AND sources LIKE %s ORDER BY id DESC LIMIT 1",
-                    '%' . $wpdb->esc_like($slug) . '%'
+                $term_path = trim($this->core->cache->get_term_path($term), '/');
+                $term_slug = trim($term->slug, '/');
+                $category_prefix_path = 'category/' . $term_slug;
+
+                $rows = $wpdb->get_results($wpdb->prepare(
+                    "SELECT sources, url_to, header_code FROM {$table_name} WHERE status = 'active' AND (sources LIKE %s OR sources LIKE %s) ORDER BY id DESC LIMIT 20",
+                    '%' . $wpdb->esc_like($term_slug) . '%',
+                    '%' . $wpdb->esc_like($category_prefix_path) . '%'
                 ), ARRAY_A);
-                if ($row && !empty($row['url_to'])) {
-                    $redirect_to = $row['url_to'];
-                    $redirect_code = $row['header_code'] ?: '301';
+
+                if (!empty($rows)) {
+                    foreach ($rows as $row) {
+                        $sources = maybe_unserialize($row['sources']);
+                        if (is_array($sources)) {
+                            foreach ($sources as $source_item) {
+                                $pattern = trim(isset($source_item['pattern']) ? $source_item['pattern'] : '', '/');
+                                $comparison = isset($source_item['comparison']) ? $source_item['comparison'] : 'exact';
+                                if ($comparison === 'exact' && (
+                                    strcasecmp($pattern, $term_slug) === 0 ||
+                                    strcasecmp($pattern, $term_path) === 0 ||
+                                    strcasecmp($pattern, $category_prefix_path) === 0
+                                )) {
+                                    $redirect_to = $row['url_to'];
+                                    $redirect_code = $row['header_code'] ?: '301';
+                                    break 2;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
