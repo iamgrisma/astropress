@@ -100,6 +100,283 @@ trait AstroPress_Admin_Ajax_Cloudflare {
     }
 
     /**
+     * AJAX: Orchestrated 1-Click Connection (Token, Zone, Pages, Secret & Handshake)
+     */
+    public function ajax_orchestrate_connect() {
+        $this->verify_admin_ajax();
+
+        $token        = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
+        $frontend_url = trim(sanitize_text_field($_POST['frontend_url'] ?? ''));
+        $deploy_hook  = trim(sanitize_text_field($_POST['cf_deploy_hook'] ?? ''));
+        $pages_proj   = trim(sanitize_text_field($_POST['pages_project'] ?? ''));
+
+        if (empty($token) || strpos($token, '••••') !== false) {
+            $token = $this->core->get_cf_api_token();
+        }
+
+        if (empty($token)) {
+            wp_send_json_error(array('message' => esc_html__('Please enter your Cloudflare API Token.', 'astropress')));
+        }
+
+        if (empty($frontend_url)) {
+            $frontend_url = $this->core->derive_frontend_url();
+        }
+
+        $frontend_url = rtrim(trim($frontend_url), '/');
+        if (!empty($frontend_url) && !preg_match('#^https?://#i', $frontend_url)) {
+            $frontend_url = 'https://' . $frontend_url;
+        }
+
+        // Prevent backend-frontend collision
+        $wp_host = wp_parse_url(home_url(), PHP_URL_HOST);
+        $fe_host = wp_parse_url($frontend_url, PHP_URL_HOST);
+        if (!empty($wp_host) && !empty($fe_host) && strtolower($wp_host) === strtolower($fe_host)) {
+            wp_send_json_error(array('message' => esc_html__('Frontend URL cannot match your WordPress backend installation. WordPress should be on a subdomain (e.g. wp.example.com) and Astro on your canonical root domain (https://example.com).', 'astropress')));
+        }
+
+        // 1. Verify Cloudflare Token
+        $headers = array('Authorization' => 'Bearer ' . $token);
+        $v_res = wp_remote_get('https://api.cloudflare.com/client/v4/user/tokens/verify', array('timeout' => 8, 'headers' => $headers));
+        if (is_wp_error($v_res) || wp_remote_retrieve_response_code($v_res) !== 200) {
+            wp_send_json_error(array('message' => esc_html__('Cloudflare API Token rejected or invalid. Please check your token and scopes.', 'astropress')));
+        }
+
+        update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($token));
+        update_option(AstroPress::OPTION_FRONTEND_URL, $frontend_url);
+
+        // Fetch Accounts & Zones
+        $site_host = $fe_host ?: $wp_host;
+        $root_zone_search = $site_host;
+        $host_parts = explode('.', $site_host);
+        if (count($host_parts) >= 2) {
+            $root_zone_search = implode('.', array_slice($host_parts, -2));
+        }
+
+        $matched_zone = null;
+        $matched_account = null;
+        $buckets = array();
+        $pages_projects = array();
+
+        // Query Zones
+        $z_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?name=' . rawurlencode($root_zone_search), array('timeout' => 8, 'headers' => $headers));
+        if (!is_wp_error($z_res) && wp_remote_retrieve_response_code($z_res) === 200) {
+            $z_body = json_decode(wp_remote_retrieve_body($z_res), true);
+            if (!empty($z_body['result'][0]['id'])) {
+                $matched_zone = $z_body['result'][0];
+                update_option(AstroPress::OPTION_CF_ZONE_ID, $matched_zone['id']);
+                update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
+                if (!empty($matched_zone['account']['id'])) {
+                    $matched_account = $matched_zone['account'];
+                    update_option('astropress_r2_account_id', $matched_account['id']);
+                    update_option('r2g_account_id', $matched_account['id']);
+                }
+            }
+        }
+
+        // Query Accounts if not matched from Zone
+        if (empty($matched_account)) {
+            $a_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts?per_page=1', array('timeout' => 8, 'headers' => $headers));
+            if (!is_wp_error($a_res) && wp_remote_retrieve_response_code($a_res) === 200) {
+                $a_body = json_decode(wp_remote_retrieve_body($a_res), true);
+                if (!empty($a_body['result'][0]['id'])) {
+                    $matched_account = $a_body['result'][0];
+                    update_option('astropress_r2_account_id', $matched_account['id']);
+                    update_option('r2g_account_id', $matched_account['id']);
+                }
+            }
+        }
+
+        $account_id = $matched_account['id'] ?? $this->core->get_r2_account_id();
+
+        // Discover R2 Buckets & Pages Projects
+        if (!empty($account_id)) {
+            $r2_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts/' . rawurlencode($account_id) . '/r2/buckets', array('timeout' => 8, 'headers' => $headers));
+            if (!is_wp_error($r2_res) && wp_remote_retrieve_response_code($r2_res) === 200) {
+                $r2_body = json_decode(wp_remote_retrieve_body($r2_res), true);
+                if (!empty($r2_body['result']['buckets'])) {
+                    foreach ($r2_body['result']['buckets'] as $b) {
+                        $buckets[] = sanitize_text_field($b['name'] ?? '');
+                    }
+                }
+            }
+
+            $p_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts/' . rawurlencode($account_id) . '/pages/projects', array('timeout' => 8, 'headers' => $headers));
+            if (!is_wp_error($p_res) && wp_remote_retrieve_response_code($p_res) === 200) {
+                $p_body = json_decode(wp_remote_retrieve_body($p_res), true);
+                if (!empty($p_body['result'])) {
+                    foreach ($p_body['result'] as $p) {
+                        $pages_projects[] = array(
+                            'name'      => sanitize_text_field($p['name'] ?? ''),
+                            'subdomain' => sanitize_text_field($p['subdomain'] ?? ''),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Cache discovery
+        set_transient('astropress_cf_discovery_cache', array(
+            'account_id' => $account_id,
+            'zone_id'    => $matched_zone['id'] ?? '',
+            'zone_name'  => $matched_zone['name'] ?? '',
+            'buckets'    => $buckets,
+        ), 86400);
+
+        // 2. Secret Generation / Retrieval
+        $secret = $this->core->get_custom_secret();
+        if (empty($secret)) {
+            $secret = $this->core->generate_secret();
+        }
+
+        // 3. Pages Project Environment Sync (if Pages exists or provided)
+        $pages_target = !empty($pages_proj) ? $pages_proj : ($pages_projects[0]['name'] ?? $this->core->get_cf_pages_project());
+        $pages_synced = false;
+        if (!empty($pages_target) && !empty($account_id)) {
+            $env_vars = array(
+                'REVALIDATE_SECRET' => $secret,
+                'WP_API_URL'        => home_url(),
+                'API_URL'           => home_url(),
+            );
+            $r2_domain = self::get_r2_option('custom_domain', '');
+            if (!empty($r2_domain)) {
+                $env_vars['CDN_MEDIA_URL'] = 'https://' . ltrim($r2_domain, 'https://');
+            }
+            $sync_res = $this->core->cache->sync_pages_env($pages_target, $env_vars, $account_id, $token);
+            if (!empty($sync_res['success'])) {
+                $pages_synced = true;
+                update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_target);
+            }
+        }
+
+        // 4. Save & Trigger Deploy Hook (if provided)
+        $deploy_triggered = false;
+        if (!empty($deploy_hook) && strpos($deploy_hook, '••••') === false) {
+            $clean_hook = esc_url_raw($deploy_hook);
+            if (!empty($clean_hook)) {
+                update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, AstroPress_Encryption::encrypt($clean_hook));
+                $deploy_triggered = $this->core->cache->trigger_deploy_hook('Initial Setup Deploy');
+            }
+        } elseif ($this->core->has_cf_deploy_hook() && $pages_synced) {
+            $deploy_triggered = $this->core->cache->trigger_deploy_hook('Sync Trigger');
+        }
+
+        // 5. Test Frontend Handshake (/api/revalidate)
+        $test_endpoint = $frontend_url . '/api/revalidate';
+        $t_res = wp_remote_post($test_endpoint, array(
+            'timeout'   => 6,
+            'sslverify' => true,
+            'headers'   => array(
+                'Content-Type'        => 'application/json',
+                'x-revalidate-secret' => $secret,
+                'Authorization'       => 'Bearer ' . $secret,
+            ),
+            'body'      => wp_json_encode(array(
+                'slug'   => 'test-connection',
+                'type'   => 'test',
+                'action' => 'ping',
+            )),
+        ));
+
+        $handshake_code = is_wp_error($t_res) ? 0 : wp_remote_retrieve_response_code($t_res);
+        $handshake_ok   = (!is_wp_error($t_res) && $handshake_code === 200);
+
+        if ($handshake_ok) {
+            update_option(AstroPress::OPTION_CONNECTED, '1');
+        }
+
+        wp_send_json_success(array(
+            'message'          => esc_html__('Connection orchestrated successfully!', 'astropress'),
+            'zone_name'        => $matched_zone['name'] ?? ($root_zone_search ?: 'Zone Detected'),
+            'zone_id'          => $matched_zone['id'] ?? '',
+            'account_id'       => $account_id,
+            'frontend_url'     => $frontend_url,
+            'secret'           => $secret,
+            'pages_project'    => $pages_target,
+            'pages_synced'     => $pages_synced,
+            'deploy_triggered' => $deploy_triggered,
+            'handshake_code'   => $handshake_code,
+            'handshake_ok'     => $handshake_ok,
+            'buckets'          => $buckets,
+            'pages_projects'   => $pages_projects,
+        ));
+    }
+
+    /**
+     * AJAX: Orchestrated 1-Click R2 Media Offload Activation
+     */
+    public function ajax_orchestrate_r2() {
+        $this->verify_admin_ajax();
+
+        $media_mode    = sanitize_key($_POST['media_mode'] ?? 'r2');
+        $bucket        = trim(sanitize_text_field($_POST['bucket'] ?? ''));
+        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? ''));
+        $token         = $this->core->get_cf_api_token();
+        $account_id    = $this->core->get_r2_account_id();
+        $zone_id       = $this->core->get_cf_zone_id();
+
+        if ($media_mode === 'wp') {
+            update_option(AstroPress::OPTION_MEDIA_MODE, 'wp');
+            update_option('astropress_r2_auto_upload', 0);
+            update_option('astropress_r2_rewrite_urls', 0);
+            update_option(AstroPress::OPTION_SETUP_COMPLETED, '1');
+            wp_send_json_success(array(
+                'message'  => esc_html__('WordPress Local Storage selected. Setup completed!', 'astropress'),
+                'redirect' => admin_url('admin.php?page=astropress'),
+            ));
+        }
+
+        if (empty($bucket)) {
+            wp_send_json_error(array('message' => esc_html__('Please enter or select an R2 Bucket name.', 'astropress')));
+        }
+
+        // Clean domain
+        $clean_domain = preg_replace('#^https?://#i', '', rtrim($custom_domain, '/'));
+
+        // 1. Ensure bucket exists or create it
+        if (!empty($token) && !empty($account_id)) {
+            $client = AstroPress_R2_Client::instance();
+            if ($client->has_cf_token()) {
+                $client->create_bucket($bucket);
+            }
+        }
+
+        // 2. Save Bucket & Mode
+        update_option('astropress_r2_bucket', $bucket);
+        update_option('r2g_bucket', $bucket);
+        update_option(AstroPress::OPTION_MEDIA_MODE, 'r2');
+        update_option('astropress_r2_auto_upload', 1);
+        update_option('astropress_r2_rewrite_urls', 1);
+        update_option('astropress_compress_enabled', 1);
+
+        $attached_domain = false;
+        // 3. Attach Custom Domain & Create DNS CNAME (if custom domain specified)
+        if (!empty($clean_domain) && !empty($token) && !empty($account_id) && !empty($zone_id)) {
+            update_option('astropress_r2_custom_domain', $clean_domain);
+            update_option('r2g_custom_domain', $clean_domain);
+
+            $attach_res = $this->core->cache->attach_r2_custom_domain($bucket, $clean_domain, $zone_id, '', $account_id, $token);
+            $attached_domain = !empty($attach_res['success']);
+
+            // Sync CDN_MEDIA_URL to Cloudflare Pages if project exists
+            $pages_proj = $this->core->get_cf_pages_project();
+            if (!empty($pages_proj)) {
+                $this->core->cache->sync_pages_env($pages_proj, array('CDN_MEDIA_URL' => 'https://' . $clean_domain), $account_id, $token);
+            }
+        }
+
+        // 4. Complete Setup Wizard
+        update_option(AstroPress::OPTION_SETUP_COMPLETED, '1');
+
+        wp_send_json_success(array(
+            'message'         => esc_html__('Cloudflare R2 Media Offloading is now active!', 'astropress'),
+            'bucket'          => $bucket,
+            'custom_domain'   => $clean_domain,
+            'attached_domain' => $attached_domain,
+            'redirect'        => admin_url('admin.php?page=astropress'),
+        ));
+    }
+
+    /**
      * AJAX: Zero-Touch Sync Environment Variables to Cloudflare Pages
      */
     public function ajax_sync_pages_env() {

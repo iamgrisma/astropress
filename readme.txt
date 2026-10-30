@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.1.5
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.2.0 =
+* Radical Simplification to 2-Stage Headless Flow: Collapsed multi-step micro-actions and 13 fragmented buttons down to two simple orchestrated steps: "Connect & Auto-Configure" (Card 1) and "Enable Media Offload & Launch" (Card 2).
+* Backend Orchestration Engine: Introduced `ajax_orchestrate_connect` and `ajax_orchestrate_r2`, executing token verification, Zone & Account discovery, secure secret generation, Pages environment variable syncing, deploy hook triggers, R2 custom domain attachment, DNS CNAME proxying, and frontend handshake in single unified calls.
+* Eliminated Redundant Forms & Buttons: Completely purged the obsolete `astropress-apply-cf-btn` button and its forced browser page reload, eliminating duplicate forms and unlinked controls across Setup Wizard and runtime views.
+* Instant Setup Completion & Dashboard Handshake: Completing R2 offloading automatically marks setup complete and transitions cleanly to the Overview diagnostics hub.
 
 = 2.1.5 =
 * Concealed & Encrypted Deploy Hook: Protected Cloudflare Pages deploy hook credentials with AES-256 encryption at rest and bullet masking (`••••••••••••••••••••••••••••••••`) across Setup Wizard and Cloudflare settings.

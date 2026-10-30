@@ -1736,7 +1736,7 @@
                 html += '</div>';
               }
 
-              html += '<div style="margin-top:12px;"><button type="button" class="button button-primary astropress-apply-cf-btn" data-token="' + encodeURIComponent(token) + '">Apply Discovered Settings to WordPress</button></div>';
+              html += '<div style="margin-top:10px; color:#065f46; font-size:12px;"><span class="dashicons dashicons-yes-alt text-success" style="vertical-align:-2px;"></span> Discovered Cloudflare settings saved to WordPress automatically.</div>';
               html += '</div>';
 
               $results.html(html);
@@ -2285,49 +2285,161 @@
       });
     });
 
-    $(document).on('click', '.astropress-apply-cf-btn', function(e) {
+    // ========================================================
+    // ASTROPRESS v2.2 UNIFIED 2-STAGE SETUP PIPELINE
+    // ========================================================
+
+    // 1. Setup Wizard: Toggle Advanced Cloudflare Pages Settings
+    $(document).on('click', '#onboard-toggle-advanced-btn', function(e) {
+      e.preventDefault();
+      $('#onboard-advanced-wrap').slideToggle(150);
+      const $icon = $(this).find('.dashicons');
+      if ($icon.hasClass('dashicons-arrow-right-alt2')) {
+        $icon.removeClass('dashicons-arrow-right-alt2').addClass('dashicons-arrow-down-alt2');
+      } else {
+        $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-right-alt2');
+      }
+    });
+
+    // 2. Setup Wizard: Media Mode Toggle
+    $(document).on('change', '#onboard_media_mode', function() {
+      if ($(this).val() === 'r2') {
+        $('#onboard-r2-container').slideDown(150);
+      } else {
+        $('#onboard-r2-container').slideUp(150);
+      }
+    });
+
+    // 3. Stage 1: Orchestrated Connect & Auto-Configure
+    $(document).on('click', '#onboard-connect-all-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const token = decodeURIComponent($btn.data('token'));
-      $btn.prop('disabled', true).text('Applying & Saving...');
+      const $status = $('#onboard-connect-status');
+      const token = $('#onboard_cf_api_token').val()?.trim() || '';
+      const frontendUrl = $('#onboard_frontend_url').val()?.trim() || '';
+      const deployHook = $('#onboard_cf_deploy_hook').val()?.trim() || '';
+      const pagesProj = $('#onboard_cf_pages_project').val()?.trim() || '';
+
+      if (!token && !$('#onboard_cf_api_token').val()?.includes('•••')) {
+        alert('Please paste your Cloudflare API Token.');
+        $('#onboard_cf_api_token').focus();
+        return;
+      }
+      if (!frontendUrl) {
+        alert('Please enter your Astro Frontend URL.');
+        $('#onboard_frontend_url').focus();
+        return;
+      }
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Connecting & Auto-Configuring...');
+      $status.show().html('<div style="padding:12px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; color:#0369a1; font-size:13px;"><span class="dashicons dashicons-update spin"></span> Verifying Cloudflare Token, resolving Zone, syncing Pages & testing frontend handshake...</div>');
 
       $.ajax({
         url: ajaxurl,
         type: 'POST',
         dataType: 'json',
         data: {
-          action: 'astropress_cf_quick_connect',
+          action: 'astropress_orchestrate_connect',
           cf_api_token: token,
-          apply: 1,
+          frontend_url: frontendUrl,
+          cf_deploy_hook: deployHook,
+          pages_project: pagesProj,
           nonce: nonce,
         },
         success: function(res) {
-          if (res.success && res.data?.applied) {
-            alert('Settings applied successfully! Reloading...');
-            location.reload();
+          if (res.success && res.data) {
+            const d = res.data;
+            let html = '<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; color:#15803d; font-size:13px;">';
+            html += '<div style="font-weight:700; font-size:14px; margin-bottom:8px;"><span class="dashicons dashicons-yes-alt"></span> ' + escapeHtml(d.message) + '</div>';
+            html += '<div style="display:grid; grid-template-columns:1fr; gap:6px; color:#166534; font-size:12px;">';
+            html += '<div><strong>Cloudflare Zone:</strong> ' + escapeHtml(d.zone_name) + ' (Edge POP cache purge active)</div>';
+            html += '<div><strong>Astro Webhook Secret:</strong> AES-256 protected & synced</div>';
+            if (d.pages_project) {
+              html += '<div><strong>Cloudflare Pages:</strong> Project <code>' + escapeHtml(d.pages_project) + '</code> synced</div>';
+            }
+            if (d.handshake_ok) {
+              html += '<div><strong>Frontend Handshake:</strong> ' + escapeHtml(d.frontend_url) + '/api/revalidate (HTTP 200 OK)</div>';
+            } else if (d.handshake_code > 0) {
+              html += '<div><strong>Frontend Reachable:</strong> HTTP ' + d.handshake_code + ' (Will auto-activate once Pages deployment finishes)</div>';
+            }
+            html += '</div></div>';
+            $status.html(html);
+
+            // Populate discovered buckets for Stage 2
+            if (d.buckets && d.buckets.length > 0) {
+              const $bList = $('#onboard-buckets-list');
+              $bList.empty();
+              d.buckets.forEach(function(b) {
+                $bList.append('<option value="' + escapeHtml(b) + '">' + escapeHtml(b) + '</option>');
+              });
+              if (!$('#onboard_r2_bucket').val()) {
+                $('#onboard_r2_bucket').val(d.buckets[0]);
+              }
+            }
+
+            // Unlock Stage 2
+            $('#onboard-stage-2').css('opacity', '1');
+            $('html, body').animate({
+              scrollTop: $('#onboard-stage-2').offset().top - 40
+            }, 400);
+
+            $btn.html('<span class="dashicons dashicons-yes"></span> Connected & Configured');
           } else {
-            alert(res.data?.message || 'Failed to apply settings.');
-            $btn.prop('disabled', false).text('Apply Discovered Settings to WordPress');
+            $status.html('<div style="padding:12px 16px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#b91c1c; font-size:13px;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(res.data?.message || 'Connection failed.') + '</div>');
+            $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-network"></span> Connect & Auto-Configure');
           }
         },
         error: function(xhr, status, err) {
-          alert('Network error: ' + err);
-          $btn.prop('disabled', false).text('Apply Discovered Settings to WordPress');
+          $status.html('<div style="padding:12px 16px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#b91c1c; font-size:13px;"><span class="dashicons dashicons-warning"></span> Network error: ' + escapeHtml(err) + '</div>');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-network"></span> Connect & Auto-Configure');
         }
       });
     });
 
-    // ========================================================
-    // ASTROPRESS v2.0 JAVASCRIPT PIPELINE
-    // ========================================================
+    // 4. Stage 2: Orchestrated R2 Offload Activation & Setup Completion
+    $(document).on('click', '#onboard-enable-r2-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#onboard-r2-result-status');
+      const mode = $('#onboard_media_mode').val();
+      const bucket = $('#onboard_r2_bucket').val()?.trim() || '';
+      const domain = $('#onboard_r2_custom_domain').val()?.trim() || '';
 
-    // 1. Setup Wizard: Media Mode Toggle
-    $('#onboard_media_mode').on('change', function() {
-      if ($(this).val() === 'r2') {
-        $('#onboard-r2-fields-wrap').slideDown(200);
-      } else {
-        $('#onboard-r2-fields-wrap').slideUp(200);
+      if (mode === 'r2' && !bucket) {
+        alert('Please enter or select an R2 Bucket name.');
+        $('#onboard_r2_bucket').focus();
+        return;
       }
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Activating & Launching...');
+      $status.show().html('<div style="padding:12px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; color:#0369a1; font-size:13px;"><span class="dashicons dashicons-update spin"></span> Configuring R2 bucket, attaching custom CDN domain & launching dashboard...</div>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_orchestrate_r2',
+          bucket: (mode === 'r2' ? bucket : ''),
+          custom_domain: (mode === 'r2' ? domain : ''),
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success && res.data) {
+            $status.html('<div style="padding:12px 16px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; color:#15803d; font-size:13px;"><span class="dashicons dashicons-yes-alt"></span> <strong>' + escapeHtml(res.data.message) + '</strong> Setup completed! Redirecting to Overview...</div>');
+            setTimeout(function() {
+              window.location.href = res.data.redirect || (window.location.pathname + '?page=astropress');
+            }, 1000);
+          } else {
+            $status.html('<div style="padding:12px 16px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#b91c1c; font-size:13px;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(res.data?.message || 'Activation failed.') + '</div>');
+            $btn.prop('disabled', false).html('<span class="dashicons dashicons-database"></span> Enable Media Offload & Launch Dashboard &rarr;');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<div style="padding:12px 16px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#b91c1c; font-size:13px;"><span class="dashicons dashicons-warning"></span> Network error: ' + escapeHtml(err) + '</div>');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-database"></span> Enable Media Offload & Launch Dashboard &rarr;');
+        }
+      });
     });
 
     // 2. Setup Wizard: Frontend URL Backend Collision Validator
