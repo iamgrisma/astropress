@@ -1409,7 +1409,7 @@ class AstroPress_Cache {
      */
     public function get_r2_custom_domains($bucket_name, $account_id = '', $token = '') {
         $bucket_name = sanitize_text_field($bucket_name ?: (get_option('astropress_r2_bucket') ?: get_option('r2g_bucket', '')));
-        $account_id  = sanitize_text_field($account_id ?: (get_option('astropress_r2_account_id') ?: (get_option('astropress_cf_account_id') ?: get_option('r2g_account_id', ''))));
+        $account_id  = sanitize_text_field($account_id ?: $this->core->get_r2_account_id());
         $token       = $token ?: $this->core->get_cf_api_token();
 
         if (empty($bucket_name) || empty($account_id) || empty($token)) {
@@ -1479,39 +1479,50 @@ class AstroPress_Cache {
      * @param string $token
      * @return array
      */
-    public function attach_r2_custom_domain($bucket_name, $custom_domain, $zone_id, $zone_name = '', $account_id = '', $token = '') {
+    public function attach_r2_custom_domain($bucket_name, $custom_domain, $zone_id = '', $zone_name = '', $account_id = '', $token = '') {
         $parsed = wp_parse_url($custom_domain);
         $host   = !empty($parsed['host']) ? $parsed['host'] : trim($custom_domain, '/');
         $bucket_name = sanitize_text_field($bucket_name ?: (get_option('astropress_r2_bucket') ?: get_option('r2g_bucket', '')));
-        $zone_id     = sanitize_text_field($zone_id ?: $this->core->get_cf_zone_id());
-        $account_id  = sanitize_text_field($account_id ?: (get_option('astropress_r2_account_id') ?: (get_option('astropress_cf_account_id') ?: get_option('r2g_account_id', ''))));
         $token       = $token ?: $this->core->get_cf_api_token();
+        $account_id  = sanitize_text_field($account_id ?: $this->core->get_r2_account_id());
+        $zone_id     = sanitize_text_field($zone_id ?: $this->core->get_cf_zone_id());
 
-        if (empty($host) || empty($bucket_name) || empty($zone_id) || empty($account_id) || empty($token)) {
-            return array('success' => false, 'message' => esc_html__('Missing required parameters to attach R2 custom domain.', 'astropress'));
+        if (empty($host) || empty($bucket_name) || empty($account_id) || empty($token)) {
+            return array('success' => false, 'message' => esc_html__('Missing required parameters (bucket name, account ID, or API token) to attach R2 custom domain.', 'astropress'));
         }
 
-        if (empty($zone_name)) {
-            $zone_info_res = wp_remote_get("https://api.cloudflare.com/client/v4/zones/{$zone_id}", array(
+        // Auto-discover zone ID if not currently configured
+        if (empty($zone_id)) {
+            $zones_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?status=active&per_page=50', array(
                 'timeout' => 8,
                 'headers' => array('Authorization' => 'Bearer ' . $token),
             ));
-            if (!is_wp_error($zone_info_res)) {
-                $zi_body = json_decode(wp_remote_retrieve_body($zone_info_res), true);
-                $zone_name = $zi_body['result']['name'] ?? '';
-            }
-            if (empty($zone_name)) {
-                $parts = explode('.', $host);
-                $zone_name = (count($parts) >= 2) ? implode('.', array_slice($parts, -2)) : $host;
+            if (!is_wp_error($zones_res)) {
+                $zb = json_decode(wp_remote_retrieve_body($zones_res), true);
+                if (!empty($zb['result']) && is_array($zb['result'])) {
+                    foreach ($zb['result'] as $z) {
+                        if (!empty($z['name']) && (strpos($host, $z['name']) !== false || $host === $z['name'])) {
+                            $zone_id   = sanitize_text_field($z['id']);
+                            $zone_name = sanitize_text_field($z['name']);
+                            update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
+                            break;
+                        }
+                    }
+                    if (empty($zone_id) && !empty($zb['result'][0]['id'])) {
+                        $zone_id   = sanitize_text_field($zb['result'][0]['id']);
+                        $zone_name = sanitize_text_field($zb['result'][0]['name'] ?? '');
+                        update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
+                    }
+                }
             }
         }
 
         $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";
+        // Cloudflare R2 custom domain API expects strictly: domain, enabled, and optional minTLS
         $payload = array(
-            'domain'   => $host,
-            'zoneId'   => $zone_id,
-            'zoneName' => $zone_name,
-            'minTLS'   => '1.2',
+            'domain'  => $host,
+            'enabled' => true,
+            'minTLS'  => '1.2',
         );
 
         $res = wp_remote_post($endpoint, array(
@@ -1531,9 +1542,14 @@ class AstroPress_Cache {
         $body = json_decode(wp_remote_retrieve_body($res), true);
 
         if ($code === 200 || $code === 201 || !empty($body['success'])) {
-            $this->ensure_dns_cname($zone_id, $host, "{$bucket_name}.r2.cloudflarestorage.com", $token);
+            update_option('astropress_r2_custom_domain', $host);
+            update_option('r2g_custom_domain', $host);
+            if (!empty($zone_id)) {
+                $this->ensure_dns_cname($zone_id, $host, "{$bucket_name}.r2.cloudflarestorage.com", $token);
+            }
             return array(
                 'success' => true,
+                'domain'  => $host,
                 'message' => sprintf(esc_html__('Custom domain "%s" attached to R2 bucket "%s" successfully! DNS routing and Edge proxying are active.', 'astropress'), $host, $bucket_name),
             );
         }
@@ -1542,9 +1558,14 @@ class AstroPress_Cache {
 
         // If domain is already attached or exists, treat gracefully as success and ensure DNS proxying
         if (stripos($err, 'already') !== false || $code === 409) {
-            $this->ensure_dns_cname($zone_id, $host, "{$bucket_name}.r2.cloudflarestorage.com", $token);
+            update_option('astropress_r2_custom_domain', $host);
+            update_option('r2g_custom_domain', $host);
+            if (!empty($zone_id)) {
+                $this->ensure_dns_cname($zone_id, $host, "{$bucket_name}.r2.cloudflarestorage.com", $token);
+            }
             return array(
                 'success' => true,
+                'domain'  => $host,
                 'message' => sprintf(esc_html__('Custom domain "%s" is already linked to R2 bucket "%s". DNS routing and Edge proxying verified.', 'astropress'), $host, $bucket_name),
             );
         }

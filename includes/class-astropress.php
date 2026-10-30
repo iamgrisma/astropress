@@ -387,6 +387,28 @@ class AstroPress {
         if (empty($val)) {
             $val = get_option('topnepali_headless_cf_zone_id', '');
         }
+        if (empty($val)) {
+            $cached = get_transient('astropress_cf_discovery_cache');
+            if (!empty($cached['zone_id'])) {
+                $val = $cached['zone_id'];
+                update_option(self::OPTION_CF_ZONE_ID, $val);
+            }
+        }
+        return (string) $val;
+    }
+
+    public function get_r2_account_id() {
+        $val = get_option('astropress_r2_account_id', '');
+        if (empty($val)) {
+            $val = get_option('r2g_account_id', '');
+        }
+        if (empty($val)) {
+            $cached = get_transient('astropress_cf_discovery_cache');
+            if (!empty($cached['account_id'])) {
+                $val = $cached['account_id'];
+                update_option('astropress_r2_account_id', $val);
+            }
+        }
         return (string) $val;
     }
 

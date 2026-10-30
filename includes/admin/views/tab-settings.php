@@ -35,13 +35,12 @@ if (!defined('ABSPATH')) {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><?php esc_html_e('Backend Security & SEO', 'astropress'); ?></th>
+                        <th scope="row"><?php esc_html_e('SEO & Subdomain Shield', 'astropress'); ?></th>
                         <td>
-                            <fieldset>
-                                <label><input type="checkbox" name="rewrite_links" value="1" <?php checked($this->core->should_rewrite_links()); ?> /> <?php esc_html_e('Rewrite post/page preview & view permalinks to Astro frontend', 'astropress'); ?></label><br />
-                                <label><input type="checkbox" name="subdomain_shield" value="1" <?php checked($this->core->should_shield_subdomain()); ?> /> <?php esc_html_e('301 Redirect public backend visitors to frontend (preserves admin, REST, cron)', 'astropress'); ?></label><br />
-                                <label><input type="checkbox" name="subdomain_noindex" value="1" <?php checked($this->core->should_noindex_backend()); ?> /> <?php esc_html_e('Send X-Robots-Tag: noindex, nofollow on backend responses', 'astropress'); ?></label>
-                            </fieldset>
+                            <p class="description" style="margin-top:0;">
+                                <?php esc_html_e('Permalink rewrites, View/Preview buttons, 301 Subdomain Shield, and Noindex headers are managed in the dedicated', 'astropress'); ?>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=seo')); ?>"><strong><?php esc_html_e('SEO & Security tab &rarr;', 'astropress'); ?></strong></a>
+                            </p>
                         </td>
                     </tr>
                     <tr>

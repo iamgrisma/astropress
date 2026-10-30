@@ -20,7 +20,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         if (empty($token) || strpos($token, '••••') !== false) {
             $token = $this->core->get_cf_api_token();
         }
-        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
+        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->resolve_zone_id($token);
 
         $purge_everything = !empty($_POST['purge_everything']);
         $urls_raw         = $_POST['urls'] ?? array();
@@ -395,24 +395,24 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $all_granted   = empty($missing_scope_keys);
         $fix_token_url = $all_granted ? '' : $this->get_cf_token_template_url($missing_scope_keys);
 
-        // Auto-save if user checked "Apply Discovered Settings"
+        // Auto-persist verified token, account, and zone upon successful discovery
         $applied = false;
-        if (!empty($_POST['apply'])) {
+        if (!empty($token) && strpos($token, '••••') === false) {
             update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($token));
-            if ($matched_account) {
-                update_option('r2g_account_id', $matched_account['id']);
-                update_option('astropress_r2_account_id', $matched_account['id']);
-            }
-            if ($matched_zone) {
-                update_option(AstroPress::OPTION_CF_ZONE_ID, $matched_zone['id']);
-                update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
-            }
-            if (!empty($buckets) && empty(self::get_r2_option('bucket', ''))) {
-                update_option('astropress_r2_bucket', $buckets[0]);
-                update_option('r2g_bucket', $buckets[0]);
-            }
-            $applied = true;
         }
+        if ($matched_account && !empty($matched_account['id'])) {
+            update_option('r2g_account_id', $matched_account['id']);
+            update_option('astropress_r2_account_id', $matched_account['id']);
+        }
+        if ($matched_zone && !empty($matched_zone['id'])) {
+            update_option(AstroPress::OPTION_CF_ZONE_ID, $matched_zone['id']);
+            update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
+        }
+        if (!empty($buckets) && empty(self::get_r2_option('bucket', ''))) {
+            update_option('astropress_r2_bucket', $buckets[0]);
+            update_option('r2g_bucket', $buckets[0]);
+        }
+        $applied = true;
 
         // Cache discovery in transient
         $discovery_data = array(
@@ -444,17 +444,61 @@ trait AstroPress_Admin_Ajax_Cloudflare {
     }
 
     /**
+     * Helper: Resolve active Cloudflare Zone ID, automatically discovering from API if not yet stored
+     *
+     * @param string $token
+     * @return string
+     */
+    private function resolve_zone_id($token) {
+        $zone_id = $this->core->get_cf_zone_id();
+        if (!empty($zone_id)) {
+            return $zone_id;
+        }
+        if (empty($token)) {
+            return '';
+        }
+        $res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?status=active&per_page=20', array(
+            'timeout' => 8,
+            'headers' => array('Authorization' => 'Bearer ' . $token),
+        ));
+        if (!is_wp_error($res)) {
+            $body = json_decode(wp_remote_retrieve_body($res), true);
+            if (!empty($body['result']) && is_array($body['result'])) {
+                $site_host     = wp_parse_url(home_url(), PHP_URL_HOST);
+                $frontend_host = wp_parse_url($this->core->get_frontend_url(), PHP_URL_HOST);
+                foreach ($body['result'] as $z) {
+                    if (!empty($z['name']) && ($site_host && (strpos($site_host, $z['name']) !== false || $site_host === $z['name']))) {
+                        $zone_id = sanitize_text_field($z['id']);
+                        break;
+                    }
+                    if (!empty($z['name']) && ($frontend_host && (strpos($frontend_host, $z['name']) !== false || $frontend_host === $z['name']))) {
+                        $zone_id = sanitize_text_field($z['id']);
+                        break;
+                    }
+                }
+                if (empty($zone_id) && !empty($body['result'][0]['id'])) {
+                    $zone_id = sanitize_text_field($body['result'][0]['id']);
+                }
+                if (!empty($zone_id)) {
+                    update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
+                }
+            }
+        }
+        return (string) $zone_id;
+    }
+
+    /**
      * AJAX: Fetch Cloudflare Ruleset Cache Rules (Phase: http_request_cache_settings)
      */
     public function ajax_get_cf_cache_rules() {
         $this->verify_admin_ajax();
 
         $token   = $this->core->get_cf_api_token();
-        $zone_id = $this->core->get_cf_zone_id();
+        $zone_id = $this->resolve_zone_id($token);
 
         if (empty($token) || empty($zone_id)) {
             wp_send_json_error(array(
-                'message' => esc_html__('Cloudflare API Token and Zone ID must be configured first.', 'astropress')
+                'message' => esc_html__('Cloudflare API Token and Zone ID must be configured first in Setup Wizard.', 'astropress')
             ));
         }
 
@@ -514,11 +558,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $this->verify_admin_ajax();
 
         $token   = $this->core->get_cf_api_token();
-        $zone_id = $this->core->get_cf_zone_id();
+        $zone_id = $this->resolve_zone_id($token);
 
         if (empty($token) || empty($zone_id)) {
             wp_send_json_error(array(
-                'message' => esc_html__('Cloudflare API Token and Zone ID must be configured first.', 'astropress')
+                'message' => esc_html__('Cloudflare API Token and Zone ID must be configured first in Setup Wizard.', 'astropress')
             ));
         }
 
@@ -741,7 +785,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $this->verify_admin_ajax();
 
         $token   = $this->core->get_cf_api_token();
-        $zone_id = $this->core->get_cf_zone_id();
+        $zone_id = $this->resolve_zone_id($token);
         $rule_id = sanitize_text_field(wp_unslash($_POST['rule_id'] ?? ''));
         $enabled = !empty($_POST['enabled']);
 
@@ -823,7 +867,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $this->verify_admin_ajax();
 
         $token   = $this->core->get_cf_api_token();
-        $zone_id = $this->core->get_cf_zone_id();
+        $zone_id = $this->resolve_zone_id($token);
         $rule_id = sanitize_text_field(wp_unslash($_POST['rule_id'] ?? ''));
 
         if (empty($token) || empty($zone_id) || empty($rule_id)) {

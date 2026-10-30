@@ -60,15 +60,19 @@ if (!defined('ABSPATH')) {
                     </tr>
                 </table>
 
-                <div class="astropress-btn-group" style="margin-top:20px;">
+                <div class="astropress-btn-group" style="margin-top:20px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                     <button type="button" class="button button-primary" id="astropress-purge-cf-now">
                         <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge Cloudflare Cache', 'astropress'); ?>
+                    </button>
+                    <button type="button" class="button button-secondary" id="astropress-dash-test-handshake-btn">
+                        <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
                     </button>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-secondary">
                         <span class="dashicons dashicons-admin-generic" style="vertical-align:-2px;"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
                     </a>
                 </div>
                 <div id="astropress-purge-cf-status" style="margin-top:10px;"></div>
+                <div id="astropress-dash-handshake-status" style="margin-top:10px;"></div>
             </div>
 
             <div class="astropress-card">

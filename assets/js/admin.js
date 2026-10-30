@@ -37,208 +37,8 @@
     }
 
     // ========================================================
-    // Two-Tier Navigation Grouping & Sub-tab Filtering
-    // Tier 1: Category Sections (Dashboard, Cloudflare, Edge, Optimizer)
-    // Tier 2: Sub-tabs under each section
-    // ========================================================
-    const NAV_CATEGORIES = [
-      {
-        id: 'dashboard',
-        label: 'Dashboard & Setup',
-        icon: 'dashicons-dashboard',
-        tabs: ['overview', 'dashboard', 'onboarding', 'danger', 'settings']
-      },
-      {
-        id: 'cloudflare',
-        label: 'Cloudflare & Storage',
-        icon: 'dashicons-cloud',
-        tabs: ['r2', 'sync', 'database']
-      },
-      {
-        id: 'edge',
-        label: 'Edge Cache & Warmer',
-        icon: 'dashicons-performance',
-        tabs: ['cache', 'cache_rules', 'bridge', 'ruleset', 'warmer', 'webhooks', 'logs']
-      },
-      {
-        id: 'optimizer',
-        label: 'Optimizer & SEO',
-        icon: 'dashicons-shield',
-        tabs: ['optimizer', 'seo', 'monitor404', 'status', 'integration', 'updates']
-      }
-    ];
-
-    function normalizeTabName(name) {
-      return String(name || '').trim().toLowerCase();
-    }
-
-    function getTabNameFromNavElement($el) {
-      if ($el.attr('data-tab')) {
-        return normalizeTabName($el.attr('data-tab'));
-      }
-      const href = $el.attr('href') || '';
-      const match = href.match(/[?&]tab=([^&#]+)/);
-      if (match) {
-        return normalizeTabName(match[1]);
-      }
-      if (href.indexOf('page=astropress') !== -1) {
-        return 'overview';
-      }
-      return '';
-    }
-
-    function findCategoryForTab(tabName) {
-      tabName = normalizeTabName(tabName);
-      if (!tabName) return 'dashboard';
-      for (let i = 0; i < NAV_CATEGORIES.length; i++) {
-        const cat = NAV_CATEGORIES[i];
-        for (let j = 0; j < cat.tabs.length; j++) {
-          if (normalizeTabName(cat.tabs[j]) === tabName) {
-            return cat.id;
-          }
-        }
-      }
-      return 'dashboard';
-    }
-
-    function initTwoTierNavigation() {
-      const $navWrapper = $('.astropress-nav-tabs, .nav-tab-wrapper.astropress-nav-tabs');
-      if (!$navWrapper.length) {
-        return;
-      }
-
-      const $allSubtabs = $navWrapper.find('.nav-tab');
-      if (!$allSubtabs.length) {
-        return;
-      }
-
-      // 1. Tag each sub-tab with its resolved category
-      $allSubtabs.each(function() {
-        const $tab = $(this);
-        const tabName = getTabNameFromNavElement($tab);
-        const categoryId = findCategoryForTab(tabName);
-        $tab.attr('data-category', categoryId);
-        $tab.attr('data-tab-name', tabName);
-      });
-
-      // 2. Discover or dynamically construct .astropress-nav-categories
-      let $categoriesContainer = $('.astropress-nav-categories');
-      if (!$categoriesContainer.length) {
-        $categoriesContainer = $('<div class="astropress-nav-categories" role="tablist" aria-label="AstroPress Categories"></div>');
-        NAV_CATEGORIES.forEach(function(cat) {
-          const count = $allSubtabs.filter('[data-category="' + cat.id + '"]').length;
-          const $btn = $('<button type="button" class="astropress-cat-btn" role="tab"></button>')
-            .attr('data-category', cat.id)
-            .attr('id', 'astropress-cat-' + cat.id)
-            .attr('aria-controls', 'astropress-subtabs-' + cat.id);
-
-          let btnHtml = '<span class="dashicons ' + cat.icon + '" aria-hidden="true"></span>' +
-                        '<span class="astropress-cat-label">' + escapeHtml(cat.label) + '</span>';
-          if (count > 0) {
-            btnHtml += '<span class="astropress-cat-count">' + count + '</span>';
-          }
-          $btn.html(btnHtml);
-          $categoriesContainer.append($btn);
-        });
-        $navWrapper.before($categoriesContainer);
-      } else {
-        // If already in DOM, ensure count badges exist
-        NAV_CATEGORIES.forEach(function(cat) {
-          const $btn = $categoriesContainer.find('.astropress-cat-btn[data-category="' + cat.id + '"]');
-          if ($btn.length && !$btn.find('.astropress-cat-count').length) {
-            const count = $allSubtabs.filter('[data-category="' + cat.id + '"]').length;
-            if (count > 0) {
-              $btn.append('<span class="astropress-cat-count">' + count + '</span>');
-            }
-          }
-        });
-      }
-
-      // 3. Determine which category should be active
-      let initialCat = '';
-      const $activeSubtab = $navWrapper.find('.nav-tab.nav-tab-active');
-      if ($activeSubtab.length) {
-        const activeTabCat = $activeSubtab.attr('data-category');
-        if (activeTabCat) {
-          initialCat = activeTabCat;
-        }
-      }
-
-      if (!initialCat) {
-        try {
-          const urlParams = new URLSearchParams(window.location.search);
-          const catParam = urlParams.get('cat');
-          if (catParam && NAV_CATEGORIES.some(function(c) { return c.id === catParam; })) {
-            initialCat = catParam;
-          }
-        } catch (e) {}
-      }
-
-      if (!initialCat) {
-        try {
-          const savedCat = localStorage.getItem('astropress_active_category');
-          if (savedCat && NAV_CATEGORIES.some(function(c) { return c.id === savedCat; })) {
-            initialCat = savedCat;
-          }
-        } catch (e) {}
-      }
-
-      if (!initialCat) {
-        initialCat = 'dashboard';
-      }
-
-      function switchCategory(targetCatId, updateStorageAndUrl) {
-        if (!targetCatId) return;
-
-        // Highlight active category pill
-        $('.astropress-cat-btn').each(function() {
-          const $btn = $(this);
-          const isTarget = ($btn.attr('data-category') === targetCatId);
-          $btn.toggleClass('active', isTarget);
-          $btn.attr('aria-selected', isTarget ? 'true' : 'false');
-        });
-
-        // Filter visible sub-tabs with transition
-        $allSubtabs.each(function() {
-          const $tab = $(this);
-          const tabCat = $tab.attr('data-category');
-          if (tabCat === targetCatId) {
-            $tab.removeClass('astropress-tab-hidden').addClass('astropress-tab-visible');
-          } else {
-            $tab.addClass('astropress-tab-hidden').removeClass('astropress-tab-visible');
-          }
-        });
-
-        // Persist selection
-        if (updateStorageAndUrl) {
-          try {
-            localStorage.setItem('astropress_active_category', targetCatId);
-          } catch (e) {}
-
-          if (window.history && window.history.replaceState) {
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.set('cat', targetCatId);
-              window.history.replaceState({ cat: targetCatId }, '', url.toString());
-            } catch (e) {}
-          }
-        }
-      }
-
-      // Initial state activation
-      switchCategory(initialCat, false);
-
-      // Event: category pill click
-      $(document).on('click', '.astropress-cat-btn', function(e) {
-        e.preventDefault();
-        const catId = $(this).attr('data-category');
-        if (catId) {
-          switchCategory(catId, true);
-        }
-      });
-    }
-
-    initTwoTierNavigation();
+    // Clean, flat single-tier navigation (no category filtering bloat)
+    // All 7 tabs render directly with full visibility and zero DOM manipulation.
 
     // ========================================================
     // Retention Period Controls (Slider / Select / Presets)
@@ -482,6 +282,44 @@
       if ($testKeyBtn.length) {
         $testKeyBtn.trigger('click');
       }
+    });
+
+    // Dashboard & Overview handshake test button
+    $(document).on('click', '#astropress-dash-test-handshake-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const $status = $('#astropress-dash-handshake-status');
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
+      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Testing webhook handshake with Astro frontend...</div>').show();
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_test_key',
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Handshake Verified:</strong> ' + escapeHtml(res.data.message) + ' (' + res.data.latency_ms + 'ms latency)</div>');
+          } else {
+            let html = '<div style="padding:10px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;">';
+            html += '<div><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> <strong>Handshake Failed:</strong> ' + escapeHtml(res.data?.message || 'Verification error') + '</div>';
+            if (res.data?.guidance) {
+              html += '<div style="margin-top:4px; color:#7f1d1d;">' + escapeHtml(res.data.guidance) + '</div>';
+            }
+            html += '</div>';
+            $status.html(html);
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Server request error: ' + escapeHtml(err) + '</div>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> Test Handshake');
+        }
+      });
     });
 
     // ========================================================

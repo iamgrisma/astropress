@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.17
+Stable tag: 2.0.18
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -199,6 +199,14 @@ It seamlessly combines:
 * Deep Token Abilities & Health Audit: Added comprehensive pre-execution permission auditing testing Account, Zone, Cache Purge, Page/Cache Rules, R2 Storage, and Pages permissions before attempting edge operations.
 * Resilient Edge Rule Deployment: Added permission check before rule deployment, duplicate rule detection, and automatic fallback from Page Rules to Modern Cache Rules (Rulesets API `http_request_cache_settings`) if plan limits are reached.
 * Cloudflare Scoped Token Blueprint: Added accurate `permissionGroupKeys` URL template parameters alongside an interactive 1-click "Copy Permission Blueprint" recipe table.
+
+= 2.0.18 =
+* Unified & Flattened Navigation: Replaced cluttered 12-tab 2-tier hiding system with 7 streamlined top-level tabs (Overview, Setup Wizard, Cloudflare & Cache, Cloudflare R2, Image Optimizer, SEO & Security, Tools & Logs).
+* R2 Custom Domain API Fix: Fixed Cloudflare API Code 10040 ("The JSON you provided was not well formed") in custom domain attachment by removing foreign fields from payload.
+* Zone ID & Bucket Auto-Wipe Fix: Fixed accidental wipe of Cloudflare Zone ID and R2 Bucket on settings save. Added automatic fallback resolution from Cloudflare token and transient discovery cache.
+* Webhook Secret Verification: Added instant "Test Handshake" action to Overview dashboard and Cloudflare & Cache tab with latency measurements and actionable HTTP 401/404 resolution guidance.
+* Streamlined R2 & Media Sync: Integrated Media Sync directly into Cloudflare R2 tab; eliminated redundant duplicate bucket/domain configuration forms.
+* Backward Compatibility: Added seamless routing aliases for all legacy tabs (`settings`, `bridge`, `cache_rules`, `sync`, `warmer`, `logs`, `integration`, `updates`).
 
 = 1.2.1 =
 * Restored dedicated SEO & Security settings tab with full Rank Math schema bridge, permalink rewrites, and Subdomain 301 Protection Shield.
