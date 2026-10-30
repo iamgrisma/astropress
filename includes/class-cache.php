@@ -1555,7 +1555,7 @@ class AstroPress_Cache {
 
         // Auto-discover zone ID if not currently configured
         if (empty($zone_id)) {
-            $cached_disc = get_transient('astropress_cf_discovery_cache');
+            $cached_disc = AstroPress::get_discovery_cache();
             if (!empty($cached_disc['zone_id'])) {
                 $zone_id = sanitize_text_field($cached_disc['zone_id']);
             }

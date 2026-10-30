@@ -498,7 +498,7 @@ class AstroPress_Admin {
         if ($val !== null && $val !== false && $val !== '') {
             return $val;
         }
-        $cached = get_transient('astropress_cf_discovery_cache');
+        $cached = AstroPress::get_discovery_cache();
         if (!empty($cached) && is_array($cached)) {
             if ($key === 'account_id' && !empty($cached['account_id'])) {
                 return $cached['account_id'];

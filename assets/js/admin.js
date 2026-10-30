@@ -1831,6 +1831,7 @@
             // Populate Pages project dropdown
             if (d.pages_projects && d.pages_projects.length > 0) {
               const $pSelect = $('#onboard_cf_pages_project');
+              const prevProj = $pSelect.val() || d.saved_pages_project || '';
               $pSelect.find('option:not([value="__custom__"]):not([value=""])').remove();
               d.pages_projects.forEach(function(p) {
                 const domStr = (p.domains || []).join(',');
@@ -1838,39 +1839,43 @@
                 const label = p.name + (primary ? ' (' + primary + ')' : '');
                 $pSelect.append('<option value="' + escapeHtml(p.name) + '" data-domains="' + escapeHtml(domStr) + '" data-primary="' + escapeHtml(primary) + '">' + escapeHtml(label) + '</option>');
               });
-              const curVal = $pSelect.val();
-              if (!curVal || curVal === '__custom__') {
-                $pSelect.val(d.pages_projects[0].name).trigger('change');
-              } else {
-                $pSelect.trigger('change');
-              }
+              const projToSelect = (prevProj && prevProj !== '__custom__' && $pSelect.find('option[value="' + prevProj + '"]').length)
+                ? prevProj
+                : (d.pages_projects[0].name);
+              $pSelect.val(projToSelect).trigger('change');
             }
 
             // Populate R2 buckets dropdown
             if (d.buckets && d.buckets.length > 0) {
               const $bSelect = $('#onboard_r2_bucket');
+              const prevBucket = $bSelect.val() || d.saved_bucket || '';
               $bSelect.find('option:not([value="__custom__"]):not([value=""])').remove();
               d.buckets.forEach(function(b) {
                 $bSelect.append('<option value="' + escapeHtml(b) + '">' + escapeHtml(b) + '</option>');
               });
-              // Smart-select matching bucket based on project or domain (e.g. grisma -> grismawp, topnepali -> topnepali)
-              const proj = d.pages_project || $('#onboard_cf_pages_project').val() || '';
-              const fe = d.frontend_url || $('#onboard_frontend_url').val() || '';
-              let bestBucket = d.buckets[0];
-              const pLow = proj.toLowerCase();
-              const feLow = fe.toLowerCase();
-              for (let i = 0; i < d.buckets.length; i++) {
-                const bLow = d.buckets[i].toLowerCase();
-                if (pLow && (bLow === pLow || bLow === pLow + 'wp' || bLow.startsWith(pLow) || pLow.startsWith(bLow))) {
-                  bestBucket = d.buckets[i];
-                  break;
+              // If previously selected bucket exists in list, keep it!
+              if (prevBucket && prevBucket !== '__custom__' && d.buckets.includes(prevBucket)) {
+                $bSelect.val(prevBucket).trigger('change');
+              } else {
+                // Smart-select matching bucket based on project or domain (e.g. grisma -> grismawp, topnepali -> topnepali)
+                const proj = d.pages_project || $('#onboard_cf_pages_project').val() || '';
+                const fe = d.frontend_url || $('#onboard_frontend_url').val() || '';
+                let bestBucket = d.buckets[0];
+                const pLow = proj.toLowerCase();
+                const feLow = fe.toLowerCase();
+                for (let i = 0; i < d.buckets.length; i++) {
+                  const bLow = d.buckets[i].toLowerCase();
+                  if (pLow && (bLow === pLow || bLow === pLow + 'wp' || bLow.startsWith(pLow) || pLow.startsWith(bLow))) {
+                    bestBucket = d.buckets[i];
+                    break;
+                  }
+                  if (feLow && (feLow.includes(bLow) || (bLow.includes('grisma') && feLow.includes('grisma')) || (bLow.includes('topnepali') && feLow.includes('topnepali')))) {
+                    bestBucket = d.buckets[i];
+                    break;
+                  }
                 }
-                if (feLow && (feLow.includes(bLow) || (bLow.includes('grisma') && feLow.includes('grisma')) || (bLow.includes('topnepali') && feLow.includes('topnepali')))) {
-                  bestBucket = d.buckets[i];
-                  break;
-                }
+                $bSelect.val(bestBucket).trigger('change');
               }
-              $bSelect.val(bestBucket).trigger('change');
             }
 
             $('#onboard-step1-status-pill').html('<span style="background:#ecfdf5; color:#166534; border:1px solid #bbf7d0; font-size:11px; font-weight:600; padding:3px 10px; border-radius:12px; display:inline-flex; align-items:center; gap:4px;"><span class="dashicons dashicons-yes-alt"></span> Verified</span>');

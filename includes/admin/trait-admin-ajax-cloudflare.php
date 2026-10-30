@@ -281,14 +281,15 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             $can_dns = (!is_wp_error($d_res) && wp_remote_retrieve_response_code($d_res) === 200);
         }
 
-        // Save persistent discovery cache
-        set_transient('astropress_cf_discovery_cache', array(
+        // Save persistent discovery cache (both transient and permanent option)
+        $discovery_data = array(
             'account_id'     => $account_id,
             'zone_id'        => $zone_id,
             'zone_name'      => $matched_zone['name'] ?? '',
             'buckets'        => $buckets,
             'pages_projects' => $pages_projects,
-        ), 86400);
+        );
+        AstroPress::set_discovery_cache($discovery_data);
 
         $essential_pass = $can_zone_read;
 
@@ -305,6 +306,8 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'zone_id'              => $zone_id,
             'zone_name'            => $matched_zone['name'] ?? '',
             'primary_frontend_url' => $primary_fe,
+            'saved_pages_project'  => $this->core->get_cf_pages_project(),
+            'saved_bucket'         => AstroPress_Admin::get_r2_option('bucket', ''),
             'permissions'          => array(
                 'zone_read_purge' => $can_zone_read,
                 'pages'           => $can_pages,
@@ -340,6 +343,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         }
         if (!empty($pages_proj) && $pages_proj !== '__custom__') {
             update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_proj);
+            $disc = AstroPress::get_discovery_cache();
+            if (!empty($disc) && is_array($disc)) {
+                $disc['selected_pages_project'] = $pages_proj;
+                AstroPress::set_discovery_cache($disc);
+            }
         }
         if (!empty($frontend_url)) {
             $frontend_url = rtrim($frontend_url, '/');
@@ -403,6 +411,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             if (!empty($bucket) && $bucket !== '__custom__') {
                 update_option('astropress_r2_bucket', $bucket);
                 update_option('r2g_bucket', $bucket);
+                $disc = AstroPress::get_discovery_cache();
+                if (!empty($disc) && is_array($disc)) {
+                    $disc['selected_bucket'] = $bucket;
+                    AstroPress::set_discovery_cache($disc);
+                }
             }
             if (!empty($custom_domain)) {
                 $clean_domain = preg_replace('#^https?://#', '', rtrim($custom_domain, '/'));
@@ -526,6 +539,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         }
         if (!empty($pages_proj) && $pages_proj !== '__custom__') {
             update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_proj);
+            $disc = AstroPress::get_discovery_cache();
+            if (!empty($disc) && is_array($disc)) {
+                $disc['selected_pages_project'] = $pages_proj;
+                AstroPress::set_discovery_cache($disc);
+            }
         }
         if (!empty($frontend_url)) {
             $frontend_url = rtrim($frontend_url, '/');
@@ -568,6 +586,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             if (!empty($bucket) && $bucket !== '__custom__') {
                 update_option('astropress_r2_bucket', $bucket);
                 update_option('r2g_bucket', $bucket);
+                $disc = AstroPress::get_discovery_cache();
+                if (!empty($disc) && is_array($disc)) {
+                    $disc['selected_bucket'] = $bucket;
+                    AstroPress::set_discovery_cache($disc);
+                }
             }
             if (!empty($custom_domain)) {
                 $clean_domain = preg_replace('#^https?://#', '', rtrim($custom_domain, '/'));
@@ -601,7 +624,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             return $zone_id;
         }
 
-        $discovery = get_transient('astropress_cf_discovery_cache');
+        $discovery = AstroPress::get_discovery_cache();
         if (!empty($discovery['zone_id'])) {
             return sanitize_text_field($discovery['zone_id']);
         }

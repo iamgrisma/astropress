@@ -45,7 +45,7 @@ if (empty($custom_domain) && !empty($allowed_roots[0])) {
 }
 
 // Check cached discovery
-$cached_discovery = get_transient('astropress_cf_discovery_cache');
+$cached_discovery = AstroPress::get_discovery_cache();
 $cached_buckets   = !empty($cached_discovery['buckets']) ? $cached_discovery['buckets'] : array();
 $cached_projects  = !empty($cached_discovery['pages_projects']) ? $cached_discovery['pages_projects'] : array();
 $has_cached_disc  = !empty($cached_discovery);
@@ -148,7 +148,7 @@ foreach ($checks as $c) {
                     </div>
                     <!-- Optional: Cloudflare Pages -->
                     <div id="perm-pages-card" style="background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:10px; display:flex; align-items:center; gap:8px;">
-                        <span id="perm-pages-icon" class="dashicons <?php echo !empty($cached_projects) ? 'dashicons-yes-alt text-success' : 'dashicons-minus'; ?>" style="font-size:20px; width:20px; height:20px; color:#64748b;"></span>
+                        <span id="perm-pages-icon" class="dashicons <?php echo (!empty($cached_projects) || !empty($pages_project)) ? 'dashicons-yes-alt text-success' : 'dashicons-minus'; ?>" style="font-size:20px; width:20px; height:20px; color:#64748b;"></span>
                         <div>
                             <div style="font-weight:600; font-size:12px; color:#0f172a;"><?php esc_html_e('Cloudflare Pages', 'astropress'); ?></div>
                             <span style="font-size:10px; color:#64748b;"><?php esc_html_e('Optional', 'astropress'); ?></span>
@@ -156,7 +156,7 @@ foreach ($checks as $c) {
                     </div>
                     <!-- Optional: R2 Storage -->
                     <div id="perm-r2-card" style="background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:10px; display:flex; align-items:center; gap:8px;">
-                        <span id="perm-r2-icon" class="dashicons <?php echo !empty($cached_buckets) ? 'dashicons-yes-alt text-success' : 'dashicons-minus'; ?>" style="font-size:20px; width:20px; height:20px; color:#64748b;"></span>
+                        <span id="perm-r2-icon" class="dashicons <?php echo (!empty($cached_buckets) || !empty($bucket)) ? 'dashicons-yes-alt text-success' : 'dashicons-minus'; ?>" style="font-size:20px; width:20px; height:20px; color:#64748b;"></span>
                         <div>
                             <div style="font-weight:600; font-size:12px; color:#0f172a;"><?php esc_html_e('R2 Object Storage', 'astropress'); ?></div>
                             <span style="font-size:10px; color:#64748b;"><?php esc_html_e('Optional', 'astropress'); ?></span>
@@ -209,8 +209,22 @@ foreach ($checks as $c) {
                 <label for="onboard_cf_pages_project" style="display:block; font-weight:600; margin-bottom:6px; color:#334155;">
                     <?php esc_html_e('Cloudflare Pages Project:', 'astropress'); ?>
                 </label>
+                <?php
+                $pages_project_in_cache = false;
+                foreach ($cached_projects as $cp) {
+                    $p_name = is_array($cp) ? ($cp['name'] ?? '') : $cp;
+                    if (!empty($pages_project) && $pages_project === $p_name) {
+                        $pages_project_in_cache = true;
+                        break;
+                    }
+                }
+                ?>
                 <select id="onboard_cf_pages_project" name="onboard_cf_pages_project" style="width:100%; max-width:100%;">
-                    <option value=""><?php esc_html_e('-- Select Cloudflare Pages Project (Auto-Discovered) --', 'astropress'); ?></option>
+                    <?php if (!empty($pages_project) && !$pages_project_in_cache && $pages_project !== '__custom__'): ?>
+                        <option value="<?php echo esc_attr($pages_project); ?>" selected><?php echo esc_html($pages_project); ?> (Current)</option>
+                    <?php elseif (empty($pages_project)): ?>
+                        <option value=""><?php esc_html_e('-- Select Cloudflare Pages Project (Auto-Discovered) --', 'astropress'); ?></option>
+                    <?php endif; ?>
                     <?php foreach ($cached_projects as $cp): ?>
                         <?php 
                         $p_name = is_array($cp) ? ($cp['name'] ?? '') : $cp;
@@ -230,12 +244,12 @@ foreach ($checks as $c) {
                         }
                         ?>
                         <option value="<?php echo esc_attr($p_name); ?>" data-domains="<?php echo esc_attr($p_domains); ?>" data-primary="<?php echo esc_attr($p_primary); ?>" <?php selected($pages_project, $p_name); ?>>
-                            <?php echo esc_html($p_name); ?><?php echo !empty($p_primary) ? ' (' . esc_html($p_primary) . ')' : ''; ?>
+                            <?php echo esc_html($p_name); ?><?php echo !empty($p_primary) ? ' (' . esc_html($p_primary) . ')' : ''; ?><?php echo ($pages_project === $p_name) ? ' (Current)' : ''; ?>
                         </option>
                     <?php endforeach; ?>
                     <option value="__custom__" <?php selected($pages_project === '__custom__'); ?>><?php esc_html_e('+ Specify Custom Project Name', 'astropress'); ?></option>
                 </select>
-                <div id="onboard-pages-custom-wrap" style="display:none; margin-top:8px;">
+                <div id="onboard-pages-custom-wrap" style="<?php echo ($pages_project === '__custom__') ? '' : 'display:none;'; ?> margin-top:8px;">
                     <input type="text" id="onboard_cf_pages_project_custom" placeholder="e.g. topnepali" class="regular-text" style="width:100%;" />
                 </div>
                 <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">
@@ -467,20 +481,29 @@ foreach ($checks as $c) {
                     <label for="onboard_r2_bucket" style="display:block; font-weight:600; font-size:13px; margin-bottom:4px; color:#334155;">
                         <?php esc_html_e('R2 Bucket Name:', 'astropress'); ?>
                     </label>
+                    <?php
+                    $bucket_in_cache = false;
+                    foreach ($cached_buckets as $cb) {
+                        if (!empty($bucket) && $bucket === $cb) {
+                            $bucket_in_cache = true;
+                            break;
+                        }
+                    }
+                    ?>
                     <select id="onboard_r2_bucket" name="onboard_r2_bucket" style="width:100%; max-width:100%;">
-                        <?php if (!empty($bucket)): ?>
+                        <?php if (!empty($bucket) && !$bucket_in_cache && $bucket !== '__custom__'): ?>
                             <option value="<?php echo esc_attr($bucket); ?>" selected><?php echo esc_html($bucket); ?> (Current)</option>
-                        <?php else: ?>
+                        <?php elseif (empty($bucket)): ?>
                             <option value=""><?php esc_html_e('-- Select Discovered R2 Bucket --', 'astropress'); ?></option>
                         <?php endif; ?>
                         <?php foreach ($cached_buckets as $cb): ?>
-                            <?php if ($cb !== $bucket): ?>
-                                <option value="<?php echo esc_attr($cb); ?>"><?php echo esc_html($cb); ?></option>
-                            <?php endif; ?>
+                            <option value="<?php echo esc_attr($cb); ?>" <?php selected($bucket, $cb); ?>>
+                                <?php echo esc_html($cb); ?><?php echo ($cb === $bucket) ? ' (Current)' : ''; ?>
+                            </option>
                         <?php endforeach; ?>
-                        <option value="__custom__"><?php esc_html_e('+ Enter Custom / New Bucket Name', 'astropress'); ?></option>
+                        <option value="__custom__" <?php selected($bucket === '__custom__'); ?>><?php esc_html_e('+ Enter Custom / New Bucket Name', 'astropress'); ?></option>
                     </select>
-                    <div id="onboard-custom-bucket-wrap" style="display:none; margin-top:8px;">
+                    <div id="onboard-custom-bucket-wrap" style="<?php echo ($bucket === '__custom__') ? '' : 'display:none;'; ?> margin-top:8px;">
                         <input type="text" id="onboard_r2_bucket_custom" placeholder="my-media-bucket" class="regular-text" style="width:100%;" />
                     </div>
                     <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;"><?php esc_html_e('Discovered from your Cloudflare account, or specify a new bucket.', 'astropress'); ?></p>

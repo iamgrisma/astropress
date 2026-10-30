@@ -327,7 +327,7 @@ trait AstroPress_Admin_Ajax_R2 {
         $token       = trim(sanitize_text_field($_POST['token'] ?? ''));
 
         if (empty($account_id)) {
-            $cached_disc = get_transient('astropress_cf_discovery_cache');
+            $cached_disc = AstroPress::get_discovery_cache();
             if (!empty($cached_disc['account_id'])) {
                 $account_id = sanitize_text_field($cached_disc['account_id']);
             }
@@ -410,7 +410,7 @@ trait AstroPress_Admin_Ajax_R2 {
             delete_option($opt);
         }
 
-        delete_transient('astropress_cf_discovery_cache');
+        AstroPress::delete_discovery_cache();
         wp_clear_scheduled_hook('astropress_warm_bg_worker');
         wp_clear_scheduled_hook('topnepali_warm_bg_worker');
 

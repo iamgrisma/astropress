@@ -457,13 +457,54 @@ class AstroPress {
         return '';
     }
 
+    /**
+     * Get discovery cache (checks transient, then persistent option fallback)
+     *
+     * @return array Discovery cache data or empty array
+     */
+    public static function get_discovery_cache() {
+        $cached = get_transient('astropress_cf_discovery_cache');
+        if (!empty($cached) && is_array($cached)) {
+            return $cached;
+        }
+        $opt = get_option('astropress_cf_discovery_cache', array());
+        if (!empty($opt) && is_array($opt)) {
+            return $opt;
+        }
+        return array();
+    }
+
+    /**
+     * Set discovery cache (persists to both transient and permanent option)
+     *
+     * @param array $data Discovery data to cache
+     * @return void
+     */
+    public static function set_discovery_cache($data) {
+        if (!is_array($data)) {
+            return;
+        }
+        set_transient('astropress_cf_discovery_cache', $data, 30 * DAY_IN_SECONDS);
+        update_option('astropress_cf_discovery_cache', $data, false);
+    }
+
+    /**
+     * Delete discovery cache (removes both transient and option)
+     *
+     * @return void
+     */
+    public static function delete_discovery_cache() {
+        delete_transient('astropress_cf_discovery_cache');
+        delete_option('astropress_cf_discovery_cache');
+    }
+
     public function get_cf_zone_id() {
         $val = get_option(self::OPTION_CF_ZONE_ID, '');
         if (empty($val)) {
             $val = get_option('topnepali_headless_cf_zone_id', '');
         }
         if (empty($val)) {
-            $cached = get_transient('astropress_cf_discovery_cache');
+            $cached = self::get_discovery_cache();
             if (!empty($cached['zone_id'])) {
                 $val = $cached['zone_id'];
                 update_option(self::OPTION_CF_ZONE_ID, $val);
@@ -478,7 +519,7 @@ class AstroPress {
             $val = get_option('r2g_account_id', '');
         }
         if (empty($val)) {
-            $cached = get_transient('astropress_cf_discovery_cache');
+            $cached = self::get_discovery_cache();
             if (!empty($cached['account_id'])) {
                 $val = $cached['account_id'];
                 update_option('astropress_r2_account_id', $val);
