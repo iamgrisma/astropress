@@ -328,16 +328,28 @@ trait AstroPress_Admin_Settings {
 
                 update_option('astropress_r2_auto_upload', 1);
                 update_option('astropress_r2_rewrite_urls', 1);
-                update_option('astropress_compress_enabled', 1);
-                update_option('astropress_compress_format', 'webp');
-                update_option('astropress_compress_quality', 82);
+                if (get_option('astropress_compress_enabled', null) === null) {
+                    update_option('astropress_compress_enabled', 1);
+                }
+                if (get_option('astropress_compress_format', null) === null) {
+                    update_option('astropress_compress_format', 'webp');
+                }
+                if (get_option('astropress_compress_quality', null) === null) {
+                    update_option('astropress_compress_quality', 82);
+                }
 
                 if (get_option('r2g_auto_upload', null) !== null) {
                     update_option('r2g_auto_upload', 1);
                     update_option('r2g_rewrite_urls', 1);
-                    update_option('r2g_compress_enabled', 1);
-                    update_option('r2g_compress_format', 'webp');
-                    update_option('r2g_compress_quality', 82);
+                    if (get_option('r2g_compress_enabled', null) === null) {
+                        update_option('r2g_compress_enabled', 1);
+                    }
+                    if (get_option('r2g_compress_format', null) === null) {
+                        update_option('r2g_compress_format', 'webp');
+                    }
+                    if (get_option('r2g_compress_quality', null) === null) {
+                        update_option('r2g_compress_quality', 82);
+                    }
                 }
             } else {
                 update_option('astropress_r2_auto_upload', 0);

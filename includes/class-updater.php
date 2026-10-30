@@ -639,7 +639,17 @@ class AstroPress_Updater {
                 wp_update_plugins();
             }
 
-            wp_safe_redirect(remove_query_arg(array('astropress_check_updates', 'r2g_check_updates', '_wpnonce')));
+            $redirect_tab = !empty($_GET['tab']) ? sanitize_key($_GET['tab']) : 'updates';
+            $redirect_page = !empty($_GET['page']) ? sanitize_key($_GET['page']) : 'astropress';
+            $redirect_url = add_query_arg(
+                array(
+                    'page'    => $redirect_page,
+                    'tab'     => $redirect_tab,
+                    'checked' => '1',
+                ),
+                admin_url('admin.php')
+            );
+            wp_safe_redirect($redirect_url);
             exit;
     }
 

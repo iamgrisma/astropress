@@ -651,7 +651,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $can_pages = false;
         $pages_projects = array();
         if (!empty($account_id)) {
-            $p_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts/' . rawurlencode($account_id) . '/pages/projects?per_page=25', array(
+            $p_res = wp_remote_get('https://api.cloudflare.com/client/v4/accounts/' . rawurlencode($account_id) . '/pages/projects', array(
                 'timeout' => 8,
                 'headers' => $headers,
             ));
@@ -878,13 +878,18 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         }
 
         // Secret setup
+        $force_gen = !empty($_POST['force_generate']);
         $raw_secret = trim(sanitize_text_field($_POST['secret'] ?? ''));
-        if (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {
+        if ($force_gen) {
+            $revalidate_secret = $this->core->generate_secret();
+            $this->core->set_custom_secret($revalidate_secret);
+        } elseif (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {
             $revalidate_secret = $this->core->set_custom_secret($raw_secret);
         } else {
             $revalidate_secret = $this->core->get_custom_secret();
             if (empty($revalidate_secret)) {
                 $revalidate_secret = $this->core->generate_secret();
+                $this->core->set_custom_secret($revalidate_secret);
             }
         }
 
@@ -1530,7 +1535,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
         $rule_to_add = null;
 
-        if ($preset === 'astro_assets') {
+        if ($preset === 'astro_assets' || $preset === 'static_assets') {
             $rule_to_add = array(
                 'expression'        => '(starts_with(http.request.uri.path, "/_astro/") or starts_with(http.request.uri.path, "/assets/"))',
                 'description'       => 'AstroPress: 1-Year Static Assets Edge Cache',
@@ -1539,6 +1544,16 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                     'cache'       => true,
                     'edge_ttl'    => array('mode' => 'override_origin', 'default' => 31536000),
                     'browser_ttl' => array('mode' => 'override_origin', 'default' => 31536000),
+                ),
+                'enabled'           => true,
+            );
+        } elseif ($preset === 'wp_admin_bypass') {
+            $rule_to_add = array(
+                'expression'        => '(starts_with(http.request.uri.path, "/wp-admin") or starts_with(http.request.uri.path, "/wp-login.php") or starts_with(http.request.uri.path, "/wp-json/"))',
+                'description'       => 'AstroPress: WordPress Admin & REST API Edge Bypass',
+                'action'            => 'set_cache_settings',
+                'action_parameters' => array(
+                    'cache' => false,
                 ),
                 'enabled'           => true,
             );
@@ -1604,14 +1619,27 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 'enabled'           => true,
             );
         } elseif (!empty($custom_expr)) {
-            $edge_ttl_mode = sanitize_text_field($_POST['edge_ttl_mode'] ?? 'override_origin');
-            $edge_ttl_val  = absint($_POST['edge_ttl_default'] ?? 31536000);
-            $action_params = array('cache' => true);
-            if ($edge_ttl_mode === 'override_origin') {
-                $action_params['edge_ttl']    = array('mode' => 'override_origin', 'default' => $edge_ttl_val);
-                $action_params['browser_ttl'] = array('mode' => 'override_origin', 'default' => $edge_ttl_val);
+            $cache_action = sanitize_key($_POST['cache_action'] ?? 'cache');
+            if ($cache_action === 'bypass') {
+                $action_params = array('cache' => false);
             } else {
-                $action_params['edge_ttl'] = array('mode' => 'respect_origin');
+                $edge_ttl_mode = sanitize_text_field($_POST['edge_ttl_mode'] ?? 'override_origin');
+                $edge_ttl_val  = absint($_POST['edge_ttl_default'] ?? 31536000);
+                $browser_ttl_mode = sanitize_text_field($_POST['browser_ttl_mode'] ?? 'override_origin');
+                $browser_ttl_val  = absint($_POST['browser_ttl_default'] ?? 31536000);
+
+                $action_params = array('cache' => true);
+                if ($edge_ttl_mode === 'override_origin') {
+                    $action_params['edge_ttl'] = array('mode' => 'override_origin', 'default' => $edge_ttl_val);
+                } else {
+                    $action_params['edge_ttl'] = array('mode' => 'respect_origin');
+                }
+
+                if ($browser_ttl_mode === 'override_origin') {
+                    $action_params['browser_ttl'] = array('mode' => 'override_origin', 'default' => $browser_ttl_val);
+                } else {
+                    $action_params['browser_ttl'] = array('mode' => 'respect_origin');
+                }
             }
 
             $rule_to_add = array(

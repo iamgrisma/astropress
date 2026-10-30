@@ -64,6 +64,7 @@ class AstroPress_Admin {
 
             // AJAX Handlers for Cloudflare R2 & Image Compression
             add_action('wp_ajax_astropress_test_connection', array($this, 'ajax_test_connection'));
+            add_action('wp_ajax_astropress_test_r2_connection', array($this, 'ajax_test_connection'));
             add_action('wp_ajax_r2g_test_connection', array($this, 'ajax_test_connection'));
             add_action('wp_ajax_astropress_fetch_buckets', array($this, 'ajax_fetch_buckets'));
             add_action('wp_ajax_r2g_fetch_buckets', array($this, 'ajax_fetch_buckets'));

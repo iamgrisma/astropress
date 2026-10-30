@@ -62,6 +62,26 @@ class AstroPress_Warmer {
         return false;
     }
 
+    /**
+     * Compute clean URL path for a post or page respecting permalinks
+     */
+    private function get_post_path($post) {
+        if (is_numeric($post)) {
+            $post = get_post($post);
+        }
+        if (!$post) {
+            return '';
+        }
+        $link = get_permalink($post->ID ?? $post);
+        if (!empty($link) && !is_wp_error($link)) {
+            $path = wp_parse_url($link, PHP_URL_PATH);
+            if (!empty($path)) {
+                return '/' . ltrim($path, '/');
+            }
+        }
+        return '/' . ltrim($post->post_name ?? '', '/');
+    }
+
     private function fetch_sitemap_xml($url) {
         $clean_url = trim($url);
         if (strpos($clean_url, 'http') !== 0) {
@@ -232,8 +252,8 @@ class AstroPress_Warmer {
             $max_posts = (int) apply_filters('astropress_warmer_max_posts', 2000);
             $posts = $wpdb->get_results($wpdb->prepare("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC LIMIT %d", $max_posts));
             foreach ($posts as $p) {
-                $url = '/' . ltrim($p->post_name, '/');
-                if (!isset($seen[$url])) {
+                $url = $this->get_post_path($p);
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Post');
                 }
@@ -252,10 +272,9 @@ class AstroPress_Warmer {
                 if ((int) $p->ID === $front_page_id) {
                     $url = '/';
                 } else {
-                    $uri = get_page_uri($p->ID);
-                    $url = '/' . ltrim($uri, '/');
+                    $url = $this->get_post_path($p);
                 }
-                if (!isset($seen[$url])) {
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Page');
                 }
@@ -270,7 +289,7 @@ class AstroPress_Warmer {
             $cats = get_categories(array('hide_empty' => true));
             foreach ($cats as $c) {
                 $url = $this->core->cache->get_term_path($c);
-                if (!isset($seen[$url])) {
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $c->name . ' (Category)', 'type' => 'Category');
                 }
@@ -278,7 +297,7 @@ class AstroPress_Warmer {
             $tags = get_tags(array('hide_empty' => true));
             foreach ($tags as $t) {
                 $url = '/tag/' . ltrim($t->slug, '/');
-                if (!isset($seen[$url])) {
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $t->name . ' (Tag)', 'type' => 'Tag');
                 }
@@ -291,12 +310,17 @@ class AstroPress_Warmer {
 
         if ($preset === 'entire_site') {
             $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
-            $items[] = array('url' => '/blogs', 'title' => 'Blogs Archive', 'type' => 'Core');
-            $items[] = array('url' => '/blog', 'title' => 'Blog Index', 'type' => 'Core');
-            $items[] = array('url' => '/rss.xml', 'title' => 'RSS Feed', 'type' => 'Feed');
-            $items[] = array('url' => '/feed.xml', 'title' => 'Atom/XML Feed', 'type' => 'Feed');
             $items[] = array('url' => '/sitemap.xml', 'title' => 'Sitemap Index', 'type' => 'SEO');
-            $seen['/'] = $seen['/blogs'] = $seen['/blog'] = $seen['/rss.xml'] = $seen['/feed.xml'] = $seen['/sitemap.xml'] = true;
+            $seen['/'] = $seen['/sitemap.xml'] = true;
+
+            $posts_page_id = (int) get_option('page_for_posts');
+            if ($posts_page_id > 0) {
+                $blog_path = $this->get_post_path($posts_page_id);
+                if (!empty($blog_path) && !isset($seen[$blog_path])) {
+                    $seen[$blog_path] = true;
+                    $items[] = array('url' => $blog_path, 'title' => get_the_title($posts_page_id) ?: 'Blog Index', 'type' => 'Core');
+                }
+            }
 
             $front_page_id = (int) get_option('page_on_front');
             $max_pages = (int) apply_filters('astropress_warmer_max_pages', 1000);
@@ -305,10 +329,9 @@ class AstroPress_Warmer {
                 if ((int) $p->ID === $front_page_id) {
                     $url = '/';
                 } else {
-                    $uri = get_page_uri($p->ID);
-                    $url = '/' . ltrim($uri, '/');
+                    $url = $this->get_post_path($p);
                 }
-                if (!isset($seen[$url])) {
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Page');
                 }
@@ -317,7 +340,7 @@ class AstroPress_Warmer {
             $cats = get_categories(array('hide_empty' => true));
             foreach ($cats as $c) {
                 $url = $this->core->cache->get_term_path($c);
-                if (!isset($seen[$url])) {
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $c->name . ' (Category)', 'type' => 'Category');
                 }
@@ -326,7 +349,7 @@ class AstroPress_Warmer {
             $tags = get_tags(array('hide_empty' => true));
             foreach ($tags as $t) {
                 $url = '/tag/' . ltrim($t->slug, '/');
-                if (!isset($seen[$url])) {
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $t->name . ' (Tag)', 'type' => 'Tag');
                 }
@@ -335,8 +358,8 @@ class AstroPress_Warmer {
             $max_posts = (int) apply_filters('astropress_warmer_max_posts', 2000);
             $posts = $wpdb->get_results($wpdb->prepare("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'post' ORDER BY ID DESC LIMIT %d", $max_posts));
             foreach ($posts as $p) {
-                $url = '/' . ltrim($p->post_name, '/');
-                if (!isset($seen[$url])) {
+                $url = $this->get_post_path($p);
+                if (!empty($url) && !isset($seen[$url])) {
                     $seen[$url] = true;
                     $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Post');
                 }
@@ -360,18 +383,18 @@ class AstroPress_Warmer {
             $tool_pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' AND (post_name LIKE '%tool%' OR post_name LIKE '%converter%' OR post_name LIKE '%calendar%') ORDER BY ID DESC");
             if (!empty($tool_pages)) {
                 foreach ($tool_pages as $p) {
-                    $url = '/' . ltrim($p->post_name, '/');
-                    if (!isset($seen[$url])) {
+                    $url = $this->get_post_path($p);
+                    if (!empty($url) && !isset($seen[$url])) {
                         $seen[$url] = true;
                         $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Tool');
                     }
                 }
             }
             if (empty($items)) {
-            $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
-        }
+                $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
+            }
 
-        return apply_filters('astropress_warmup_urls', $items, $preset);
+            return apply_filters('astropress_warmup_urls', $items, $preset);
         }
 
         if ($preset === 'sitemap_files_only') {
@@ -386,16 +409,22 @@ class AstroPress_Warmer {
 
         // Standard and Deep Presets
         $items[] = array('url' => '/', 'title' => 'Homepage', 'type' => 'Core');
-        $items[] = array('url' => '/blogs', 'title' => 'Blogs Archive', 'type' => 'Core');
-        $items[] = array('url' => '/blog', 'title' => 'Blog Index', 'type' => 'Core');
-        $items[] = array('url' => '/rss.xml', 'title' => 'RSS Feed', 'type' => 'Feed');
         $items[] = array('url' => '/sitemap.xml', 'title' => 'Sitemap Index', 'type' => 'SEO');
-        $seen['/'] = $seen['/blogs'] = $seen['/blog'] = $seen['/rss.xml'] = $seen['/sitemap.xml'] = true;
+        $seen['/'] = $seen['/sitemap.xml'] = true;
+
+        $posts_page_id = (int) get_option('page_for_posts');
+        if ($posts_page_id > 0) {
+            $blog_path = $this->get_post_path($posts_page_id);
+            if (!empty($blog_path) && !isset($seen[$blog_path])) {
+                $seen[$blog_path] = true;
+                $items[] = array('url' => $blog_path, 'title' => get_the_title($posts_page_id) ?: 'Blog Index', 'type' => 'Core');
+            }
+        }
 
         $cats = get_categories(array('number' => ($preset === 'deep' ? 25 : 10), 'hide_empty' => true));
         foreach ($cats as $c) {
             $url = $this->core->cache->get_term_path($c);
-            if (!isset($seen[$url])) {
+            if (!empty($url) && !isset($seen[$url])) {
                 $seen[$url] = true;
                 $items[] = array('url' => $url, 'title' => $c->name . ' (Category)', 'type' => 'Category');
             }
@@ -408,8 +437,8 @@ class AstroPress_Warmer {
             'post_type'   => 'post',
         ));
         foreach ($posts as $p) {
-            $url = '/' . ltrim($p->post_name, '/');
-            if (!isset($seen[$url])) {
+            $url = $this->get_post_path($p);
+            if (!empty($url) && !isset($seen[$url])) {
                 $seen[$url] = true;
                 $items[] = array('url' => $url, 'title' => $p->post_title ?: $p->post_name, 'type' => 'Post');
             }

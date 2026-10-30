@@ -321,10 +321,11 @@ foreach ($checks as $c) {
                             </button>
                         </div>
                     </div>
-                    <button type="button" class="button button-secondary" id="onboard-generate-secret-btn" title="<?php esc_attr_e('Generate a random cryptographically secure 32-character secret', 'astropress'); ?>">
-                        <span class="dashicons dashicons-randomize" style="vertical-align:-2px;"></span> <?php esc_html_e('Generate Random Key', 'astropress'); ?>
+                    <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
+                        <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Connection', 'astropress'); ?>
                     </button>
                 </div>
+                <div id="onboard-handshake-quick-status" style="margin-top:8px; display:none;"></div>
             </div>
 
             <!-- Cloudflare Pages Deploy Hook -->
@@ -332,7 +333,7 @@ foreach ($checks as $c) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
                     <label for="onboard_cf_deploy_hook" style="font-weight:600; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
                         <span class="dashicons dashicons-cloud-upload" style="color:#0284c7;"></span>
-                        <span><?php esc_html_e('Cloudflare Pages Deploy Hook (Required for Secret Sync):', 'astropress'); ?></span>
+                        <span><?php esc_html_e('Cloudflare Pages Deploy Hook (Required for Rebuilds & Secret Sync):', 'astropress'); ?></span>
                     </label>
                     <span id="onboard-deploy-badge" style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:12px; background:<?php echo $has_deploy_hook ? '#ecfdf5; color:#166534; border:1px solid #bbf7d0;' : '#fef3c7; color:#92400e; border:1px solid #fde68a;'; ?>">
                         <span class="dashicons <?php echo $has_deploy_hook ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:14px; width:14px; height:14px; line-height:14px;"></span>
@@ -341,19 +342,16 @@ foreach ($checks as $c) {
                 </div>
 
                 <!-- Tutorial: How to get Deploy Hook in Cloudflare -->
-                <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:12px; margin-bottom:12px; font-size:12px; color:#1e40af; line-height:1.5;">
-                    <div style="font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
-                        <span class="dashicons dashicons-info" style="font-size:16px; width:16px; height:16px;"></span>
+                <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:10px 12px; margin-bottom:10px; font-size:12px; color:#1e40af; line-height:1.45;">
+                    <div style="font-weight:700; margin-bottom:3px; display:flex; align-items:center; gap:6px;">
+                        <span class="dashicons dashicons-info" style="font-size:15px; width:15px; height:15px;"></span>
                         <span><?php esc_html_e('Where to get your Cloudflare Pages Deploy Hook:', 'astropress'); ?></span>
                     </div>
-                    <ol style="margin:4px 0 6px 18px; padding:0;">
+                    <ol style="margin:2px 0 4px 18px; padding:0;">
                         <li><?php esc_html_e('Go to Cloudflare Dashboard &rarr; Workers & Pages &rarr; click your Astro project.', 'astropress'); ?></li>
-                        <li><?php esc_html_e('Navigate to Settings &rarr; Builds & deployments &rarr; scroll down to Deploy hooks.', 'astropress'); ?></li>
-                        <li><?php esc_html_e('Click "Add deploy hook", select your production branch (e.g. main), and copy the URL.', 'astropress'); ?></li>
+                        <li><?php esc_html_e('Navigate to Settings &rarr; Builds & deployments &rarr; scroll to Deploy hooks.', 'astropress'); ?></li>
+                        <li><?php esc_html_e('Click "Add deploy hook", select production branch (e.g. main), and copy the URL.', 'astropress'); ?></li>
                     </ol>
-                    <div style="color:#2563eb; font-size:11px;">
-                        <strong><?php esc_html_e('Why is this necessary?', 'astropress'); ?></strong> <?php esc_html_e('Cloudflare Pages only loads updated environment variables into your live Astro frontend when a new build finishes. A verified Deploy Hook triggers that build automatically.', 'astropress'); ?>
-                    </div>
                 </div>
 
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -370,47 +368,34 @@ foreach ($checks as $c) {
                 <div id="onboard-deploy-quick-status" style="margin-top:8px; display:none;"></div>
             </div>
 
-            <!-- Action: Put Key to Pages & Trigger Deploy -->
-            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px;">
+            <!-- Action: Reset & Deploy New Random Secret to Pages -->
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; border-radius:8px; padding:16px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
                     <div>
-                        <strong style="display:block; font-size:13px; color:#14532d;">
-                            <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Push Secret to Cloudflare Pages & Trigger Deploy:', 'astropress'); ?>
+                        <strong style="display:block; font-size:14px; color:#92400e;">
+                            <span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> <?php esc_html_e('Reset & Deploy New Random Secret to Pages:', 'astropress'); ?>
                         </strong>
-                        <span style="font-size:12px; color:#166534;">
-                            <?php esc_html_e('Encodes REVALIDATE_SECRET as secret_text on Pages, then triggers Deploy Hook so your Astro site recompiles with the new key.', 'astropress'); ?>
+                        <span style="font-size:12px; color:#78350f; display:block; margin-top:2px;">
+                            <?php esc_html_e('Generates a new random secret, updates REVALIDATE_SECRET in Pages environment variables, and triggers Deploy Hook to rebuild your frontend.', 'astropress'); ?>
                         </span>
                     </div>
-                    <button type="button" class="button button-primary" id="onboard-put-secret-btn" style="display:flex; align-items:center; gap:6px;">
-                        <span class="dashicons dashicons-cloud-upload"></span>
-                        <span class="btn-text"><?php esc_html_e('Put Key to Pages & Trigger Deploy', 'astropress'); ?></span>
+                    <button type="button" class="button button-primary" id="onboard-put-secret-btn" style="background:#d97706; border-color:#b45309; display:flex; align-items:center; gap:6px;">
+                        <span class="dashicons dashicons-randomize"></span>
+                        <span class="btn-text"><?php esc_html_e('Reset & Deploy New Random Secret', 'astropress'); ?></span>
                     </button>
                 </div>
 
                 <!-- 1-2 minute build warning notice -->
-                <div style="margin-top:12px; padding:10px 12px; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; font-size:12px; color:#92400e; display:flex; align-items:flex-start; gap:8px;">
-                    <span class="dashicons dashicons-clock" style="font-size:16px; width:16px; height:16px; margin-top:2px; color:#b45309;"></span>
+                <div style="margin-top:10px; padding:8px 10px; background:#fff; border:1px solid #fef3c7; border-radius:6px; font-size:11px; color:#92400e; display:flex; align-items:flex-start; gap:6px;">
+                    <span class="dashicons dashicons-clock" style="font-size:14px; width:14px; height:14px; margin-top:1px; color:#b45309;"></span>
                     <div>
-                        <strong><?php esc_html_e('Important note on build timing:', 'astropress'); ?></strong>
-                        <?php esc_html_e('Cloudflare Pages takes 1–2 minutes to compile and build your Astro site. After clicking "Put Key to Pages & Trigger Deploy", please wait a couple minutes before testing the handshake below to allow the deployment to become live.', 'astropress'); ?>
+                        <strong><?php esc_html_e('Warning:', 'astropress'); ?></strong>
+                        <?php esc_html_e('Cloudflare Pages takes 1–2 minutes to compile and build your Astro site. After resetting, wait 1–2 minutes for the deployment to finish before clicking "Test Connection".', 'astropress'); ?>
                     </div>
                 </div>
 
                 <div id="onboard-put-secret-status" style="margin-top:10px; display:none;"></div>
             </div>
-
-            <!-- Test Astro Handshake -->
-            <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; flex-wrap:wrap; gap:10px;">
-                <div>
-                    <strong style="display:block; font-size:13px; color:#1e293b;"><?php esc_html_e('Test Astro SSR Handshake:', 'astropress'); ?></strong>
-                    <span style="font-size:12px; color:#64748b;"><?php esc_html_e('Sends a live test ping to /api/revalidate on your frontend to confirm HMAC / ticket authentication.', 'astropress'); ?></span>
-                </div>
-                <button type="button" class="button button-secondary" id="onboard-test-handshake-btn" style="display:flex; align-items:center; gap:6px;">
-                    <span class="dashicons dashicons-admin-network"></span>
-                    <span><?php esc_html_e('Test Astro Handshake', 'astropress'); ?></span>
-                </button>
-            </div>
-            <div id="onboard-handshake-quick-status" style="display:none;"></div>
         </div>
 
         <!-- Stage 2 Dedicated Save Action -->
@@ -504,24 +489,6 @@ foreach ($checks as $c) {
                     <p style="font-size:11px; color:#64748b; margin:4px 0 0 0;">
                         <?php printf(esc_html__('Must be a subdomain of your root zone (e.g. %s).', 'astropress'), '<code>media.' . esc_html($allowed_roots[0] ?? 'topnepali.com') . '</code>'); ?>
                     </p>
-                </div>
-
-                <!-- Optional S3 API Keys -->
-                <div style="border-top:1px dashed #cbd5e1; padding-top:12px; margin-top:4px;">
-                    <button type="button" class="button button-link" id="onboard-toggle-s3-creds-btn" style="font-size:12px; color:#0284c7; text-decoration:none; padding:0;">
-                        <span class="dashicons dashicons-arrow-right-alt2" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
-                        <?php esc_html_e('Optional: Configure R2 S3 API Credentials (Access Key & Secret Key)', 'astropress'); ?>
-                    </button>
-                    <div id="onboard-s3-creds-wrap" style="display:none; margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
-                        <div>
-                            <label for="onboard_r2_access_key" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;"><?php esc_html_e('R2 Access Key ID:', 'astropress'); ?></label>
-                            <input type="text" id="onboard_r2_access_key" name="onboard_r2_access_key" value="<?php echo esc_attr($access_key); ?>" class="regular-text" style="width:100%;" placeholder="e.g. 7c9d..." />
-                        </div>
-                        <div>
-                            <label for="onboard_r2_secret_key" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;"><?php esc_html_e('R2 Secret Access Key:', 'astropress'); ?></label>
-                            <input type="password" id="onboard_r2_secret_key" name="onboard_r2_secret_key" value="<?php echo $has_secret_key ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" style="width:100%;" placeholder="<?php esc_attr_e('Paste S3 Secret Key...', 'astropress'); ?>" autocomplete="new-password" />
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Test R2 Connection button -->

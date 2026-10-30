@@ -112,14 +112,18 @@ if (!defined('ABSPATH')) {
 
                     <!-- Section: Quality Slider & Quick Presets -->
                     <tr>
-                        <th scope="row"><label for="compress_quality"><?php esc_html_e('Quality Level (1 - 100)', 'astropress'); ?></label></th>
+                        <th scope="row"><label for="compress_quality"><?php esc_html_e('Quality Level (50 - 100)', 'astropress'); ?></label></th>
                         <td>
                             <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-                                <input type="range" id="compress_quality" name="compress_quality" min="50" max="100" value="<?php echo esc_attr($quality); ?>" oninput="document.getElementById('quality_val').textContent = this.value + '%';" style="max-width:260px;" />
+                                <input type="range" id="compress_quality" name="compress_quality" min="50" max="100" value="<?php echo esc_attr($quality); ?>" oninput="document.getElementById('quality_val').textContent = this.value + '%'; document.getElementById('quality_number_input').value = this.value;" style="max-width:260px;" />
+                                <input type="number" id="quality_number_input" min="50" max="100" value="<?php echo esc_attr($quality); ?>" style="width:70px; text-align:center; font-weight:700;" oninput="document.getElementById('compress_quality').value = this.value; document.getElementById('quality_val').textContent = this.value + '%';" />
                                 <span id="quality_val" class="astropress-chip" style="font-weight:700; font-size:13px; background:#e0f2fe; color:#0369a1;"><?php echo esc_html($quality); ?>%</span>
                             </div>
 
                             <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                                <button type="button" class="button button-small astropress-preset-btn" data-quality="85" data-format="webp" data-width="1920">
+                                    <?php esc_html_e('Crisp / Photography (85%) [Recommended]', 'astropress'); ?>
+                                </button>
                                 <button type="button" class="button button-small astropress-preset-btn" data-quality="82" data-format="webp" data-width="1920">
                                     <?php esc_html_e('Balanced (82%)', 'astropress'); ?>
                                 </button>
@@ -133,7 +137,7 @@ if (!defined('ABSPATH')) {
                                     <?php esc_html_e('Lossless / Passthrough (100%)', 'astropress'); ?>
                                 </button>
                             </div>
-                            <p class="description" style="margin-top:6px;"><?php esc_html_e('82% provides the industry gold standard between crisp photographic fidelity and ultra-low file size.', 'astropress'); ?></p>
+                            <p class="description" style="margin-top:6px;"><?php esc_html_e('85% is ideal for high-definition photography and crisp design, while 82% offers optimal bandwidth efficiency.', 'astropress'); ?></p>
                         </td>
                     </tr>
 

@@ -18,6 +18,12 @@ if (!defined('ABSPATH')) {
             <h2><?php esc_html_e('GitHub Core Updates & Rollback Pipeline', 'astropress'); ?></h2>
             <p><?php esc_html_e('AstroPress updates directly via GitHub Releases using WordPress core native Plugin_Upgrader sandbox.', 'astropress'); ?></p>
 
+            <?php if (!empty($_GET['checked'])): ?>
+                <div class="notice notice-success inline" style="margin:12px 0 16px; padding:10px 14px; border-left-color:#10b981; background:#f0fdf4;">
+                    <p style="margin:0; font-weight:600; color:#166534;"><span class="dashicons dashicons-yes-alt" style="color:#10b981; vertical-align:middle;"></span> <?php esc_html_e('Checked GitHub for latest releases successfully! Cache refreshed.', 'astropress'); ?></p>
+                </div>
+            <?php endif; ?>
+
             <table class="astropress-status-table">
                 <tr>
                     <td><strong><?php esc_html_e('Installed Version', 'astropress'); ?></strong></td>
