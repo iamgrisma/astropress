@@ -1990,7 +1990,11 @@
         },
         success: function(res) {
           if (res.success) {
-            if ($badge.length) $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
+            const hasSecret = Boolean(newSecret || ($('#onboard_secret').val()?.includes('•••')) || ($('#astropress_revalidate_secret').val()?.includes('•••')));
+            if ($badge.length) {
+              $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'})
+                    .text(hasSecret ? 'Secret Verified' : 'Online (Open Endpoint)');
+            }
             $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Verified:</strong> ' + escapeHtml(res.data.message) + ' (' + res.data.latency_ms + 'ms latency)</div>');
           } else {
             const code = res.data?.code || 0;

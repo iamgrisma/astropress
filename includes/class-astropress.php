@@ -22,8 +22,8 @@ class AstroPress {
      */
     private static $instance = null;
 
-    const VERSION            = '2.1.1';
-    const ASTROPRESS_VERSION = '2.1.1';
+    const VERSION            = '2.1.2';
+    const ASTROPRESS_VERSION = '2.1.2';
 
     // Headless Bridge Option Keys
     const OPTION_SETUP_COMPLETED   = 'astropress_setup_completed';

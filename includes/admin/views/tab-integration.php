@@ -27,9 +27,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const secret = request.headers.get('x-revalidate-secret');
   const expectedSecret = (locals as any)?.runtime?.env?.REVALIDATE_SECRET || process.env.REVALIDATE_SECRET;
 
-  // Verify secret only if explicitly configured in environment
-  if (expectedSecret && secret && secret !== expectedSecret) {
-    return new Response(JSON.stringify({ error: 'Unauthorized: Secret mismatch' }), { status: 401 });
+  // Reject unauthorized requests if REVALIDATE_SECRET is configured in environment
+  if (expectedSecret && secret !== expectedSecret) {
+    return new Response(JSON.stringify({ error: 'Unauthorized: Secret mismatch or missing x-revalidate-secret header' }), { status: 401 });
   }
 
   try {

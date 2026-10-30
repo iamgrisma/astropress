@@ -176,15 +176,15 @@ if (!defined('ABSPATH')) {
                     <div class="wizard-field" style="margin-top:16px;">
                         <label for="onboard_secret"><strong><?php esc_html_e('Astro Webhook Revalidate Secret (Optional):', 'astropress'); ?></strong></label>
                         <div class="wizard-input-row">
-                            <input type="password" id="onboard_secret" name="onboard_revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" />
+                            <input type="password" id="onboard_secret" name="onboard_revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank if not set in Cloudflare', 'astropress'); ?>" autocomplete="new-password" />
                             <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
                                 <span class="dashicons dashicons-admin-network"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
                             </button>
                             <span id="onboard-secret-badge" class="astropress-badge" style="padding:4px 10px; font-size:12px;">
-                                <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Default Auto-Secured', 'astropress'); ?>
+                                <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('No Secret (Open Endpoint)', 'astropress'); ?>
                             </span>
                         </div>
-                        <p class="field-help"><?php esc_html_e('Optional: AstroPress automatically authenticates using internal crypto tokens. If your Cloudflare Pages/Workers environment defines REVALIDATE_SECRET, enter it here and click Test Handshake.', 'astropress'); ?></p>
+                        <p class="field-help"><?php esc_html_e('Optional: If your Cloudflare Pages/Workers project has a REVALIDATE_SECRET environment variable, enter it here. If left blank, no secret is sent and your endpoint must allow unauthenticated revalidation requests.', 'astropress'); ?></p>
                         <div id="onboard-handshake-status" style="margin-top:8px;"></div>
                     </div>
 

@@ -136,12 +136,12 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
                     <th scope="row"><label for="astropress_revalidate_secret"><?php esc_html_e('Astro Webhook Secret', 'astropress'); ?></label></th>
                     <td>
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
-                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" style="flex:1; min-width:240px;" />
+                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank if not set in Cloudflare', 'astropress'); ?>" autocomplete="new-password" style="flex:1; min-width:240px;" />
                             <span id="astropress-key-badge" style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
-                                <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Default Auto-Secured', 'astropress'); ?>
+                                <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('No Secret (Open Endpoint)', 'astropress'); ?>
                             </span>
                         </div>
-                        <p class="description"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Matches the REVALIDATE_SECRET environment variable in Cloudflare Pages/Workers.', 'astropress'); ?></p>
+                        <p class="description"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Matches the REVALIDATE_SECRET environment variable in Cloudflare Pages/Workers. If not using a secret, leave blank.', 'astropress'); ?></p>
                     </td>
                 </tr>
                 <tr>

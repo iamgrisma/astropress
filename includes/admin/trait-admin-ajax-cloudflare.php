@@ -1071,8 +1071,12 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
         if ($code === 200) {
             update_option(AstroPress::OPTION_CONNECTED, '1');
+            $success_msg = !empty($custom_secret)
+                ? esc_html__('Handshake verified. Key matches Cloudflare Pages/Workers REVALIDATE_SECRET (HTTP 200 OK).', 'astropress')
+                : esc_html__('Handshake verified. Revalidation endpoint is online and responsive (No secret required / HTTP 200 OK).', 'astropress');
+
             wp_send_json_success(array(
-                'message'    => esc_html__('Handshake verified. Key matches Cloudflare Pages/Workers REVALIDATE_SECRET (HTTP 200 OK).', 'astropress'),
+                'message'    => $success_msg,
                 'code'       => 200,
                 'latency_ms' => $latency,
             ));
