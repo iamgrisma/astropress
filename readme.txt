@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.3.6
+Stable tag: 2.3.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,10 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.3.7 =
+* Comprehensive RSS & Feed Invalidation: Added automatic cache purging for `/feed`, `/rss`, `/feed.xml`, `/rss.xml`, and hierarchical category feeds (`$term_path/feed`, `$term_path/rss`) on taxonomy, menu, site info, and post updates.
+
 
 = 2.3.6 =
 * Term Redirection Exact Matching: Replaced loose SQL wildcard searches on Rank Math redirection table with exact deserialized pattern matching, preventing active category archives from being hijacked by post redirections.

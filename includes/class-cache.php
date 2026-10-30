@@ -741,6 +741,10 @@ class AstroPress_Cache {
                         $term_path = $this->get_term_path($term);
                         if (!empty($term_path)) {
                             $extra_urls[] = $term_path;
+                            if ($this->core->should_purge_feeds()) {
+                                $extra_urls[] = $term_path . '/feed';
+                                $extra_urls[] = $term_path . '/rss';
+                            }
                         }
                         if (!empty($term->parent)) {
                             $parent = get_term($term->parent, $tax_name);
@@ -748,6 +752,10 @@ class AstroPress_Cache {
                                 $parent_path = $this->get_term_path($parent);
                                 if (!empty($parent_path)) {
                                     $extra_urls[] = $parent_path;
+                                    if ($this->core->should_purge_feeds()) {
+                                        $extra_urls[] = $parent_path . '/feed';
+                                        $extra_urls[] = $parent_path . '/rss';
+                                    }
                                 }
                             }
                         }
@@ -867,11 +875,15 @@ class AstroPress_Cache {
         $path = $this->get_term_path($term);
         $this->queue_invalidation(null, 'taxonomy', 'update', array_filter(array(
             $path,
+            !empty($path) ? $path . '/feed' : '',
+            !empty($path) ? $path . '/rss' : '',
             '/',
             '/blogs',
             '/blog',
             '/sitemap.xml',
             '/sitemap_index.xml',
+            '/feed',
+            '/rss',
             '/rss.xml',
             '/feed.xml',
         )));
@@ -890,11 +902,15 @@ class AstroPress_Cache {
 
         $this->queue_invalidation(null, 'taxonomy', 'delete', array_filter(array(
             $path,
+            !empty($path) ? $path . '/feed' : '',
+            !empty($path) ? $path . '/rss' : '',
             '/',
             '/blogs',
             '/blog',
             '/sitemap.xml',
             '/sitemap_index.xml',
+            '/feed',
+            '/rss',
             '/rss.xml',
             '/feed.xml',
         )));
@@ -905,14 +921,14 @@ class AstroPress_Cache {
      */
     public function on_menu_change($menu_id) {
         if (!$this->core->should_purge_menu()) return;
-        $this->queue_invalidation(null, 'menu', 'update', array('/', '/blogs', '/blog', '/rss.xml'));
+        $this->queue_invalidation(null, 'menu', 'update', array('/', '/blogs', '/blog', '/feed', '/rss', '/rss.xml', '/feed.xml'));
     }
 
     /**
      * Hook: On Site Info / Branding Change
      */
     public function on_site_info_change() {
-        $this->queue_invalidation(null, 'site_info', 'update', array('/', '/blogs', '/blog', '/rss.xml', '/sitemap.xml'));
+        $this->queue_invalidation(null, 'site_info', 'update', array('/', '/blogs', '/blog', '/feed', '/rss', '/rss.xml', '/feed.xml', '/sitemap.xml', '/sitemap_index.xml'));
     }
 
     /**
