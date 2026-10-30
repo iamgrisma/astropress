@@ -47,7 +47,7 @@ if (!defined('ABSPATH')) {
             </table>
 
             <div class="astropress-btn-group" style="margin-top:20px;">
-                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=astropress&tab=updates&astropress_check_updates=1'), 'astropress_manual_check_nonce')); ?>" class="button button-secondary">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=astropress&tab=tools&sub=updates&astropress_check_updates=1'), 'astropress_manual_check_nonce')); ?>" class="button button-secondary">
                     <span class="dashicons dashicons-update"></span> <?php esc_html_e('Check for Updates Now', 'astropress'); ?>
                 </a>
 

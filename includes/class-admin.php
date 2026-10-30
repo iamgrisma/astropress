@@ -77,14 +77,9 @@ class AstroPress_Admin {
             // AJAX Handlers for Webhook Logs, Direct Purge, Deploy Hook & Cloudflare Quick Connect
             add_action('wp_ajax_astropress_resend_webhook', array($this, 'ajax_resend_webhook'));
             add_action('wp_ajax_astropress_clear_webhook_logs', array($this, 'ajax_clear_webhook_logs'));
-            add_action('wp_ajax_astropress_cf_quick_connect', array($this, 'ajax_cf_quick_connect'));
-            add_action('wp_ajax_astropress_orchestrate_connect', array($this, 'ajax_orchestrate_connect'));
-            add_action('wp_ajax_astropress_orchestrate_r2', array($this, 'ajax_orchestrate_r2'));
             add_action('wp_ajax_astropress_purge_cf_zone', array($this, 'ajax_purge_cf_zone'));
             add_action('wp_ajax_astropress_trigger_deploy_hook', array($this, 'ajax_trigger_deploy_hook'));
             add_action('wp_ajax_astropress_save_warmer_settings', array($this, 'ajax_save_warmer_settings'));
-            add_action('wp_ajax_astropress_detect_frontend', array($this, 'ajax_detect_frontend'));
-            add_action('wp_ajax_astropress_sync_pages_env', array($this, 'ajax_sync_pages_env'));
             add_action('wp_ajax_astropress_generate_secret', array($this, 'ajax_generate_secret'));
             add_action('wp_ajax_astropress_audit_cdn_domain', array($this, 'ajax_audit_cdn_domain'));
             add_action('wp_ajax_astropress_attach_r2_custom_domain', array($this, 'ajax_attach_r2_custom_domain'));
@@ -615,6 +610,10 @@ class AstroPress_Admin {
                             $this->render_tab_optimizer();
                             break;
                         case 'tools':
+                            $this->render_tab_tools();
+                            break;
+                        case 'updates':
+                            $_GET['sub'] = 'updates';
                             $this->render_tab_tools();
                             break;
                         case 'dashboard':
