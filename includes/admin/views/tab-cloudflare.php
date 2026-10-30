@@ -140,24 +140,43 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
             </div>
             <div>
                 <span style="display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;"><?php esc_html_e('Deploy Hook:', 'astropress'); ?></span>
-                <span style="display:inline-block; margin-top:4px; font-size:12px; font-weight:600; color:<?php echo $this->core->has_cf_deploy_hook() ? '#166534' : '#64748b'; ?>;">
+                <span id="astropress-deploy-badge" style="display:inline-block; margin-top:4px; font-size:12px; font-weight:600; color:<?php echo $this->core->has_cf_deploy_hook() ? '#166534' : '#64748b'; ?>;">
                     <?php echo $this->core->has_cf_deploy_hook() ? esc_html__('Configured (Encrypted)', 'astropress') : esc_html__('Optional / Not set', 'astropress'); ?>
                 </span>
             </div>
+        </div>
+
+        <!-- Hidden Frontend URL for Ajax calls -->
+        <input type="hidden" id="astropress_frontend_url" value="<?php echo esc_attr($frontend); ?>" />
+
+        <!-- Cloudflare Pages Deploy Hook Input Field -->
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:16px;">
+            <label for="astropress_cf_deploy_hook" style="display:block; font-weight:600; font-size:13px; color:#1e293b; margin-bottom:6px;">
+                <span class="dashicons dashicons-cloud-upload" style="color:#0284c7; vertical-align:-2px;"></span>
+                <?php esc_html_e('Cloudflare Pages Deploy Hook URL:', 'astropress'); ?>
+            </label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <div style="position:relative; flex:1; min-width:260px;">
+                    <input type="password" id="astropress_cf_deploy_hook" name="cf_deploy_hook" value="<?php echo $this->core->has_cf_deploy_hook() ? '••••••••••••••••••••••••••••••••' : ''; ?>" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." class="regular-text" style="width:100%; padding-right:32px;" autocomplete="new-password" />
+                    <button type="button" class="astropress-toggle-pw" data-target="#astropress_cf_deploy_hook" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; color:#64748b; cursor:pointer;" title="<?php esc_attr_e('Show / Hide', 'astropress'); ?>">
+                        <span class="dashicons dashicons-visibility"></span>
+                    </button>
+                </div>
+                <button type="button" class="button button-secondary" id="astropress-trigger-deploy-now">
+                    <span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Cloudflare Pages Deploy Hook', 'astropress'); ?>
+                </button>
+            </div>
+            <div id="astropress-deploy-status" style="margin-top:10px; display:none;"></div>
         </div>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <button type="button" class="button button-primary" id="astropress-test-webhook-handshake-btn">
                 <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Send Test Handshake Webhook', 'astropress'); ?>
             </button>
-            <button type="button" class="button button-secondary" id="astropress-trigger-deploy-now">
-                <span class="dashicons dashicons-cloud-upload" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Cloudflare Pages Deploy Hook', 'astropress'); ?>
-            </button>
         </div>
 
-        <!-- Live Diagnostics Output Boxes -->
+        <!-- Live Diagnostics Output Box -->
         <div id="astropress-webhook-test-result" style="margin-top:14px; display:none;"></div>
-        <div id="astropress-deploy-status" style="margin-top:14px; display:none;"></div>
 
         <!-- Secret Management & Cloudflare Pages Sync -->
         <div style="margin-top:16px; padding-top:16px; border-top:1px solid #e2e8f0;">
@@ -197,12 +216,12 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
                         <code><?php echo esc_html($this->core->get_cf_pages_project() ?: 'No project linked'); ?></code>
                     </span>
                     <span style="font-size:11px; color:#64748b;">
-                        <?php esc_html_e('Pushes REVALIDATE_SECRET (as secret_text) and auto-triggers Deploy Hook to activate.', 'astropress'); ?>
+                        <?php esc_html_e('Pushes REVALIDATE_SECRET (as secret_text) and auto-triggers Deploy Hook to rebuild.', 'astropress'); ?>
                     </span>
                 </div>
                 <div>
                     <input type="hidden" id="astropress_cf_pages_project_val" value="<?php echo esc_attr($this->core->get_cf_pages_project()); ?>" />
-                    <button type="button" class="button button-primary astropress-sync-pages-btn" id="astropress-sync-pages-btn" data-input="#astropress_cf_pages_project_val" data-secret="#astropress_revalidate_secret" data-status="#astropress-pages-sync-status" <?php echo $this->core->has_cf_deploy_hook() ? '' : 'disabled="disabled"'; ?>>
+                    <button type="button" class="button button-primary astropress-sync-pages-btn" id="astropress-sync-pages-btn" data-input="#astropress_cf_pages_project_val" data-secret="#astropress_revalidate_secret" data-deploy="#astropress_cf_deploy_hook" data-status="#astropress-pages-sync-status" <?php echo $this->core->has_cf_deploy_hook() ? '' : 'disabled="disabled"'; ?>>
                         <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Sync Secret to Cloudflare Pages', 'astropress'); ?>
                     </button>
                 </div>
@@ -211,7 +230,13 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
             <div id="astropress-sync-lock-notice" style="margin-top:6px; font-size:11px; color:#b45309; <?php echo $this->core->has_cf_deploy_hook() ? 'display:none;' : ''; ?>">
                 <span class="dashicons dashicons-lock" style="font-size:14px; width:14px; height:14px; vertical-align:-2px;"></span>
                 <strong><?php esc_html_e('Deploy Hook Verification Required:', 'astropress'); ?></strong>
-                <?php esc_html_e('Deploy Hook must be tested and verified before syncing secrets to Cloudflare Pages.', 'astropress'); ?>
+                <?php esc_html_e('Deploy Hook must be entered above before syncing secrets to Cloudflare Pages.', 'astropress'); ?>
+            </div>
+
+            <!-- Build latency notice -->
+            <div style="margin-top:8px; padding:8px 12px; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; font-size:11px; color:#92400e; display:flex; align-items:center; gap:6px;">
+                <span class="dashicons dashicons-clock" style="font-size:14px; width:14px; height:14px; color:#b45309;"></span>
+                <span><?php esc_html_e('Notice: Cloudflare Pages builds take 1–2 minutes to compile. Wait 2 minutes after triggering deploy before testing handshake.', 'astropress'); ?></span>
             </div>
 
             <div style="margin-top:6px; font-size:11px; color:#15803d; display:flex; align-items:center; gap:4px;">

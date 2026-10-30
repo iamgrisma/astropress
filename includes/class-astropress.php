@@ -46,6 +46,7 @@ class AstroPress {
     const OPTION_CF_ZONE_ID        = 'astropress_cf_zone_id';
     const OPTION_CF_DEPLOY_HOOK    = 'astropress_cf_deploy_hook';
     const OPTION_CF_PAGES_PROJECT  = 'astropress_cf_pages_project';
+    const OPTION_HOSTING_TARGET    = 'astropress_hosting_target';
     const OPTION_DEBOUNCE_ENABLED  = 'astropress_debounce_enabled';
     const OPTION_CF_DIRECT_PURGE   = 'astropress_cf_direct_purge';
 
@@ -306,6 +307,30 @@ class AstroPress {
      */
     public function get_cf_pages_project() {
         return sanitize_text_field(get_option(self::OPTION_CF_PAGES_PROJECT, ''));
+    }
+
+    /**
+     * Get hosting target platform ('pages', 'worker', 'custom')
+     *
+     * @return string
+     */
+    public function get_hosting_target() {
+        return sanitize_key(get_option(self::OPTION_HOSTING_TARGET, 'pages'));
+    }
+
+    /**
+     * Set hosting target platform ('pages', 'worker', 'custom')
+     *
+     * @param string $target
+     * @return string
+     */
+    public function set_hosting_target($target) {
+        $clean = sanitize_key($target);
+        if (!in_array($clean, array('pages', 'worker', 'custom'), true)) {
+            $clean = 'pages';
+        }
+        update_option(self::OPTION_HOSTING_TARGET, $clean);
+        return $clean;
     }
 
     /**
