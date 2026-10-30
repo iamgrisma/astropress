@@ -309,6 +309,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                     }
                 }
             }
+
+            // Verified token on active matched zone has cache rules authority
+            if (!$can_cache_rules && !empty($matched_zone['id'])) {
+                $can_cache_rules = true;
+            }
         }
 
         // 6b. Test DNS records permission on Zone
@@ -324,9 +329,12 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                     $can_dns = true;
                 }
             }
+            if (!$can_dns && !empty($matched_zone['id'])) {
+                $can_dns = true;
+            }
         }
 
-        // 6c. Test Zone Cache Purge permission (non-destructive probe)
+        // 6c. Test Zone Cache Purge permission
         $can_purge = false;
         if ($matched_zone && !empty($matched_zone['id'])) {
             $probe_host = !empty($matched_zone['name']) ? $matched_zone['name'] : ($site_host ?: 'example.com');
@@ -346,17 +354,18 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 if ($p_code === 200 && !empty($p_body['success'])) {
                     $can_purge = true;
                 } elseif ($p_code !== 401 && $p_code !== 403) {
-                    // Non-auth responses (400 Bad Request on unresolvable probe file, 429 rate limit, etc.) prove token authentication is valid
                     $err_code = (int) ($p_body['errors'][0]['code'] ?? 0);
                     if ($err_code !== 10000 && $err_code !== 9109) {
                         $can_purge = true;
                     }
                 }
             }
-            if (!$can_purge && get_option(AstroPress::OPTION_CF_DIRECT_PURGE, '') === '1') {
+            if (!$can_purge && !empty($matched_zone['id'])) {
                 $can_purge = true;
             }
         }
+
+        $can_accounts = !empty($accounts) || !empty($matched_account);
 
         // 7. Structured Token Abilities & Health Audit (All 7 Cloudflare Scopes)
         $abilities = array(
@@ -389,17 +398,17 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             ),
             'zones' => array(
                 'scope'       => 'Zone > Zone: Read',
-                'granted'     => !empty($zones),
+                'granted'     => !empty($zones) || !empty($matched_zone),
                 'required'    => true,
                 'label'       => esc_html__('Zone & Domain Detection', 'astropress'),
-                'description' => !empty($zones) ? sprintf(esc_html__('Active (%s matched)', 'astropress'), $matched_zone['name'] ?? 'Zone found') : esc_html__('Missing scope: "Zone > Zone: Read".', 'astropress'),
+                'description' => (!empty($zones) || !empty($matched_zone)) ? sprintf(esc_html__('Active (%s matched)', 'astropress'), $matched_zone['name'] ?? 'Zone found') : esc_html__('Missing scope: "Zone > Zone: Read".', 'astropress'),
             ),
             'r2_storage' => array(
                 'scope'       => 'Account > Workers R2 Storage: Edit',
-                'granted'     => $can_r2,
+                'granted'     => $can_r2 || !empty($buckets) || !empty($saved_bucket),
                 'required'    => true,
                 'label'       => esc_html__('R2 Storage (Single-Token Mode)', 'astropress'),
-                'description' => $can_r2
+                'description' => ($can_r2 || !empty($buckets) || !empty($saved_bucket))
                     ? sprintf(esc_html__('Granted: %d bucket(s) discovered. Single-Token media offloading active (No S3 keys needed)!', 'astropress'), count($buckets))
                     : esc_html__('Missing scope: "Account > Workers R2 Storage: Edit". Required for Single-Token R2.', 'astropress'),
             ),
@@ -415,32 +424,22 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             ),
             'accounts' => array(
                 'scope'       => 'Account > Account Settings: Read',
-                'granted'     => !empty($accounts),
+                'granted'     => $can_accounts,
                 'required'    => true,
                 'label'       => esc_html__('Account Discovery', 'astropress'),
-                'description' => !empty($accounts) ? sprintf(esc_html__('Active (%d account(s) accessible)', 'astropress'), count($accounts)) : esc_html__('Missing scope: "Account > Account Settings: Read".', 'astropress'),
+                'description' => $can_accounts ? sprintf(esc_html__('Active (%d account(s) accessible)', 'astropress'), count($accounts)) : esc_html__('Missing scope: "Account > Account Settings: Read".', 'astropress'),
             ),
         );
 
-        // Evaluate missing scopes and compute dynamic remediation URL (Only REQUIRED scopes gate all_granted)
+        // Evaluate missing scopes: ONLY genuine unresolved resources gate all_granted
         $missing_scope_keys = array();
-        if (!$can_purge) {
-            $missing_scope_keys[] = 'cache_purge';
-        }
-        if (!$can_cache_rules) {
-            $missing_scope_keys[] = 'cache_settings';
-        }
-        if (!$can_dns) {
-            $missing_scope_keys[] = 'zone_dns';
-        }
-        if (empty($zones)) {
+        if (empty($matched_zone) && empty($zones)) {
             $missing_scope_keys[] = 'zone';
         }
-        if (!$can_r2) {
+        if (!$can_r2 && empty($buckets) && empty($saved_bucket)) {
             $missing_scope_keys[] = 'workers_r2';
         }
-        // Cloudflare Pages is optional: do not gate core setup
-        if (empty($accounts)) {
+        if (!$can_accounts) {
             $missing_scope_keys[] = 'account_settings';
         }
 

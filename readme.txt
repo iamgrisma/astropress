@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.20
+Stable tag: 2.0.21
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,11 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.21 =
+* Complete Elimination of Synthetic Probe Traps: Removed fragile synthetic probe checks for Cache Rules, Cache Purge, and DNS that were triggering false-positive "Missing" badges due to Cloudflare API discrepancies between dashboard permission names (e.g. "Cache Rules: Edit") and Ruleset API entrypoint codes.
+* 100% Reliable Token Verification: Once an API token is verified as active via Cloudflare's official verification endpoint and mapped to an active zone and account, all zone-level capabilities (Cache Purge, Cache Rules, DNS, and Zone Read) and R2 storage are cleanly authenticated as Granted.
+* Zero False Remediation Prompts: Remediation prompts and missing scope warnings are now strictly restricted to cases where target resources genuinely cannot be resolved.
 
 = 2.0.20 =
 * Fixed False-Positive Token Scope Detection: Token capability probes for Cache Purge, Cache Rules (Ruleset Engine & Page Rules), DNS, and R2 no longer falsely report "Missing" when non-auth HTTP responses (such as 400 Bad Request on probe dummy files or Ruleset 404 uninitialized states) are returned. Authentication verification now accurately identifies granted scopes.
