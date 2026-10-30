@@ -2488,8 +2488,38 @@
       }
     });
 
+    // Helper: Smart auto-match R2 Bucket based on selected Cloudflare Pages project or frontend domain
+    function autoMatchR2Bucket(projectName, frontendDomain) {
+      const $bSelect = $('#onboard_r2_bucket');
+      if (!$bSelect.length || !$bSelect.find('option').length) return;
+
+      const pLower = (projectName || '').toLowerCase();
+      const dLower = (frontendDomain || '').toLowerCase();
+
+      let matchedBucket = null;
+      $bSelect.find('option').each(function() {
+        const b = $(this).val();
+        if (!b || b === '__custom__') return;
+        const bLower = b.toLowerCase();
+
+        // Exact or strong project name matches (e.g., grisma -> grismawp, topnepali -> topnepali)
+        if (pLower && (bLower === pLower || bLower === pLower + 'wp' || bLower.startsWith(pLower) || pLower.startsWith(bLower))) {
+          matchedBucket = b;
+          return false;
+        }
+        if (dLower && (dLower.includes(bLower) || (bLower.includes('topnepali') && dLower.includes('topnepali')) || (bLower.includes('grisma') && dLower.includes('grisma')))) {
+          matchedBucket = b;
+          return false;
+        }
+      });
+
+      if (matchedBucket) {
+        $bSelect.val(matchedBucket).trigger('change');
+      }
+    }
+
     // 3. Stage 1: Orchestrated Connect & Auto-Configure
-    // Dynamic Pages project selection: auto-populate Frontend URL
+    // Dynamic Pages project selection: auto-populate Frontend URL & auto-match R2 Bucket
     $(document).on('change', '#onboard_cf_pages_project', function() {
       const val = $(this).val();
       if (val === '__custom__') {
@@ -2497,12 +2527,15 @@
       } else {
         $('#onboard-pages-custom-wrap').hide();
         const domains = $(this).find('option:selected').data('domains');
+        let domainUrl = '';
         if (domains) {
           const firstDomain = String(domains).split(',')[0].trim();
           if (firstDomain) {
-            $('#onboard_frontend_url').val('https://' + firstDomain);
+            domainUrl = 'https://' + firstDomain;
+            $('#onboard_frontend_url').val(domainUrl);
           }
         }
+        autoMatchR2Bucket(val, domainUrl || $('#onboard_frontend_url').val());
       }
     });
 
@@ -2772,7 +2805,25 @@
               d.buckets.forEach(function(b) {
                 $bSelect.append('<option value="' + escapeHtml(b) + '">' + escapeHtml(b) + '</option>');
               });
-              $bSelect.val(d.buckets[0]).trigger('change');
+              
+              // Smart-select matching bucket based on project or domain (e.g. grisma -> grismawp, topnepali -> topnepali)
+              const proj = d.pages_project || $('#onboard_cf_pages_project').val() || '';
+              const fe = d.frontend_url || $('#onboard_frontend_url').val() || '';
+              let bestBucket = d.buckets[0];
+              const pLow = proj.toLowerCase();
+              const feLow = fe.toLowerCase();
+              for (let i = 0; i < d.buckets.length; i++) {
+                const bLow = d.buckets[i].toLowerCase();
+                if (pLow && (bLow === pLow || bLow === pLow + 'wp' || bLow.startsWith(pLow) || pLow.startsWith(bLow))) {
+                  bestBucket = d.buckets[i];
+                  break;
+                }
+                if (feLow && (feLow.includes(bLow) || (bLow.includes('grisma') && feLow.includes('grisma')) || (bLow.includes('topnepali') && feLow.includes('topnepali')))) {
+                  bestBucket = d.buckets[i];
+                  break;
+                }
+              }
+              $bSelect.val(bestBucket).trigger('change');
             }
 
             // Unlock Stage 2
