@@ -72,7 +72,7 @@ class AstroPress_Sync {
 
         $format  = sanitize_text_field($_POST['format'] ?? '');
         $preset  = sanitize_text_field($_POST['preset'] ?? '');
-        $quality = isset($_POST['quality']) ? (int)$_POST['quality'] : 0;
+        $quality = isset($_POST['quality']) && (int)$_POST['quality'] > 0 ? (int)$_POST['quality'] : AstroPress_Optimizer::get_quality();
         $engine  = AstroPress_Optimizer::normalize_engine(sanitize_key($_POST['engine'] ?? ''));
 
         if ($engine === 'resmush') {

@@ -72,6 +72,25 @@ class AstroPress_Optimizer {
     }
 
     /**
+     * Get authoritative image compression quality level (50 - 100)
+     *
+     * @return int
+     */
+    public static function get_quality() {
+        $q = (int) get_option('astropress_compress_quality', get_option('r2g_compress_quality', 82));
+        return max(50, min(100, $q ?: 82));
+    }
+
+    /**
+     * Get authoritative compression target format (webp, avif, jpg, original)
+     *
+     * @return string
+     */
+    public static function get_format() {
+        return (string) get_option('astropress_compress_format', get_option('r2g_compress_format', 'webp'));
+    }
+
+    /**
      * Compress an image file (helper for AJAX preview & test tools)
      *
      * @param string $file_path

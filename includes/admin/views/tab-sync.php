@@ -11,8 +11,8 @@ if (!defined('ABSPATH')) {
 
         $client        = astropress()->get_r2_client();
         $is_configured = $client && $client->is_configured();
-        $quality       = (int) get_option('astropress_compress_quality', get_option('r2g_compress_quality', 82));
-        $engine        = get_option('astropress_compress_engine', get_option('r2g_compress_engine', 'resmush'));
+        $quality       = AstroPress_Optimizer::get_quality();
+        $engine        = AstroPress_Optimizer::get_engine();
         ?>
         <div style="max-width:920px;">
             <?php if (!$is_configured): ?>
@@ -78,10 +78,13 @@ if (!defined('ABSPATH')) {
                             </select>
                         </div>
                         <div id="r2g-sync-quality-wrap">
-                            <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px;"><?php esc_html_e('Quality:', 'astropress'); ?></label>
+                            <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px;"><?php esc_html_e('Active Image Quality:', 'astropress'); ?></label>
                             <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="range" id="r2g-sync-quality-slider" min="50" max="100" value="<?php echo esc_attr($quality); ?>" style="width:110px;" />
-                                <span id="r2g-sync-quality-val" class="r2g-quality-badge"><?php echo esc_html($quality); ?>%</span>
+                                <span id="r2g-sync-quality-val" class="r2g-quality-badge" style="font-weight:700; font-size:13px;"><?php echo esc_html($quality); ?>%</span>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2&sub=optimizer')); ?>" class="button button-small" style="font-size:11px;">
+                                    <?php esc_html_e('Adjust in Optimizer &rarr;', 'astropress'); ?>
+                                </a>
+                                <input type="hidden" id="r2g-sync-quality-slider" value="<?php echo esc_attr($quality); ?>" />
                             </div>
                         </div>
                         <div>

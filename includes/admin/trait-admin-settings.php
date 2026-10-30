@@ -219,7 +219,7 @@ trait AstroPress_Admin_Settings {
                 'message' => esc_html__('Image Optimizer preferences updated successfully.', 'astropress'),
             ), 30);
 
-            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=optimizer'));
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=r2&sub=optimizer'));
             exit;
         }
 
