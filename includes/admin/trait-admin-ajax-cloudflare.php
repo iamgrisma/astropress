@@ -608,8 +608,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
     public function ajax_deploy_cf_cache_rule() {
         $this->verify_admin_ajax();
 
-        $token   = $this->core->get_cf_api_token();
-        $zone_id = $this->resolve_zone_id($token);
+        $token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
+        if (empty($token) || strpos($token, '••••') !== false) {
+            $token = $this->core->get_cf_api_token();
+        }
+        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->resolve_zone_id($token);
 
         if (empty($token) || empty($zone_id)) {
             wp_send_json_error(array(
@@ -617,7 +620,10 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             ));
         }
 
-        $preset      = sanitize_key($_POST['preset'] ?? '');
+        $preset = sanitize_key($_POST['preset'] ?? '');
+        if (empty($preset) && !empty($_POST['cdn_domain'])) {
+            $preset = 'r2_cdn';
+        }
         $custom_desc = sanitize_text_field(wp_unslash($_POST['description'] ?? ''));
         $custom_expr = sanitize_text_field(wp_unslash($_POST['expression'] ?? ''));
 
@@ -978,6 +984,130 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $put_body = !is_wp_error($put_res) ? json_decode(wp_remote_retrieve_body($put_res), true) : array();
         $err_msg  = $put_body['errors'][0]['message'] ?? (!is_wp_error($put_res) ? ('HTTP ' . wp_remote_retrieve_response_code($put_res)) : $put_res->get_error_message());
         wp_send_json_error(array('message' => sprintf(esc_html__('Failed to delete cache rule on Cloudflare: %s', 'astropress'), $err_msg)));
+    }
+
+    /**
+     * AJAX: Test existing stored Revalidation Secret Key against Cloudflare Pages/Workers
+     */
+    public function ajax_test_key() {
+        $this->verify_admin_ajax();
+
+        $frontend_url  = esc_url_raw(trim(wp_unslash($_POST['frontend_url'] ?? ''))) ?: $this->core->get_frontend_url();
+        $custom_secret = sanitize_text_field(wp_unslash($_POST['secret'] ?? '')) ?: $this->core->get_custom_secret();
+
+        if (empty($frontend_url)) {
+            wp_send_json_error(array(
+                'message' => 'Please provide the Frontend URL.',
+                'code'    => 400,
+            ));
+        }
+
+        if (!AstroPress_Security::is_safe_external_url($frontend_url)) {
+            wp_send_json_error(array(
+                'message' => esc_html__('Invalid or forbidden frontend URL. Local loopback and reserved private IP ranges are blocked.', 'astropress'),
+                'code'    => 400,
+            ));
+        }
+
+        $ticket        = $this->core->cache->generate_auth_ticket('test-connection');
+        $test_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
+        $start_time    = microtime(true);
+        $headers       = array(
+            'Content-Type'        => 'application/json',
+            'Origin'              => $frontend_url,
+            'Referer'             => $frontend_url,
+            'x-astropress-ticket' => $ticket,
+        );
+        if (!empty($custom_secret)) {
+            $headers['x-revalidate-secret'] = $custom_secret;
+            $headers['Authorization']       = 'Bearer ' . $custom_secret;
+        }
+
+        $response      = wp_remote_post($test_endpoint, array(
+            'timeout'   => 8,
+            'sslverify' => true,
+            'headers'   => $headers,
+            'body'      => wp_json_encode(array(
+                'slug'   => 'test-connection',
+                'type'   => 'test',
+                'action' => 'ping'
+            )),
+        ));
+        $latency = round((microtime(true) - $start_time) * 1000);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array(
+                'message'    => sprintf(esc_html__('Connection Failed: %s', 'astropress'), $response->get_error_message()),
+                'guidance'   => esc_html__('WordPress could not reach your Astro frontend. Verify that your frontend URL is online, has valid SSL, and is not blocking your WordPress server IP address.', 'astropress'),
+                'code'       => 0,
+                'latency_ms' => $latency,
+            ));
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $decoded = json_decode($body, true);
+
+        if ($code === 200) {
+            update_option(AstroPress::OPTION_CONNECTED, '1');
+            wp_send_json_success(array(
+                'message'    => esc_html__('Handshake verified. Key matches Cloudflare Pages/Workers REVALIDATE_SECRET (HTTP 200 OK).', 'astropress'),
+                'code'       => 200,
+                'latency_ms' => $latency,
+            ));
+        } else {
+            $err_msg = !empty($decoded['error']) ? $decoded['error'] : ('HTTP Error ' . $code);
+            $guidance = '';
+
+            if ($code === 401) {
+                $err_msg  = esc_html__('Authentication Failed (HTTP 401 Unauthorized): Secret token mismatch.', 'astropress');
+                $guidance = esc_html__('Your Astro frontend rejected the request. To fix this: 1) Go to Cloudflare Dashboard > Workers & Pages > Your Project > Settings > Environment Variables. 2) Check the value of REVALIDATE_SECRET. 3) Enter that exact secret in the Astro Webhook Secret field.', 'astropress');
+            } elseif ($code === 404) {
+                $err_msg  = esc_html__('Endpoint Not Found (HTTP 404): /api/revalidate does not exist on your Astro site.', 'astropress');
+                $guidance = esc_html__('Ensure your Astro project contains "src/pages/api/revalidate.ts" and that your site is deployed. You can copy the code snippet directly from the Astro Snippets tab.', 'astropress');
+            } elseif ($code >= 500) {
+                $err_msg  = sprintf(esc_html__('Astro Server Error (HTTP %d): The revalidation worker threw an exception.', 'astropress'), $code);
+                $guidance = esc_html__('Check your Cloudflare Pages / Workers real-time logs for exception stack traces.', 'astropress');
+            } else {
+                $guidance = esc_html__('Verify that your Astro site is reachable and that your Cloudflare DNS is properly configured.', 'astropress');
+            }
+
+            wp_send_json_error(array(
+                'message'    => $err_msg,
+                'guidance'   => $guidance,
+                'code'       => $code,
+                'latency_ms' => $latency,
+            ));
+        }
+    }
+
+    /**
+     * AJAX: Resend a logged webhook
+     */
+    public function ajax_resend_webhook() {
+        $this->verify_admin_ajax();
+
+        $log_id = sanitize_text_field($_POST['log_id'] ?? '');
+        if (empty($log_id)) {
+            wp_send_json_error(array('message' => esc_html__('Missing log ID.', 'astropress')));
+        }
+
+        $res = $this->core->cache->resend_webhook($log_id);
+        if (!empty($res['success'])) {
+            wp_send_json_success(array('message' => esc_html__('Webhook re-dispatched successfully.', 'astropress'), 'result' => $res));
+        } else {
+            wp_send_json_error(array('message' => $res['message'] ?? esc_html__('Failed to resend webhook.', 'astropress')));
+        }
+    }
+
+    /**
+     * AJAX: Clear Webhook Logs
+     */
+    public function ajax_clear_webhook_logs() {
+        $this->verify_admin_ajax();
+
+        $this->core->cache->clear_webhook_logs();
+        wp_send_json_success(array('message' => esc_html__('Webhook logs cleared successfully.', 'astropress')));
     }
 
 }

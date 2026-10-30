@@ -2563,3 +2563,44 @@ body.astropress_page_astropress #wpbody-content {
   background: #f1f5f9;
 }
 
+/* Unified Cache Purge Bar (v2.1.0) */
+.astropress-purge-bar,
+#astropress-purge-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+
+.astropress-purge-bar input[type="text"],
+#astropress-purge-bar input[type="text"] {
+  flex: 1;
+  min-width: 260px;
+  height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.astropress-purge-feedback {
+  margin-top: 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.astropress-purge-feedback .dashicons {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+

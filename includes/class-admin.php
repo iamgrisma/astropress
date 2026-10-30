@@ -71,7 +71,7 @@ class AstroPress_Admin {
             add_action('wp_ajax_r2g_preview_compression', array($this, 'ajax_preview_compression'));
             add_action('wp_ajax_astropress_create_bucket', array($this, 'ajax_create_bucket'));
             add_action('wp_ajax_r2g_create_bucket', array($this, 'ajax_create_bucket'));
-            add_action('wp_ajax_astropress_deploy_cache_rule', array($this, 'ajax_deploy_cache_rule'));
+            add_action('wp_ajax_astropress_deploy_cache_rule', array($this, 'ajax_deploy_cf_cache_rule'));
 
             // AJAX Handlers for Webhook Logs, Direct Purge, Deploy Hook & Cloudflare Quick Connect
             add_action('wp_ajax_astropress_resend_webhook', array($this, 'ajax_resend_webhook'));
@@ -135,17 +135,8 @@ class AstroPress_Admin {
 
         add_submenu_page(
             'astropress',
-            'Setup Wizard — AstroPress',
-            'Setup Wizard',
-            'manage_options',
-            'astropress&tab=onboarding',
-            array($this, 'render_settings_page')
-        );
-
-        add_submenu_page(
-            'astropress',
-            'Cloudflare & Cache — AstroPress',
-            'Cloudflare & Cache',
+            'Cloudflare Edge & Cache — AstroPress',
+            'Cloudflare Edge & Cache',
             'manage_options',
             'astropress&tab=cloudflare',
             array($this, 'render_settings_page')
@@ -153,8 +144,8 @@ class AstroPress_Admin {
 
         add_submenu_page(
             'astropress',
-            'Cloudflare R2 — AstroPress',
-            'Cloudflare R2',
+            'Media & Cloudflare R2 — AstroPress',
+            'Media & Cloudflare R2',
             'manage_options',
             'astropress&tab=r2',
             array($this, 'render_settings_page')
@@ -171,19 +162,20 @@ class AstroPress_Admin {
 
         add_submenu_page(
             'astropress',
-            'SEO & Security — AstroPress',
-            'SEO & Security',
+            'Developer Tools & SEO — AstroPress',
+            'Developer Tools & SEO',
             'manage_options',
-            'astropress&tab=seo',
+            'astropress&tab=tools',
             array($this, 'render_settings_page')
         );
 
+        // Keep onboarding registered for wizard access
         add_submenu_page(
-            'astropress',
-            'Tools & Logs — AstroPress',
-            'Tools & Logs',
+            null,
+            'Setup Wizard — AstroPress',
+            'Setup Wizard',
             'manage_options',
-            'astropress&tab=tools',
+            'astropress&tab=onboarding',
             array($this, 'render_settings_page')
         );
 
@@ -423,7 +415,7 @@ class AstroPress_Admin {
             'id'     => 'astropress-warm-menu',
             'parent' => 'astropress-menu',
             'title'  => 'Warm Edge Cache',
-            'href'   => admin_url('admin.php?page=astropress&tab=warmer'),
+            'href'   => admin_url('admin.php?page=astropress&tab=cloudflare#warmer'),
         ));
 
         // R2 Media Sync
@@ -431,7 +423,7 @@ class AstroPress_Admin {
             'id'     => 'astropress-sync-menu',
             'parent' => 'astropress-menu',
             'title'  => 'Cloudflare R2 Sync',
-            'href'   => admin_url('admin.php?page=astropress&tab=sync'),
+            'href'   => admin_url('admin.php?page=astropress&tab=r2#sync'),
         ));
     }
 
@@ -539,18 +531,6 @@ class AstroPress_Admin {
         $r2_domain    = self::get_r2_option('custom_domain', '');
         $stats        = AstroPress_Database::get_stats();
 
-        // Normalize legacy tab aliases
-        if (in_array($active_tab, array('settings', 'cache_rules', 'bridge'), true)) {
-            $active_tab = 'cloudflare';
-        } elseif ($active_tab === 'sync') {
-            $active_tab = 'r2';
-        } elseif (in_array($active_tab, array('warmer', 'logs', 'integration', 'updates'), true)) {
-            if (!isset($_GET['sub'])) {
-                $_GET['sub'] = $active_tab;
-            }
-            $active_tab = 'tools';
-        }
-
         ?>
         <div class="wrap astropress-wrap">
             <header class="astropress-header">
@@ -583,30 +563,28 @@ class AstroPress_Admin {
                    class="nav-tab <?php echo ($active_tab === 'dashboard') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-dashboard"></span> <?php esc_html_e('Overview', 'astropress'); ?>
                 </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" 
-                   class="nav-tab <?php echo ($active_tab === 'onboarding') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
-                </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=cloudflare')); ?>" 
                    class="nav-tab <?php echo ($active_tab === 'cloudflare') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-cloud"></span> <?php esc_html_e('Cloudflare & Cache', 'astropress'); ?>
+                    <span class="dashicons dashicons-cloud"></span> <?php esc_html_e('Cloudflare Edge & Cache', 'astropress'); ?>
                 </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2')); ?>" 
                    class="nav-tab <?php echo ($active_tab === 'r2') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-database"></span> <?php esc_html_e('Cloudflare R2', 'astropress'); ?>
+                    <span class="dashicons dashicons-database"></span> <?php esc_html_e('Media & Cloudflare R2', 'astropress'); ?>
                 </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=optimizer')); ?>" 
                    class="nav-tab <?php echo ($active_tab === 'optimizer') ? 'nav-tab-active' : ''; ?>">
                     <span class="dashicons dashicons-format-image"></span> <?php esc_html_e('Image Optimizer', 'astropress'); ?>
                 </a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=seo')); ?>" 
-                   class="nav-tab <?php echo ($active_tab === 'seo') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-shield"></span> <?php esc_html_e('SEO & Security', 'astropress'); ?>
-                </a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=tools')); ?>" 
                    class="nav-tab <?php echo ($active_tab === 'tools') ? 'nav-tab-active' : ''; ?>">
-                    <span class="dashicons dashicons-admin-tools"></span> <?php esc_html_e('Tools & Logs', 'astropress'); ?>
+                    <span class="dashicons dashicons-admin-tools"></span> <?php esc_html_e('Developer Tools & SEO', 'astropress'); ?>
                 </a>
+                <?php if ($active_tab === 'onboarding'): ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" 
+                   class="nav-tab nav-tab-active">
+                    <span class="dashicons dashicons-welcome-learn-more"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
+                </a>
+                <?php endif; ?>
             </nav>
 
             <div class="astropress-content">
@@ -624,9 +602,6 @@ class AstroPress_Admin {
                             break;
                         case 'optimizer':
                             $this->render_tab_optimizer();
-                            break;
-                        case 'seo':
-                            $this->render_tab_seo();
                             break;
                         case 'tools':
                             $this->render_tab_tools();

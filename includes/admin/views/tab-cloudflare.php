@@ -173,10 +173,15 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
     </div>
 </div>
 
-<!-- Section 2: Cache Invalidation Triggers & Automation Policies -->
+<!-- Section 2: Live Edge Cache Warmer & Sitemap Crawler -->
+<div id="warmer" style="scroll-margin-top:20px; max-width:960px; margin-bottom:20px;">
+    <?php include ASTROPRESS_PATH . 'includes/admin/views/tab-warmer.php'; ?>
+</div>
+
+<!-- Section 3: Cache Invalidation Triggers & Automation Policies -->
 <div class="astropress-card" style="max-width:960px; margin-bottom:20px;">
     <h3 style="margin:0 0 4px 0; font-size:15px; color:#1e293b;">
-        <?php esc_html_e('2. Cache Invalidation Triggers & Webhook Policies', 'astropress'); ?>
+        <?php esc_html_e('3. Cache Invalidation Triggers & Webhook Policies', 'astropress'); ?>
     </h3>
     <p style="margin:0 0 16px 0; color:#64748b; font-size:13px;">
         <?php esc_html_e('Define when WordPress should dispatch cache invalidation webhooks to your Astro frontend and purge Cloudflare Edge.', 'astropress'); ?>
@@ -218,15 +223,11 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
                 <td>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
                         <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="Auto-secured (topnepali_revalidate_secure_token)" autocomplete="new-password" style="flex:1; min-width:240px;" />
-                        <button type="button" class="button button-secondary" id="astropress-test-key-btn">
-                            <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Secret Handshake', 'astropress'); ?>
-                        </button>
                         <span id="astropress-key-badge" style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
                             <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('Default Auto-Secured', 'astropress'); ?>
                         </span>
                     </div>
                     <p class="description"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Matches the REVALIDATE_SECRET environment variable in Cloudflare Pages/Workers.', 'astropress'); ?></p>
-                    <div id="astropress-key-test-feedback" style="margin-top:10px;"></div>
                 </td>
             </tr>
             <tr>
@@ -248,10 +249,10 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
     </form>
 </div>
 
-<!-- Section 3: Direct Edge Purge Controls -->
+<!-- Section 4: Direct Edge Purge Controls -->
 <div class="astropress-card" style="max-width:960px; margin-bottom:20px;">
     <h3 style="margin:0 0 4px 0; font-size:15px; color:#1e293b;">
-        <?php esc_html_e('3. Direct Cloudflare Zone Edge Purge', 'astropress'); ?>
+        <?php esc_html_e('4. Direct Cloudflare Zone Edge Purge', 'astropress'); ?>
     </h3>
     <p style="margin:0 0 14px 0; color:#64748b; font-size:13px;">
         <?php esc_html_e('Purge specific URLs or your entire Cloudflare Zone edge cache instantly via Cloudflare API v4.', 'astropress'); ?>
@@ -266,7 +267,7 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
     <div id="astropress-direct-purge-status" style="margin-top:8px; font-size:12px;"></div>
 </div>
 
-<!-- Section 4: Danger Zone -->
+<!-- Section 5: Danger Zone -->
 <div class="astropress-card" style="max-width:960px; background:#fef2f2; border:1px solid #fecaca;">
     <h3 style="margin:0 0 6px 0; color:#991b1b; font-size:15px; display:flex; align-items:center; gap:8px;">
         <span class="dashicons dashicons-warning" style="color:#dc2626;"></span>

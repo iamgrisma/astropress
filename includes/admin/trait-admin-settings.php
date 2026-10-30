@@ -18,59 +18,7 @@ trait AstroPress_Admin_Settings {
             return;
         }
 
-        // 1. Save Headless Bridge Connection
-        if (isset($_POST['astropress_save_bridge']) && check_admin_referer('astropress_bridge_action', 'astropress_bridge_nonce')) {
-            $frontend_url = esc_url_raw(rtrim(trim(wp_unslash($_POST['astropress_frontend_url'] ?? '')), '/'));
-            $new_secret   = sanitize_text_field(trim(wp_unslash($_POST['astropress_secret'] ?? '')));
-
-            if (!empty($frontend_url)) {
-                update_option(AstroPress::OPTION_FRONTEND_URL, $frontend_url);
-            }
-            if (!empty($new_secret)) {
-                $enc_secret = AstroPress_Encryption::encrypt($new_secret);
-                update_option(AstroPress::OPTION_SECRET, $enc_secret);
-            }
-
-            // Test Handshake automatically
-            $ticket = $this->core->cache->generate_auth_ticket('test-handshake');
-            $custom_secret = !empty($new_secret) ? $new_secret : $this->core->get_custom_secret();
-            $connected = false;
-
-            if (!empty($frontend_url)) {
-                $headers = array(
-                    'Content-Type'        => 'application/json',
-                    'Origin'              => $frontend_url,
-                    'x-astropress-ticket' => $ticket,
-                );
-                if (!empty($custom_secret)) {
-                    $headers['x-revalidate-secret'] = $custom_secret;
-                    $headers['Authorization']       = 'Bearer ' . $custom_secret;
-                }
-                $test_res = wp_remote_post($frontend_url . '/api/revalidate', array(
-                    'timeout'   => 8,
-                    'sslverify' => true,
-                    'headers'   => $headers,
-                    'body' => wp_json_encode(array('slug' => 'test-handshake', 'type' => 'test', 'action' => 'ping')),
-                ));
-                if (!is_wp_error($test_res) && wp_remote_retrieve_response_code($test_res) === 200) {
-                    $connected = true;
-                }
-            }
-
-            update_option(AstroPress::OPTION_CONNECTED, $connected ? '1' : '0');
-
-            set_transient('astropress_notice', array(
-                'type'    => $connected ? 'success' : 'warning',
-                'message' => $connected
-                    ? esc_html__('Connected! Headless bridge handshake verified with Cloudflare Pages/Workers.', 'astropress')
-                    : esc_html__('Settings saved, but handshake test could not reach frontend /api/revalidate.', 'astropress'),
-            ), 30);
-
-            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=cloudflare'));
-            exit;
-        }
-
-        // 2. Save Automation & Cache Preferences
+        // 1. Save Automation & Cache Preferences
         if (isset($_POST['astropress_save_automation']) && check_admin_referer('astropress_automation_action', 'astropress_automation_nonce')) {
             update_option(AstroPress::OPTION_PURGE_ON_SAVE, isset($_POST['purge_on_save']) ? '1' : '0');
             update_option('astropress_cf_cache_tags_enabled', isset($_POST['cf_cache_tags_enabled']) ? '1' : '0');
@@ -130,7 +78,7 @@ trait AstroPress_Admin_Settings {
                 'message' => esc_html__('SEO & Security settings saved successfully.', 'astropress'),
             ), 30);
 
-            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=seo'));
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=tools&sub=seo'));
             exit;
         }
 
@@ -433,7 +381,7 @@ trait AstroPress_Admin_Settings {
                 'type'    => 'success',
                 'message' => esc_html__('Webhook delivery logs cleared.', 'astropress'),
             ), 30);
-            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=logs'));
+            wp_safe_redirect(admin_url('admin.php?page=astropress&tab=tools&sub=logs'));
             exit;
         }
 

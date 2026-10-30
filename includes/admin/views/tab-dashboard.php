@@ -64,15 +64,11 @@ if (!defined('ABSPATH')) {
                     <button type="button" class="button button-primary" id="astropress-purge-cf-now">
                         <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge Cloudflare Cache', 'astropress'); ?>
                     </button>
-                    <button type="button" class="button button-secondary" id="astropress-dash-test-handshake-btn">
-                        <span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
-                    </button>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-secondary">
                         <span class="dashicons dashicons-admin-generic" style="vertical-align:-2px;"></span> <?php esc_html_e('Setup Wizard', 'astropress'); ?>
                     </a>
                 </div>
                 <div id="astropress-purge-cf-status" style="margin-top:10px;"></div>
-                <div id="astropress-dash-handshake-status" style="margin-top:10px;"></div>
             </div>
 
             <div class="astropress-card">
@@ -95,18 +91,15 @@ if (!defined('ABSPATH')) {
                 <hr style="margin:20px 0; border:0; border-top:1px solid #e2e8f0;" />
 
                 <h3><?php esc_html_e('Instant Edge Cache Purge', 'astropress'); ?></h3>
-                <form method="post" action="">
+                <form method="post" action="" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                     <?php wp_nonce_field('astropress_purge_custom_action', 'astropress_purge_custom_nonce'); ?>
-                    <div class="astropress-inline-form">
-                        <input type="text" name="astropress_custom_url" placeholder="/blog/my-post or full URL" style="flex:1;" />
-                        <button type="submit" name="astropress_purge_custom_url" class="button button-secondary"><?php esc_html_e('Purge Path', 'astropress'); ?></button>
-                    </div>
-                </form>
-
-                <form method="post" action="" style="margin-top:10px;">
                     <?php wp_nonce_field('astropress_purge_global_action', 'astropress_purge_global_nonce'); ?>
-                    <button type="submit" name="astropress_purge_global" class="button button-link-delete" onclick="return confirm('Purge entire website cache across all Cloudflare Edge POPs?');">
-                        <?php esc_html_e('Purge Global Cache (All URLs)', 'astropress'); ?>
+                    <input type="text" name="astropress_custom_url" placeholder="<?php esc_attr_e('/path/to/page or leave blank for root /', 'astropress'); ?>" style="flex:1; min-width:200px;" />
+                    <button type="submit" name="astropress_purge_custom_url" class="button button-secondary">
+                        <span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge URL', 'astropress'); ?>
+                    </button>
+                    <button type="submit" name="astropress_purge_global" class="button button-secondary" onclick="return confirm('<?php esc_attr_e('Purge entire website cache across all Cloudflare Edge POPs?', 'astropress'); ?>');">
+                        <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge All Zone', 'astropress'); ?>
                     </button>
                 </form>
             </div>
@@ -139,7 +132,7 @@ if (!defined('ABSPATH')) {
                     <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=onboarding')); ?>" class="button button-primary">
                         <span class="dashicons dashicons-admin-settings" style="vertical-align:-2px;"></span> <?php echo $is_configured ? esc_html__('Configure in Setup Wizard', 'astropress') : esc_html__('Launch Setup Wizard &rarr;', 'astropress'); ?>
                     </a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=logs')); ?>" class="button button-secondary">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=tools&sub=logs')); ?>" class="button button-secondary">
                         <span class="dashicons dashicons-list-view" style="vertical-align:-2px;"></span> <?php esc_html_e('Webhook Logs', 'astropress'); ?>
                     </a>
                 </div>

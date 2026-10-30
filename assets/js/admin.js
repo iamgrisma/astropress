@@ -168,172 +168,21 @@
     });
 
     // ========================================================
-    // 1. Revalidation Secret Toggle & Generator
-    // ========================================================
-    $('#astropress-toggle-secret').on('click', function(e) {
-      e.preventDefault();
-      const $input = $('#astropress_secret');
-      if ($input.attr('type') === 'password') {
-        $input.attr('type', 'text');
-        $(this).text('Hide');
-      } else {
-        $input.attr('type', 'password');
-        $(this).text('Show');
-      }
-    });
-
-    function generateRandomSecret() {
-      const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-';
-      let secret = 'ap_sec_';
-      for (let i = 0; i < 32; i++) {
-        secret += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      return secret;
-    }
-
-    $('#onboard-gen-secret').on('click', function(e) {
-      e.preventDefault();
-      $('#onboard_secret').val(generateRandomSecret());
-    });
-
-    // ========================================================
-    // 2. Secret Key Handshake Test
-    // ========================================================
-    const $testKeyBtn      = $('#astropress-test-key-btn');
-    const $keyStatusBadge  = $('#astropress-key-badge');
-    const $keyFeedback     = $('#astropress-key-test-feedback');
-
-    // Revalidate Key Handshake
-    $testKeyBtn.on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      $btn.prop('disabled', true).addClass('updating-message');
-      $keyFeedback.html('<div style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-update spin"></span> Verifying secret key handshake with Cloudflare Pages/Workers...</div>').slideDown(150);
-
-      const rawSecret = $('#astropress_revalidate_secret').val()?.trim() || '';
-      const secretVal = (rawSecret && !rawSecret.startsWith('•••')) ? rawSecret : '';
-      const postData = {
-        action: 'astropress_test_key',
-        nonce: nonce,
-      };
-      if (secretVal) {
-        postData.secret = secretVal;
-      }
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: postData,
-        success: function(res) {
-          if (res.success) {
-            $keyStatusBadge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
-            $keyFeedback.html('<div style="padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-yes-alt"></span> <strong>Key Verified:</strong> ' + res.data.message + ' (' + res.data.latency_ms + 'ms latency)</div>');
-          } else {
-            $keyStatusBadge.css({'background': '#fef2f2', 'color': '#991b1b', 'border-color': '#fecaca'}).text('Failed (HTTP ' + (res.data?.code || 0) + ')');
-            let errHtml = '<div style="padding:12px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;">';
-            errHtml += '<div style="display:flex; align-items:center; gap:8px; font-weight:700;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(res.data?.message || 'Handshake failed') + '</div>';
-            if (res.data?.guidance) {
-              errHtml += '<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #fca5a5; color:#7f1d1d; line-height:1.45;"><strong>Resolution:</strong> ' + escapeHtml(res.data.guidance) + '</div>';
-            }
-            errHtml += '<div style="margin-top:8px;"><a href="admin.php?page=astropress&tab=onboarding" style="color:#b91c1c; text-decoration:underline; font-weight:600;">Update credentials in Setup Wizard &rarr;</a></div>';
-            errHtml += '</div>';
-            $keyFeedback.html(errHtml);
-          }
-        },
-        error: function(xhr, status, err) {
-          $keyFeedback.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> Server error while testing secret key: ' + err + '</div>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).removeClass('updating-message');
-        }
-      });
-    });
-
-    // Cloudflare Token Change / Cancel
-    $('#astropress-btn-change-cf-token').on('click', function(e) {
-      e.preventDefault();
-      $('#astropress-cf-token-display').hide();
-      $('#astropress-cf-token-input-wrap').show().find('input').focus();
-    });
-
-    $('#astropress-btn-cancel-cf-token').on('click', function(e) {
-      e.preventDefault();
-      $('#astropress-cf-token-input-wrap').hide().find('input').val('');
-      $('#astropress-cf-token-display').show();
-    });
-
-    // R2 Secret Key Change / Cancel
-    $('#r2-btn-change-secret').on('click', function(e) {
-      e.preventDefault();
-      $('#r2-secret-display').hide();
-      $('#r2-secret-input-wrap').show().find('input').focus();
-    });
-
-    $('#r2-btn-cancel-secret').on('click', function(e) {
-      e.preventDefault();
-      $('#r2-secret-input-wrap').hide().find('input').val('');
-      $('#r2-secret-display').show();
-    });
-
-    // Old handshake button backwards compatibility
-    $('#astropress-test-handshake').on('click', function(e) {
-      e.preventDefault();
-      if ($testKeyBtn.length) {
-        $testKeyBtn.trigger('click');
-      }
-    });
-
-    // Dashboard & Overview handshake test button
-    $(document).on('click', '#astropress-dash-test-handshake-btn', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const $status = $('#astropress-dash-handshake-status');
-      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
-      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Testing webhook handshake with Astro frontend...</div>').show();
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_test_key',
-          nonce: nonce
-        },
-        success: function(res) {
-          if (res.success) {
-            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Handshake Verified:</strong> ' + escapeHtml(res.data.message) + ' (' + res.data.latency_ms + 'ms latency)</div>');
-          } else {
-            let html = '<div style="padding:10px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;">';
-            html += '<div><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> <strong>Handshake Failed:</strong> ' + escapeHtml(res.data?.message || 'Verification error') + '</div>';
-            if (res.data?.guidance) {
-              html += '<div style="margin-top:4px; color:#7f1d1d;">' + escapeHtml(res.data.guidance) + '</div>';
-            }
-            html += '</div>';
-            $status.html(html);
-          }
-        },
-        error: function(xhr, status, err) {
-          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Server request error: ' + escapeHtml(err) + '</div>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-network" style="vertical-align:-2px;"></span> Test Handshake');
-        }
-      });
-    });
-
-    // ========================================================
-    // 3. Cloudflare R2 Discovery, Custom Domain & CNAME Setup
+    // 3. Cloudflare R2 Bucket Discovery, Custom Domain & CNAME Setup
+    // Single source of truth is Setup Wizard (#onboard-*)
     // ========================================================
 
     // Auto-detect attached custom domain for a selected bucket
     function detectBucketCustomDomain(bucket, $domainInput, $statusDiv) {
       if (!bucket) return;
-      if ($statusDiv && $statusDiv.length) {
+      $domainInput = ($domainInput && $domainInput.length) ? $domainInput : $('#onboard_r2_custom_domain');
+      $statusDiv = ($statusDiv && $statusDiv.length) ? $statusDiv : $('#onboard-cdn-domain-status');
+
+      if ($statusDiv.length) {
         $statusDiv.html('<div style="font-size:12px; color:#0369a1; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-update spin"></span> Checking Cloudflare R2 custom domain for <code>' + escapeHtml(bucket) + '</code>...</div>').show();
       }
 
-      const accountId = $('#onboard_r2_account_id').val() || $('#r2_account_id').val() || '';
+      const accountId = $('#onboard_r2_account_id').val() || '';
       const token = $('#onboard_cf_api_token').val() || '';
 
       $.ajax({
@@ -348,45 +197,79 @@
           nonce: nonce
         },
         success: function(res) {
+          // Resolve root domain for auto-suggestions
+          let rootDomain = '';
+          if (config.allowedRoots && config.allowedRoots.length) {
+            rootDomain = config.allowedRoots[0];
+          } else if (config.frontendUrl) {
+            try {
+              rootDomain = new URL(config.frontendUrl).hostname;
+            } catch (e) {
+              rootDomain = window.location.hostname;
+            }
+          } else {
+            rootDomain = window.location.hostname || 'example.com';
+          }
+          rootDomain = rootDomain.replace(/^https?:\/\//i, '').split(':')[0].replace(/^www\./i, '');
+
           if (res.success && res.data && res.data.primary) {
             const detectedDomain = res.data.primary;
-            if ($domainInput && $domainInput.length) {
+            if ($domainInput.length) {
               $domainInput.val(detectedDomain).removeData('auto-suggested');
             }
-            if ($statusDiv && $statusDiv.length) {
-              $statusDiv.html('<div style="padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-yes-alt text-success"></span> Attached to Cloudflare R2: <strong>' + escapeHtml(detectedDomain) + '</strong> (Active)</div>').show();
+            if ($statusDiv.length) {
+              $statusDiv.html(
+                '<div style="padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:6px;">' +
+                '<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px; color:#16a34a;"></span> ' +
+                'Attached to Cloudflare R2: <strong>' + escapeHtml(detectedDomain) + '</strong> (Active)' +
+                '</div>'
+              ).show();
             }
-            // Update status card label if present
             if ($('#r2-active-domain-label').length) {
               $('#r2-active-domain-label').text(detectedDomain);
             }
           } else if (res.success) {
             // Cloudflare API query succeeded, but no custom domain attached to bucket yet
-            const rootDomain = (config.allowedRoots && config.allowedRoots.length) ? config.allowedRoots[0] : (window.location.hostname || 'example.com');
             const suggested = 'media.' + rootDomain;
-            if ($domainInput && $domainInput.length) {
-              $domainInput.val(suggested);
+            if ($domainInput.length) {
+              $domainInput.val(suggested).data('auto-suggested', true);
             }
-            if ($statusDiv && $statusDiv.length) {
-              $statusDiv.html('<div style="padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px;"><span class="dashicons dashicons-info" style="vertical-align:-2px;"></span> No custom domain attached to bucket <code>' + escapeHtml(bucket) + '</code> yet. <strong>' + escapeHtml(suggested) + '</strong> has been auto-filled. Click <strong>Attach &amp; Setup CNAME</strong> to link it.</div>').show();
+            if ($statusDiv.length) {
+              $statusDiv.html(
+                '<div style="padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px;">' +
+                '<span class="dashicons dashicons-info" style="vertical-align:-2px; color:#0284c7;"></span> ' +
+                'No custom domain attached to bucket <code>' + escapeHtml(bucket) + '</code> yet. ' +
+                '<strong>' + escapeHtml(suggested) + '</strong> has been auto-suggested. Click <strong>Attach &amp; Setup CNAME</strong> to link it.' +
+                '</div>'
+              ).show();
             }
           } else {
             // API or authentication error
             const errMsg = res.data?.message || 'Could not query custom domains for this bucket.';
-            if ($statusDiv && $statusDiv.length) {
-              $statusDiv.html('<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#991b1b; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' + escapeHtml(errMsg) + '</div>').show();
+            if ($statusDiv.length) {
+              $statusDiv.html(
+                '<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#991b1b; font-size:12px;">' +
+                '<span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> ' +
+                escapeHtml(errMsg) +
+                '</div>'
+              ).show();
             }
           }
         },
         error: function(xhr, status, err) {
-          if ($statusDiv && $statusDiv.length) {
-            $statusDiv.html('<div style="font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Custom domain query failed: ' + escapeHtml(err) + '</div>').show();
+          if ($statusDiv.length) {
+            $statusDiv.html(
+              '<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#991b1b; font-size:12px;">' +
+              '<span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' +
+              'Custom domain query failed: ' + escapeHtml(err) +
+              '</div>'
+            ).show();
           }
         }
       });
     }
 
-    // Unified Bucket Discovery Handler
+    // Unified Bucket Discovery Handler for Setup Wizard
     function handleFetchBuckets($btn, $status, $selectElement, $domainInput, $domainStatus) {
       $btn.prop('disabled', true).text('Discovering...');
       $status.html('<span style="color:#64748b;"><span class="dashicons dashicons-update spin"></span> Connecting to Cloudflare R2 API...</span>');
@@ -450,46 +333,24 @@
       );
     });
 
-    // Discover in R2 Tab
-    $('#astropress-fetch-buckets').on('click', function(e) {
-      e.preventDefault();
-      handleFetchBuckets(
-        $(this),
-        $('#r2-bucket-discover-status'),
-        $('#r2_bucket'),
-        $('#r2_custom_domain'),
-        $('#r2-cdn-detect-status')
-      );
-    });
-
-    // Bucket Change & Input: Auto-detect domain
-    $(document).on('change input', '#onboard_r2_bucket, #r2_bucket', function() {
-      const isR2Tab = $(this).attr('id') === 'r2_bucket';
+    // Bucket Change & Input: Auto-detect domain in Setup Wizard
+    $(document).on('change input', '#onboard_r2_bucket', function() {
       const val = $(this).val();
-      const $domainInput = isR2Tab ? $('#r2_custom_domain') : $('#onboard_r2_custom_domain');
-      const $statusDiv = isR2Tab ? $('#r2-cdn-detect-status') : $('#onboard-cdn-domain-status');
       if (val) {
-        if (isR2Tab && $('#r2-active-bucket-label').length) {
-          $('#r2-active-bucket-label').text(val);
-        }
-        detectBucketCustomDomain(val, $domainInput, $statusDiv);
+        detectBucketCustomDomain(val, $('#onboard_r2_custom_domain'), $('#onboard-cdn-domain-status'));
       }
     });
 
-    // Auto-detect on page load if bucket is already populated
+    // Auto-detect on page load if bucket is already populated in Setup Wizard
     if ($('#onboard_r2_bucket').length && $('#onboard_r2_bucket').val()) {
       detectBucketCustomDomain($('#onboard_r2_bucket').val(), $('#onboard_r2_custom_domain'), $('#onboard-cdn-domain-status'));
     }
-    if ($('#r2_bucket').length && $('#r2_bucket').val()) {
-      detectBucketCustomDomain($('#r2_bucket').val(), $('#r2_custom_domain'), $('#r2-cdn-detect-status'));
-    }
 
-    // Create Bucket Toggle (Onboarding & R2 Tab)
-    $(document).on('click', '#onboard-btn-show-create-bucket, #r2-btn-show-create-bucket', function(e) {
+    // Create Bucket Toggle (Onboarding Wizard)
+    $(document).on('click', '#onboard-btn-show-create-bucket', function(e) {
       e.preventDefault();
-      const isR2Tab = $(this).attr('id') === 'r2-btn-show-create-bucket';
-      const $wrap = isR2Tab ? $('#r2-create-bucket-wrap') : $('#onboard-create-bucket-wrap');
-      const $input = isR2Tab ? $('#r2_new_bucket_name') : $('#onboard_new_bucket_name');
+      const $wrap = $('#onboard-create-bucket-wrap');
+      const $input = $('#onboard_new_bucket_name');
       $wrap.slideToggle(150, function() {
         if ($(this).is(':visible')) {
           $input.focus();
@@ -497,28 +358,23 @@
       });
     });
 
-    $(document).on('click', '#onboard-btn-cancel-create-bucket, #r2-btn-cancel-create-bucket', function(e) {
+    $(document).on('click', '#onboard-btn-cancel-create-bucket', function(e) {
       e.preventDefault();
-      const isR2Tab = $(this).attr('id') === 'r2-btn-cancel-create-bucket';
-      const $wrap = isR2Tab ? $('#r2-create-bucket-wrap') : $('#onboard-create-bucket-wrap');
-      const $input = isR2Tab ? $('#r2_new_bucket_name') : $('#onboard_new_bucket_name');
-      const $status = isR2Tab ? $('#r2-create-bucket-status') : $('#onboard-create-bucket-status');
-      $wrap.slideUp(150);
-      $input.val('');
-      $status.empty();
+      $('#onboard-create-bucket-wrap').slideUp(150);
+      $('#onboard_new_bucket_name').val('');
+      $('#onboard-create-bucket-status').empty();
     });
 
-    // Confirm Create Bucket in Wizard or R2 Tab
-    $(document).on('click', '#onboard-btn-confirm-create-bucket, #r2-btn-confirm-create-bucket', function(e) {
+    // Confirm Create Bucket in Wizard
+    $(document).on('click', '#onboard-btn-confirm-create-bucket', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const isR2Tab = $btn.attr('id') === 'r2-btn-confirm-create-bucket';
-      const $input = isR2Tab ? $('#r2_new_bucket_name') : $('#onboard_new_bucket_name');
-      const $status = isR2Tab ? $('#r2-create-bucket-status') : $('#onboard-create-bucket-status');
-      const $wrap = isR2Tab ? $('#r2-create-bucket-wrap') : $('#onboard-create-bucket-wrap');
-      const $bucketSelect = isR2Tab ? $('#r2_bucket') : $('#onboard_r2_bucket');
-      const $domainInput = isR2Tab ? $('#r2_custom_domain') : $('#onboard_r2_custom_domain');
-      const $domainStatus = isR2Tab ? $('#r2-cdn-detect-status') : $('#onboard-cdn-domain-status');
+      const $input = $('#onboard_new_bucket_name');
+      const $status = $('#onboard-create-bucket-status');
+      const $wrap = $('#onboard-create-bucket-wrap');
+      const $bucketSelect = $('#onboard_r2_bucket');
+      const $domainInput = $('#onboard_r2_custom_domain');
+      const $domainStatus = $('#onboard-cdn-domain-status');
       const bucketName = $input.val()?.trim().toLowerCase();
 
       if (!bucketName) {
@@ -567,55 +423,44 @@
       });
     });
 
-    // Auto-detect CDN domain button
+    // Auto-detect CDN domain button in Setup Wizard
     $(document).on('click', '#onboard-detect-cdn-btn', function(e) {
       e.preventDefault();
       const bucket = $('#onboard_r2_bucket').val()?.trim();
       if (!bucket) {
-        $('#onboard-cdn-domain-status').html('<div style="font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning"></span> Please select an R2 bucket first.</div>');
+        $('#onboard-cdn-domain-status').html('<div style="font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please select an R2 bucket first.</div>');
         return;
       }
       detectBucketCustomDomain(bucket, $('#onboard_r2_custom_domain'), $('#onboard-cdn-domain-status'));
     });
 
-    $(document).on('click', '#r2-detect-cdn-btn', function(e) {
-      e.preventDefault();
-      const bucket = $('#r2_bucket').val()?.trim();
-      if (!bucket) {
-        $('#r2-cdn-detect-status').html('<div style="font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning"></span> Please select an R2 bucket first.</div>');
-        return;
-      }
-      detectBucketCustomDomain(bucket, $('#r2_custom_domain'), $('#r2-cdn-detect-status'));
-    });
-
-    // Attach & Setup CNAME button (1-click from dashboard)
-    $(document).on('click', '#onboard-attach-cname-btn, #r2-attach-cname-btn', function(e) {
+    // Attach & Setup CNAME button (Setup Wizard)
+    $(document).on('click', '#onboard-attach-cname-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const isOnboarding = $btn.attr('id') === 'onboard-attach-cname-btn';
-      const $input = isOnboarding ? $('#onboard_r2_custom_domain') : $('#r2_custom_domain');
-      const $status = isOnboarding ? $('#onboard-cdn-domain-status') : $('#r2-cdn-detect-status');
-      const bucket = (isOnboarding ? $('#onboard_r2_bucket').val() : $('#r2_bucket').val())?.trim();
-      const zoneId = $('#onboard_cf_zone_id').val() || $('#astropress_cf_zone_id').val() || '';
-      const accountId = $('#onboard_r2_account_id').val() || $('#r2_account_id').val() || '';
+      const $input = $('#onboard_r2_custom_domain');
+      const $status = $('#onboard-cdn-domain-status');
+      const bucket = $('#onboard_r2_bucket').val()?.trim();
+      const zoneId = $('#onboard_cf_zone_id').val() || '';
+      const accountId = $('#onboard_r2_account_id').val() || '';
       const token = $('#onboard_cf_api_token').val() || '';
-      let host = $input.val()?.trim();
+      let host = $input.val()?.trim() || '';
       if (host) {
         host = host.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
       }
 
       if (!bucket) {
-        $status.html('<div style="font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning"></span> Please select an R2 bucket first.</div>');
+        $status.html('<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please select an R2 bucket first.</div>').show();
         return;
       }
       if (!host) {
-        $status.html('<div style="font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning"></span> Please enter your desired CDN domain (e.g. <code>media.' + (config.allowedRoots?.[0] || 'example.com') + '</code>).</div>');
+        $status.html('<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; font-size:12px; color:#dc2626;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please enter your desired CDN domain (e.g. <code>media.' + (config.allowedRoots?.[0] || 'example.com') + '</code>).</div>').show();
         $input.focus();
         return;
       }
 
-      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Attaching...');
-      $status.html('<div style="font-size:12px; color:#0369a1;"><span class="dashicons dashicons-update spin"></span> Linking custom domain <strong>' + escapeHtml(host) + '</strong> to bucket <strong>' + escapeHtml(bucket) + '</strong> and creating proxied DNS CNAME...</div>');
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Attaching...');
+      $status.html('<div style="font-size:12px; color:#0369a1; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-update spin"></span> Linking custom domain <strong>' + escapeHtml(host) + '</strong> to bucket <strong>' + escapeHtml(bucket) + '</strong> and creating proxied DNS CNAME...</div>').show();
 
       $.ajax({
         url: ajaxurl,
@@ -636,148 +481,41 @@
             if ($('#r2-active-domain-label').length) {
               $('#r2-active-domain-label').text(host);
             }
-            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-yes-alt text-success"></span> ' + escapeHtml(res.data.message) + '</div>');
-            // Auto trigger rule deployment
-            const $deployBtn = isOnboarding ? $('#onboard-deploy-cache-rule-btn') : $('#astropress-btn-deploy-cache-rule');
+            $status.html(
+              '<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:8px;">' +
+              '<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px; color:#16a34a;"></span> ' +
+              '<strong>Custom Domain Active:</strong> ' + escapeHtml(res.data.message || (host + ' linked successfully to ' + bucket)) +
+              '</div>'
+            ).show();
+            // Auto trigger rule deployment if button present
+            const $deployBtn = $('#onboard-deploy-cache-rule-btn');
             if ($deployBtn.length) {
               $deployBtn.trigger('click');
             }
           } else {
-            $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning"></span> ' + escapeHtml(res.data?.message || 'Attachment failed.') + '</div>');
+            $status.html(
+              '<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:8px;">' +
+              '<span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> ' +
+              '<span>' + escapeHtml(res.data?.message || 'Attachment failed.') + '</span>' +
+              '</div>'
+            ).show();
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;">Request failed: ' + escapeHtml(err) + '</div>');
+          $status.html(
+            '<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:8px;">' +
+            '<span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' +
+            '<span>Request failed: ' + escapeHtml(err) + '</span>' +
+            '</div>'
+          ).show();
         },
         complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-links"></span> Attach & Setup CNAME');
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-links" style="vertical-align:-2px;"></span> Attach & Setup CNAME');
         }
       });
     });
 
-    // Audit CDN in R2 Tab
-    $(document).on('click', '#r2-audit-cdn-btn', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const cdnDomain = $('#r2_custom_domain').val().trim();
-      const bucket = $('#r2_bucket').val()?.trim();
-      const accountId = $('#r2_account_id').val()?.trim();
-      const $box = $('#r2-cdn-audit-box');
-
-      if (!cdnDomain) {
-        alert('Please enter a Public CDN Domain first (e.g. media.example.com).');
-        return;
-      }
-
-      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Auditing...');
-      $box.show().html('<div class="astropress-cdn-audit-loading"><span class="dashicons dashicons-update"></span> Auditing DNS records, R2 bucket domain attachment & Edge cache rules...</div>');
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_audit_cdn_domain',
-          custom_domain: cdnDomain,
-          account_id: accountId,
-          bucket_name: bucket,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            const d = res.data;
-            let html = '<div class="astropress-cdn-audit-wrap">';
-            html += '<div style="font-weight:700; font-size:13px; color:#1e293b; margin-bottom:8px;">CDN Domain Audit Report for <code>' + d.host + '</code>:</div>';
-            html += '<div class="astropress-cdn-audit-grid">';
-
-            // DNS Status
-            html += '<div class="astropress-cdn-audit-row">';
-            html += '<div><strong>DNS Routing:</strong> ' + (d.dns_found ? (d.dns_proxied ? 'Proxied via Cloudflare Edge (Orange Cloud)' : 'DNS Found (Unproxied)') : 'No DNS Record Found') + '</div>';
-            html += '<span class="astropress-badge" style="' + (d.dns_proxied ? 'background:#ecfdf5;color:#065f46;' : 'background:#fffbeb;color:#b45309;') + '">' + (d.dns_proxied ? 'Optimal' : (d.dns_found ? 'DNS OK' : 'Pending')) + '</span>';
-            html += '</div>';
-
-            // R2 Custom Domain Attachment
-            html += '<div class="astropress-cdn-audit-row">';
-            html += '<div><strong>R2 Bucket Attachment:</strong> ' + (d.r2_attached ? 'Domain Attached to Bucket (' + d.r2_status + ')' : 'Domain Not Attached to R2 Bucket') + '</div>';
-            if (d.r2_attached) {
-              html += '<span class="astropress-badge" style="background:#ecfdf5;color:#065f46;">Attached</span>';
-            } else {
-              html += '<button type="button" class="button button-primary button-small" id="onboard-attach-r2-domain-btn" data-host="' + d.host + '" data-bucket="' + bucket + '">Attach Domain to R2 (1-Click)</button>';
-            }
-            html += '</div>';
-
-            // Cache Rule Status
-            html += '<div class="astropress-cdn-audit-row">';
-            html += '<div><strong>Edge Cache Rule:</strong> ' + (d.rule_desc || 'No cache rule') + '</div>';
-            if (d.rule_status === 'optimal') {
-              html += '<span class="astropress-badge" style="background:#ecfdf5;color:#065f46;">1-Year Cache Everything Active</span>';
-            } else {
-              html += '<button type="button" class="button button-secondary button-small" id="astropress-btn-deploy-cache-rule">Deploy / Upgrade Cache Rule</button>';
-            }
-            html += '</div>';
-
-            // Edge Cache Purge Row
-            html += '<div class="astropress-cdn-audit-row">';
-            html += '<div><strong>CDN Edge Cache:</strong> Instant Cloudflare Zone & CDN Purge</div>';
-            html += '<button type="button" class="button button-secondary button-small" id="r2-purge-cdn-btn"><span class="dashicons dashicons-trash" style="vertical-align:-2px;font-size:13px;width:13px;height:13px;"></span> Purge CDN Cache</button>';
-            html += '</div>';
-
-            html += '</div>';
-            html += '<div id="onboard-attach-status" style="margin-top:6px; font-size:12px;"></div>';
-            html += '</div>';
-
-            $box.html(html);
-          } else {
-            $box.html('<div class="astropress-detect-pill is-error"><span class="dashicons dashicons-warning"></span> ' + (res.data?.message || 'Audit failed.') + '</div>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $box.html('<div class="astropress-detect-pill is-error"><span class="dashicons dashicons-warning"></span> Audit request error: ' + err + '</div>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-tools" style="vertical-align:-2px;"></span> Audit CDN & Rules');
-        }
-      });
-    });
-
-    // Purge CDN Cache from R2 Tab
-    $(document).on('click', '#r2-purge-cdn-btn', function(e) {
-      e.preventDefault();
-      if (!confirm('Purge all cached CDN assets on Cloudflare Edge for this zone?')) {
-        return;
-      }
-      const $btn = $(this);
-      const $status = $('#astropress-deploy-rule-status');
-
-      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Purging...');
-      $status.html('<span style="color:#64748b;">Purging Cloudflare Edge cache...</span>').show();
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_purge_cf_zone',
-          purge_everything: 1,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'CDN Edge cache purged successfully!') + '</span>');
-          } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Purge failed.') + '</span>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge CDN Cache');
-        }
-      });
-    });
-
-    // Client-side domain validation for CDN Domain inputs
+    // Client-side domain validation for CDN Domain input in Setup Wizard
     function validateCdnDomainInput($input, $hintContainer) {
       const raw = $input.val()?.trim() || '';
       if (!raw) return true;
@@ -809,58 +547,6 @@
 
     $(document).on('blur', '#onboard_r2_custom_domain', function() {
       validateCdnDomainInput($(this), $('#onboard-cache-rule-status'));
-    });
-
-    $(document).on('blur', '#r2_custom_domain', function() {
-      validateCdnDomainInput($(this), $('#astropress-domain-hint'));
-    });
-
-    // Test R2 Connection Live
-    $('#astropress-test-r2').on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const $status = $('#astropress-r2-status');
-      const accountId = $('#r2_account_id').val()?.trim() || $('#onboard_r2_account_id').val()?.trim() || '';
-      const accessKey = $('#r2_access_key').val()?.trim() || '';
-      let secretKey = $('#r2_secret_key').val()?.trim() || '';
-      if (secretKey && secretKey.indexOf('••••') !== -1) {
-        secretKey = '';
-      }
-      const bucket = $('#r2_bucket').val()?.trim() || $('#onboard_r2_bucket').val()?.trim() || $('input[name="r2_bucket"]').val()?.trim() || '';
-      const customDomain = $('#r2_custom_domain').val()?.trim() || $('#onboard_r2_custom_domain').val()?.trim() || '';
-      const cfToken = $('#onboard_cf_api_token').val()?.trim() || '';
-
-      $btn.prop('disabled', true).text('Testing...');
-      $status.html('<span style="color:#64748b;"><span class="dashicons dashicons-update spin"></span> Testing read/write permissions & CDN resolution...</span>');
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_test_connection',
-          account_id: accountId,
-          access_key: accessKey,
-          secret_key: secretKey,
-          cf_api_token: cfToken,
-          bucket: bucket,
-          custom_domain: customDomain,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            $status.html('<span style="color:#059669;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
-          } else {
-            $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data.message || 'Connection test failed.') + '</span>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Connection error: ' + err + '</span>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Connection');
-        }
-      });
     });
 
     // ========================================================
@@ -1795,98 +1481,8 @@
     });
 
     // ========================================================
-    // 9. Cloudflare API Token & Direct Purge Handlers
+    // 9. Cloudflare Deploy Hook Trigger
     // ========================================================
-    $('#astropress-toggle-cf-token').on('click', function(e) {
-      e.preventDefault();
-      const $input = $('#astropress_cf_api_token');
-      if ($input.attr('type') === 'password') {
-        $input.attr('type', 'text');
-        $(this).text('Hide');
-      } else {
-        $input.attr('type', 'password');
-        $(this).text('Show');
-      }
-    });
-
-    $('#astropress-test-cf-token').on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const token = $('#astropress_cf_api_token').val();
-      const $status = $('#astropress-cf-token-status');
-
-      $btn.prop('disabled', true).text('Verifying...');
-      $status.html('<span style="color:#64748b;">Testing token with Cloudflare API...</span>');
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_cf_quick_connect',
-          cf_api_token: token,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            let msg = '<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> Token verified! ';
-            if (res.data.matched_account) {
-              msg += 'Account: ' + res.data.matched_account.name + '. ';
-            }
-            if (res.data.matched_zone) {
-              msg += 'Zone: ' + res.data.matched_zone.name + ' (' + res.data.matched_zone.id + ').';
-              if (!$('#astropress_cf_zone_id').val()) {
-                $('#astropress_cf_zone_id').val(res.data.matched_zone.id);
-              }
-            }
-            $status.html('<span style="color:#057a55;font-weight:600;">' + msg + '</span>');
-          } else {
-            $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Verification failed') + '</span>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Request error: ' + err + '</span>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).text('Test & Discover');
-        }
-      });
-    });
-
-    $('#astropress-purge-cf-now').on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const $status = $('#astropress-cf-purge-status');
-      if (!confirm('Purge entire Cloudflare Edge Zone Cache now?')) return;
-
-      $btn.prop('disabled', true).text('Purging...');
-      $status.html('<span style="color:#64748b;">Purging zone cache via Cloudflare API...</span>');
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_purge_cf_zone',
-          purge_everything: 1,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            $status.html('<span style="color:#057a55;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
-          } else {
-            $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Purge failed') + '</span>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Network error: ' + err + '</span>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).text('Purge Edge Now');
-        }
-      });
-    });
-
     $('#astropress-trigger-deploy-now').on('click', function(e) {
       e.preventDefault();
       const $btn = $(this);
@@ -2042,10 +1638,7 @@
               if (data.buckets && data.buckets.length > 0) {
                 html += '<div class="astropress-flat-row"><span class="flat-label">R2 Buckets:</span> <span class="flat-val">' + escapeHtml(data.buckets.join(', ')) + '</span></div>';
               }
-              if (data.pages_projects && data.pages_projects.length > 0) {
-                const projectNames = data.pages_projects.map(function(p) { return p.name; }).join(', ');
-                html += '<div class="astropress-flat-row"><span class="flat-label">Pages:</span> <span class="flat-val">' + escapeHtml(projectNames) + '</span></div>';
-              }
+
 
               html += '</div>';
 
@@ -2121,9 +1714,7 @@
                 }
               }
               if (data.buckets && data.buckets.length > 0) {
-                if ($('#r2_bucket').length && !$('#r2_bucket').val()) {
-                  $('#r2_bucket').val(data.buckets[0]);
-                }
+
                 if ($('#onboard_r2_bucket').length) {
                   const $sel = $('#onboard_r2_bucket');
                   $sel.empty();
@@ -2134,22 +1725,7 @@
                   detectBucketCustomDomain(data.buckets[0], $('#onboard_r2_custom_domain'), $('#onboard-cdn-domain-status'));
                 }
               }
-              if (data.pages_projects && data.pages_projects.length > 0) {
-                const $pagesCard = $('#onboard-pages-sync-card');
-                const $pagesSel = $('#onboard_cf_pages_project_select');
-                if ($pagesCard.length) {
-                  $pagesCard.slideDown(200);
-                  if ($pagesSel.length) {
-                    $pagesSel.empty().append('<option value="">-- Choose Pages Project --</option>');
-                    data.pages_projects.forEach(function(p) {
-                      $pagesSel.append('<option value="' + p.name + '">' + p.name + '</option>');
-                    });
-                    $pagesSel.show();
-                    $pagesSel.val(data.pages_projects[0].name);
-                    $('#onboard_cf_pages_project').val(data.pages_projects[0].name);
-                  }
-                }
-              }
+
 
               // On verified success, keep field closed and update connected card
               if ($('#onboard-token-connected-card').length) {
@@ -2184,30 +1760,13 @@
       });
     }
 
-    // handleQuickConnect('#astropress_quick_cf_token', '#astropress-quick-connect-results', '#astropress-quick-connect-btn');
-    // handleQuickConnect('#astropress_quick_cf_token_r2', '#astropress-quick-connect-results-r2', '#astropress-quick-connect-btn-r2');
     handleQuickConnect('#onboard_cf_api_token', '#onboard-audit-results', '#onboard-quick-audit-btn');
 
     // ========================================================
     // SETUP WIZARD & MASKED CREDENTIAL INTERACTION
     // ========================================================
 
-    // 1. Rotate Revalidation Secret Toggle & Drawer
-    $(document).on('click', '#onboard-rotate-secret-btn, #onboard-change-secret-btn', function(e) {
-      e.preventDefault();
-      const $wrap = $('#onboard-secret-input-wrap');
-      $wrap.slideToggle(150, function() {
-        if ($wrap.is(':visible')) {
-          $('#onboard_secret').focus();
-        }
-      });
-    });
 
-    $(document).on('click', '#onboard-cancel-rotate-btn, #onboard-cancel-change-secret', function(e) {
-      e.preventDefault();
-      $('#onboard-secret-input-wrap').slideUp(150);
-      $('#onboard_secret').val('');
-    });
 
     // 4. Permission Blueprint Recipe Box Toggle & Copy
     $('#onboard-toggle-blueprint-btn').on('click', function(e) {
@@ -2227,19 +1786,7 @@
       }
     });
 
-    // 5. S3 Advanced Drawer Toggle
-    $('#onboard-toggle-s3-drawer').on('click', function(e) {
-      e.preventDefault();
-      const $drawer = $('#onboard-s3-drawer-wrap');
-      const $arrow = $('#onboard-s3-arrow');
-      $drawer.slideToggle(200, function() {
-        if ($drawer.is(':visible')) {
-          $arrow.removeClass('dashicons-arrow-right-alt2').addClass('dashicons-arrow-down-alt2');
-        } else {
-          $arrow.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-right-alt2');
-        }
-      });
-    });
+
 
     // 6. Deploy Cache Rule from Setup Wizard / Audit (Delegated)
     $(document).on('click', '#onboard-deploy-cache-rule-btn, #astropress-btn-deploy-cache-rule', function(e) {
@@ -2326,29 +1873,7 @@
       });
     });
 
-    // 7. Setup Mode Selector (Full Architecture vs Modular)
-    $('input[name="onboard_setup_mode"]').on('change', function() {
-      const mode = $(this).val();
-      $('.astropress-mode-card').removeClass('is-active').css({ 'border-color': '#e2e8f0', 'background': '#ffffff' });
-      const $activeCard = $(this).closest('.astropress-mode-card');
-      $activeCard.addClass('is-active').css({ 'border-color': '#2563eb', 'background': '#eff6ff' });
 
-      if (mode === 'modular') {
-        $('#onboard-modular-checklist').slideDown(200);
-      } else {
-        $('#onboard-modular-checklist').slideUp(200);
-        $('#onboard-r2-section-wrap').slideDown(200);
-      }
-    });
-
-    // Modular R2 Checkbox Toggle
-    $('#onboard_enable_r2_toggle').on('change', function() {
-      if ($(this).is(':checked')) {
-        $('#onboard-r2-section-wrap').slideDown(200);
-      } else {
-        $('#onboard-r2-section-wrap').slideUp(200);
-      }
-    });
 
     // 8. Frontend URL Live Auto-Detection
     function detectFrontendUrl() {
@@ -2418,13 +1943,12 @@
       }
     });
 
-    // 8b. Test Webhook Connection & Handshake Button (Test & Rotate pattern)
+    // 8b. Test Webhook Connection & Handshake Button
     $(document).on('click', '#onboard-test-handshake-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
       const $status = $('#onboard-handshake-status');
       const $badge = $('#onboard-secret-badge');
-      const $icon = $('#onboard-secret-status-icon');
       const frontendUrl = $('#onboard_frontend_url').val()?.trim();
       const rawSecret = ($('#onboard_secret').length ? $('#onboard_secret').val() : $('#onboard_revalidate_secret').val())?.trim() || '';
       const newSecret = (rawSecret && !rawSecret.startsWith('•••')) ? rawSecret : '';
@@ -2434,8 +1958,8 @@
         return;
       }
 
-      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
-      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Testing handshake with ' + frontendUrl + '/api/revalidate...</div>').slideDown(150);
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Testing...');
+      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Testing handshake with ' + escapeHtml(frontendUrl) + '/api/revalidate...</div>').slideDown(150);
 
       $.ajax({
         url: ajaxurl,
@@ -2450,12 +1974,10 @@
         success: function(res) {
           if (res.success) {
             if ($badge.length) $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Verified Active');
-            if ($icon.length) $icon.removeClass('dashicons-warning dashicons-dismiss').addClass('dashicons-shield-alt').css('color', '#059669');
-            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Verified:</strong> ' + res.data.message + ' (' + res.data.latency_ms + 'ms latency)</div>');
+            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Verified:</strong> ' + escapeHtml(res.data.message) + ' (' + res.data.latency_ms + 'ms latency)</div>');
           } else {
             const code = res.data?.code || 0;
             if ($badge.length) $badge.css({'background': '#fef2f2', 'color': '#991b1b', 'border-color': '#fecaca'}).text('Failed (HTTP ' + code + ')');
-            if ($icon.length) $icon.removeClass('dashicons-shield-alt').addClass('dashicons-warning').css('color', '#dc2626');
             let failHtml = '<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;">';
             failHtml += '<div style="font-weight:700;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' + escapeHtml(res.data?.message || ('HTTP Error ' + code)) + '</div>';
             if (res.data?.guidance) {
@@ -2463,17 +1985,10 @@
             }
             failHtml += '</div>';
             $status.html(failHtml);
-            // Auto open rotate drawer so user can rotate easily!
-            const $wrap = $('#onboard-secret-input-wrap');
-            if (!$wrap.is(':visible')) {
-              $wrap.slideDown(200, function() {
-                $('#onboard_secret').focus();
-              });
-            }
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Network request failed: ' + err + '</div>');
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Network request failed: ' + escapeHtml(err) + '</div>');
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Connection');
@@ -2481,56 +1996,7 @@
       });
     });
 
-    // 9. Zero-Touch Cloudflare Pages Secret Sync
-    $(document).on('change', '#onboard_cf_pages_project_select', function() {
-      const val = $(this).val();
-      if (val) {
-        $('#onboard_cf_pages_project').val(val);
-      }
-    });
 
-    $(document).on('click', '#onboard-sync-pages-env-btn', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const projName = ($('#onboard_cf_pages_project').val() || $('#onboard_cf_pages_project_select').val() || '').trim();
-      const token = $('#onboard_cf_api_token').val().trim();
-      const accountId = $('#onboard_r2_account_id').val().trim();
-      const $status = $('#onboard-pages-sync-status');
-
-      if (!projName) {
-        alert('Please specify your Cloudflare Pages project name first.');
-        return;
-      }
-
-      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update"></span> Syncing...');
-      $status.html('<span style="color:#64748b;">Injecting REVALIDATE_SECRET & WP_API_URL via Cloudflare API...</span>').show();
-
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_sync_pages_env',
-          project_name: projName,
-          account_id: accountId,
-          token: token,
-          nonce: nonce,
-        },
-        success: function(res) {
-          if (res.success) {
-            $status.html('<span style="color:#059669; font-weight:600;"><span class="dashicons dashicons-yes"></span> ' + res.data.message + '</span>');
-          } else {
-            $status.html('<span style="color:#dc2626; font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data?.message || 'Sync failed.') + '</span>');
-          }
-        },
-        error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626; font-weight:600;">Request error: ' + err + '</span>');
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-update" style="vertical-align:-2px;"></span> Push Secrets (1-Click)');
-        }
-      });
-    });
 
     // 10. Public CDN Domain Audit
     $(document).on('click', '#onboard-audit-cdn-btn', function(e) {
@@ -2955,52 +2421,41 @@
       });
     });
 
-    // 9. Direct Purge All Zone Cache
-    $('#astropress-purge-all-zone-btn').on('click', function(e) {
+    // ========================================================
+    // 9. Unified Cache Purge Bar (Overview Dashboard & Cloudflare Tab)
+    // ========================================================
+
+    // 9.1 Purge Specific URLs / Paths
+    $(document).on('click', '#astropress-purge-urls-btn, #astropress-purge-url-btn, button[name="astropress_purge_custom_url"]', function(e) {
       e.preventDefault();
-      if (!confirm('Are you sure you want to purge the ENTIRE Cloudflare Zone edge cache? This will clear all cached HTML, assets, and images globally.')) {
-        return;
+      const $btn = $(this);
+      const $form = $btn.closest('form, .astropress-inline-form, .astropress-purge-bar, #astropress-purge-bar, .astropress-card');
+
+      let $input = $form.find('#astropress-purge-urls-input, #astropress-purge-url-input, input[name="astropress_custom_url"], input[type="text"]').first();
+      if (!$input.length) {
+        $input = $('#astropress-purge-urls-input, #astropress-purge-url-input, input[name="astropress_custom_url"]').first();
       }
 
-      const $btn = $(this);
-      $btn.prop('disabled', true).text('Purging All...');
+      let $status = $form.find('#astropress-direct-purge-status, #astropress-purge-cf-status, .astropress-purge-feedback').first();
+      if (!$status.length) {
+        $status = $('#astropress-direct-purge-status, #astropress-purge-cf-status');
+      }
+      if (!$status.length) {
+        $status = $('<div class="astropress-purge-feedback" style="margin-top:8px; font-size:12px;"></div>');
+        $btn.parent().after($status);
+      }
 
-      $.ajax({
-        url: ajaxurl,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          action: 'astropress_purge_cf_zone',
-          purge_everything: 1,
-          nonce: nonce,
-        },
-        success: function(res) {
-          alert(res.data ? res.data.message : 'Zone cache purged successfully.');
-        },
-        error: function(xhr, status, err) {
-          alert('Purge error: ' + err);
-        },
-        complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge All Zone Cache');
-        }
-      });
-    });
-
-    // 10. Direct Purge Specific URLs
-    $('#astropress-purge-urls-btn').on('click', function(e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const raw = ($('#astropress-purge-urls-input').val() || '').trim();
-      const $status = $('#astropress-direct-purge-status');
-
+      const raw = ($input.val() || '').trim();
       if (!raw) {
-        alert('Please enter at least one URL or path to purge.');
+        $status.html('<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> Please enter at least one URL or path to purge.</div>').show();
+        $input.focus();
         return;
       }
 
       const urls = raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      $btn.prop('disabled', true).text('Purging...');
-      $status.html('<span style="color:#64748b;">Sending purge request to Cloudflare API...</span>');
+      const origHtml = $btn.html();
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Purging...');
+      $status.html('<div style="color:#0284c7; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-update spin"></span> Purging path from Cloudflare Edge...</div>').show();
 
       $.ajax({
         url: ajaxurl,
@@ -3013,19 +2468,141 @@
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#059669; font-weight:600;"><span class="dashicons dashicons-yes"></span> ' + res.data.message + '</span>');
-            $('#astropress-purge-urls-input').val('');
+            $status.html('<div style="padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px; color:#16a34a;"></span> ' + escapeHtml(res.data?.message || 'Path purged successfully from Cloudflare Edge!') + '</div>').show();
+            $input.val('');
           } else {
-            $status.html('<span style="color:#dc2626; font-weight:600;"><span class="dashicons dashicons-warning"></span> ' + (res.data ? res.data.message : 'Purge failed.') + '</span>');
+            $status.html('<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> ' + escapeHtml(res.data?.message || 'Purge failed.') + '</div>').show();
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#dc2626; font-weight:600;">Request error: ' + err + '</span>');
+          $status.html('<div style="padding:6px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> Request error: ' + escapeHtml(err) + '</div>').show();
         },
         complete: function() {
-          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge URLs');
+          $btn.prop('disabled', false).html(origHtml);
         }
       });
+    });
+
+    // 9.2 Purge Entire Cloudflare Zone Edge Cache
+    $(document).on('click', '#astropress-purge-all-zone-btn, #astropress-purge-cf-now, button[name="astropress_purge_global"]', function(e) {
+      e.preventDefault();
+      if (!confirm('Are you sure you want to purge the ENTIRE Cloudflare Zone edge cache? This will clear all cached HTML, assets, and images globally.')) {
+        return;
+      }
+
+      const $btn = $(this);
+      const $form = $btn.closest('form, .astropress-inline-form, .astropress-purge-bar, #astropress-purge-bar, .astropress-card');
+      let $status = $form.find('#astropress-purge-cf-status, #astropress-direct-purge-status, .astropress-purge-feedback').first();
+      if (!$status.length) {
+        $status = $('#astropress-purge-cf-status, #astropress-direct-purge-status');
+      }
+      if (!$status.length) {
+        $status = $('<div class="astropress-purge-feedback" style="margin-top:8px; font-size:12px;"></div>');
+        $btn.after($status);
+      }
+
+      const origHtml = $btn.html();
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Purging All...');
+      $status.html('<div style="color:#0284c7; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-update spin"></span> Purging entire zone edge cache via Cloudflare API...</div>').show();
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_purge_cf_zone',
+          purge_everything: 1,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px; color:#16a34a;"></span> ' + escapeHtml(res.data?.message || 'Zone edge cache purged successfully!') + '</div>').show();
+          } else {
+            $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> ' + escapeHtml(res.data?.message || 'Purge failed.') + '</div>').show();
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px; color:#dc2626;"></span> Request error: ' + escapeHtml(err) + '</div>').show();
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html(origHtml);
+        }
+      });
+    });
+
+    // ========================================================
+    // 10. Deep Linking & URL Hash Navigation
+    // Support: #warmer on Cloudflare tab, #sync on R2 tab, sub-nav on Tools
+    // ========================================================
+    function handleHashNavigation() {
+      const hash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
+      if (!hash) return;
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const activeTab = urlParams.get('tab') || 'dashboard';
+      const activeSub = urlParams.get('sub') || '';
+
+      // 10.1 #warmer deep linking from Cloudflare tab or tools
+      if (hash === 'warmer') {
+        if (activeTab === 'cloudflare' || (activeTab === 'tools' && activeSub !== 'warmer')) {
+          const targetUrl = new URL(window.location.href);
+          targetUrl.searchParams.set('tab', 'tools');
+          targetUrl.searchParams.set('sub', 'warmer');
+          targetUrl.hash = '';
+          window.location.href = targetUrl.toString();
+          return;
+        }
+      }
+
+      // 10.2 #sync deep linking on R2 tab
+      if (hash === 'sync' && activeTab === 'r2' && activeSub !== 'sync') {
+        const targetUrl = new URL(window.location.href);
+        targetUrl.searchParams.set('tab', 'r2');
+        targetUrl.searchParams.set('sub', 'sync');
+        targetUrl.hash = '';
+        window.location.href = targetUrl.toString();
+        return;
+      }
+
+      // 10.3 #policies deep linking on R2 tab
+      if ((hash === 'policies' || hash === 'r2') && activeTab === 'r2' && activeSub === 'sync') {
+        const targetUrl = new URL(window.location.href);
+        targetUrl.searchParams.set('tab', 'r2');
+        targetUrl.searchParams.set('sub', 'policies');
+        targetUrl.hash = '';
+        window.location.href = targetUrl.toString();
+        return;
+      }
+
+      // 10.4 Sub-navigation on Developer Tools (tab=tools)
+      const validToolsSubs = ['warmer', 'logs', 'integration', 'updates'];
+      if (activeTab === 'tools' && validToolsSubs.indexOf(hash) !== -1) {
+        if (activeSub !== hash) {
+          const targetUrl = new URL(window.location.href);
+          targetUrl.searchParams.set('tab', 'tools');
+          targetUrl.searchParams.set('sub', hash);
+          targetUrl.hash = '';
+          window.location.href = targetUrl.toString();
+          return;
+        }
+      }
+    }
+
+    handleHashNavigation();
+    $(window).on('hashchange', handleHashNavigation);
+
+    // Click delegation for in-page anchors with #warmer or #sync
+    $(document).on('click', 'a[href*="#warmer"], a[href*="#sync"]', function(e) {
+      const href = $(this).attr('href');
+      if (href && href.indexOf('#warmer') !== -1) {
+        e.preventDefault();
+        const base = config.ajaxUrl ? config.ajaxUrl.replace('admin-ajax.php', 'admin.php?page=astropress&tab=tools&sub=warmer') : 'admin.php?page=astropress&tab=tools&sub=warmer';
+        window.location.href = base;
+      } else if (href && href.indexOf('#sync') !== -1) {
+        e.preventDefault();
+        const base = config.ajaxUrl ? config.ajaxUrl.replace('admin-ajax.php', 'admin.php?page=astropress&tab=r2&sub=sync') : 'admin.php?page=astropress&tab=r2&sub=sync';
+        window.location.href = base;
+      }
     });
 
     // 11. Danger Zone: Reset Connection
