@@ -286,8 +286,8 @@ class AstroPress_Updater {
             'author'      => $data['author']['login'] ?? 'iamgrisma',
         );
 
-        // Cache for 6 hours
-        set_transient(self::TRANSIENT_LATEST, $result, 6 * HOUR_IN_SECONDS);
+        // Cache for 15 minutes (rapid discovery of new GitHub releases)
+        set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
         update_option('astropress_last_known_latest_release', $result, false);
 
         return $result;

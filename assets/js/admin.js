@@ -365,13 +365,10 @@
             const rootDomain = (config.allowedRoots && config.allowedRoots.length) ? config.allowedRoots[0] : (window.location.hostname || 'example.com');
             const suggested = 'media.' + rootDomain;
             if ($domainInput && $domainInput.length) {
-              const cur = $domainInput.val()?.trim();
-              if (!cur || $domainInput.data('auto-suggested')) {
-                $domainInput.val(suggested).data('auto-suggested', true);
-              }
+              $domainInput.val(suggested);
             }
             if ($statusDiv && $statusDiv.length) {
-              $statusDiv.html('<div style="padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px;"><span class="dashicons dashicons-info" style="vertical-align:-2px;"></span> No custom domain attached to bucket <code>' + escapeHtml(bucket) + '</code> yet. <strong>' + escapeHtml(suggested) + '</strong> is suggested. Click <strong>Attach &amp; Setup CNAME</strong> to link it.</div>').show();
+              $statusDiv.html('<div style="padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px;"><span class="dashicons dashicons-info" style="vertical-align:-2px;"></span> No custom domain attached to bucket <code>' + escapeHtml(bucket) + '</code> yet. <strong>' + escapeHtml(suggested) + '</strong> has been auto-filled. Click <strong>Attach &amp; Setup CNAME</strong> to link it.</div>').show();
             }
           } else {
             // API or authentication error
@@ -465,23 +462,27 @@
       );
     });
 
-    // Bucket Change: Auto-detect domain
-    $('#onboard_r2_bucket').on('change', function() {
+    // Bucket Change & Input: Auto-detect domain
+    $(document).on('change input', '#onboard_r2_bucket, #r2_bucket', function() {
+      const isR2Tab = $(this).attr('id') === 'r2_bucket';
       const val = $(this).val();
+      const $domainInput = isR2Tab ? $('#r2_custom_domain') : $('#onboard_r2_custom_domain');
+      const $statusDiv = isR2Tab ? $('#r2-cdn-detect-status') : $('#onboard-cdn-domain-status');
       if (val) {
-        detectBucketCustomDomain(val, $('#onboard_r2_custom_domain'), $('#onboard-cdn-domain-status'));
+        if (isR2Tab && $('#r2-active-bucket-label').length) {
+          $('#r2-active-bucket-label').text(val);
+        }
+        detectBucketCustomDomain(val, $domainInput, $statusDiv);
       }
     });
 
-    $('#r2_bucket').on('change', function() {
-      const val = $(this).val();
-      if (val) {
-        if ($('#r2-active-bucket-label').length) {
-          $('#r2-active-bucket-label').text(val);
-        }
-        detectBucketCustomDomain(val, $('#r2_custom_domain'), $('#r2-cdn-detect-status'));
-      }
-    });
+    // Auto-detect on page load if bucket is already populated
+    if ($('#onboard_r2_bucket').length && $('#onboard_r2_bucket').val()) {
+      detectBucketCustomDomain($('#onboard_r2_bucket').val(), $('#onboard_r2_custom_domain'), $('#onboard-cdn-domain-status'));
+    }
+    if ($('#r2_bucket').length && $('#r2_bucket').val()) {
+      detectBucketCustomDomain($('#r2_bucket').val(), $('#r2_custom_domain'), $('#r2-cdn-detect-status'));
+    }
 
     // Create Bucket Toggle (Onboarding & R2 Tab)
     $(document).on('click', '#onboard-btn-show-create-bucket, #r2-btn-show-create-bucket', function(e) {
