@@ -214,11 +214,23 @@ foreach ($checks as $c) {
                     <?php foreach ($cached_projects as $cp): ?>
                         <?php 
                         $p_name = is_array($cp) ? ($cp['name'] ?? '') : $cp;
+                        $p_primary = is_array($cp) ? ($cp['primary_domain'] ?? '') : '';
                         $p_domains = is_array($cp) ? implode(',', ($cp['domains'] ?? array())) : '';
-                        $p_first_domain = !empty($p_domains) ? explode(',', $p_domains)[0] : '';
+                        if (empty($p_primary) && !empty($p_domains)) {
+                            $raw_d = array_map('trim', explode(',', $p_domains));
+                            foreach ($raw_d as $rd) {
+                                if (strpos($rd, '.pages.dev') === false) {
+                                    $p_primary = $rd;
+                                    break;
+                                }
+                            }
+                            if (empty($p_primary) && !empty($raw_d[0])) {
+                                $p_primary = $raw_d[0];
+                            }
+                        }
                         ?>
-                        <option value="<?php echo esc_attr($p_name); ?>" data-domains="<?php echo esc_attr($p_domains); ?>" <?php selected($pages_project, $p_name); ?>>
-                            <?php echo esc_html($p_name); ?><?php echo !empty($p_first_domain) ? ' (' . esc_html($p_first_domain) . ')' : ''; ?>
+                        <option value="<?php echo esc_attr($p_name); ?>" data-domains="<?php echo esc_attr($p_domains); ?>" data-primary="<?php echo esc_attr($p_primary); ?>" <?php selected($pages_project, $p_name); ?>>
+                            <?php echo esc_html($p_name); ?><?php echo !empty($p_primary) ? ' (' . esc_html($p_primary) . ')' : ''; ?>
                         </option>
                     <?php endforeach; ?>
                     <option value="__custom__" <?php selected($pages_project === '__custom__'); ?>><?php esc_html_e('+ Specify Custom Project Name', 'astropress'); ?></option>

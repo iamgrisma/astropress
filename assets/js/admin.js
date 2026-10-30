@@ -1834,11 +1834,15 @@
               $pSelect.find('option:not([value="__custom__"]):not([value=""])').remove();
               d.pages_projects.forEach(function(p) {
                 const domStr = (p.domains || []).join(',');
-                const firstDom = (p.domains && p.domains.length) ? ' (' + p.domains[0] + ')' : '';
-                $pSelect.append('<option value="' + escapeHtml(p.name) + '" data-domains="' + escapeHtml(domStr) + '">' + escapeHtml(p.name) + firstDom + '</option>');
+                const primary = p.primary_domain || (p.domains && p.domains.length ? p.domains[0] : '');
+                const label = p.name + (primary ? ' (' + primary + ')' : '');
+                $pSelect.append('<option value="' + escapeHtml(p.name) + '" data-domains="' + escapeHtml(domStr) + '" data-primary="' + escapeHtml(primary) + '">' + escapeHtml(label) + '</option>');
               });
-              if (!$pSelect.val()) {
+              const curVal = $pSelect.val();
+              if (!curVal || curVal === '__custom__') {
                 $pSelect.val(d.pages_projects[0].name).trigger('change');
+              } else {
+                $pSelect.trigger('change');
               }
             }
 
@@ -1898,26 +1902,26 @@
       }
     });
 
-    // Pages Project dropdown change: Auto-detect custom domain
+    // Pages Project dropdown change: Auto-detect custom domain (custom domain if exists, otherwise .pages.dev)
     $(document).on('change', '#onboard_cf_pages_project', function() {
       const val = $(this).val();
       if (val === '__custom__') {
         $('#onboard-pages-custom-wrap').slideDown(150);
       } else {
         $('#onboard-pages-custom-wrap').slideUp(150);
-        const domStr = $(this).find(':selected').data('domains');
-        if (domStr) {
-          const doms = domStr.split(',');
-          if (doms.length && doms[0]) {
-            let primaryDom = doms[0].trim();
-            if (primaryDom && !primaryDom.startsWith('http')) {
-              primaryDom = 'https://' + primaryDom;
-            }
-            const currentFe = ($('#onboard_frontend_url').val() || '').trim();
-            if (!currentFe || currentFe === window.location.origin) {
-              $('#onboard_frontend_url').val(primaryDom);
-            }
+        const $opt = $(this).find('option:selected');
+        let targetDom = $opt.data('primary') || '';
+        if (!targetDom) {
+          const domStr = $opt.data('domains') || '';
+          if (domStr) {
+            const doms = domStr.split(',').map(function(d) { return d.trim(); }).filter(Boolean);
+            const customDom = doms.find(function(d) { return !d.endsWith('.pages.dev'); });
+            targetDom = customDom || doms.find(function(d) { return d.endsWith('.pages.dev'); }) || doms[0] || '';
           }
+        }
+        if (targetDom) {
+          let primaryUrl = targetDom.startsWith('http') ? targetDom : ('https://' + targetDom);
+          $('#onboard_frontend_url').val(primaryUrl);
         }
         autoMatchR2Bucket(val, $('#onboard_frontend_url').val());
       }

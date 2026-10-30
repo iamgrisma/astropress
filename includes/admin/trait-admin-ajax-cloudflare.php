@@ -207,17 +207,44 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 $p_body = json_decode(wp_remote_retrieve_body($p_res), true);
                 if (!empty($p_body['result']) && is_array($p_body['result'])) {
                     foreach ($p_body['result'] as $p) {
-                        $p_domains = array();
+                        $p_subdomain = sanitize_text_field($p['subdomain'] ?? '');
+                        $custom_domains = array();
+
                         if (!empty($p['domains']) && is_array($p['domains'])) {
-                            $p_domains = array_map('sanitize_text_field', $p['domains']);
+                            foreach ($p['domains'] as $d) {
+                                $clean_d = sanitize_text_field($d);
+                                if (!empty($clean_d)) {
+                                    if (strpos($clean_d, '.pages.dev') !== false) {
+                                        if (empty($p_subdomain)) {
+                                            $p_subdomain = $clean_d;
+                                        }
+                                    } else {
+                                        $custom_domains[] = $clean_d;
+                                    }
+                                }
+                            }
                         }
-                        if (!empty($p['subdomain']) && !in_array($p['subdomain'], $p_domains, true)) {
-                            $p_domains[] = sanitize_text_field($p['subdomain']);
-                        }
+
+                        // Prefer root/non-www domain first among custom domains
+                        usort($custom_domains, function($a, $b) {
+                            $is_a_www = (strpos($a, 'www.') === 0);
+                            $is_b_www = (strpos($b, 'www.') === 0);
+                            if ($is_a_www !== $is_b_www) {
+                                return $is_a_www ? 1 : -1;
+                            }
+                            return strlen($a) <=> strlen($b);
+                        });
+
+                        // Prioritize custom domain if exists, otherwise fallback to .pages.dev
+                        $primary_domain = !empty($custom_domains) ? $custom_domains[0] : $p_subdomain;
+                        $all_domains = array_merge($custom_domains, !empty($p_subdomain) ? array($p_subdomain) : array());
+
                         $pages_projects[] = array(
-                            'name'      => sanitize_text_field($p['name'] ?? ''),
-                            'subdomain' => sanitize_text_field($p['subdomain'] ?? ''),
-                            'domains'   => $p_domains,
+                            'name'           => sanitize_text_field($p['name'] ?? ''),
+                            'subdomain'      => $p_subdomain,
+                            'custom_domain'  => !empty($custom_domains) ? $custom_domains[0] : '',
+                            'primary_domain' => $primary_domain,
+                            'domains'        => $all_domains,
                         );
                     }
                 }
@@ -265,14 +292,20 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
         $essential_pass = $can_zone_read;
 
+        $primary_fe = '';
+        if (!empty($pages_projects[0]['primary_domain'])) {
+            $primary_fe = 'https://' . preg_replace('#^https?://#i', '', $pages_projects[0]['primary_domain']);
+        }
+
         wp_send_json_success(array(
-            'valid'          => true,
-            'essential_pass' => $essential_pass,
-            'account_id'     => $account_id,
-            'account_name'   => $matched_account['name'] ?? '',
-            'zone_id'        => $zone_id,
-            'zone_name'      => $matched_zone['name'] ?? '',
-            'permissions'    => array(
+            'valid'                => true,
+            'essential_pass'       => $essential_pass,
+            'account_id'           => $account_id,
+            'account_name'         => $matched_account['name'] ?? '',
+            'zone_id'              => $zone_id,
+            'zone_name'            => $matched_zone['name'] ?? '',
+            'primary_frontend_url' => $primary_fe,
+            'permissions'          => array(
                 'zone_read_purge' => $can_zone_read,
                 'pages'           => $can_pages,
                 'r2'              => $can_r2,
@@ -554,6 +587,66 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         wp_send_json_success(array(
             'message' => esc_html__('All AstroPress settings saved successfully! Your configuration is persisted.', 'astropress'),
         ));
+    }
+
+    /**
+     * Resolve Cloudflare Zone ID from options, discovery cache, or Cloudflare API
+     *
+     * @param string $token Optional Cloudflare API Token
+     * @return string Zone ID or empty string
+     */
+    public function resolve_zone_id($token = '') {
+        $zone_id = $this->core->get_cf_zone_id();
+        if (!empty($zone_id)) {
+            return $zone_id;
+        }
+
+        $discovery = get_transient('astropress_cf_discovery_cache');
+        if (!empty($discovery['zone_id'])) {
+            return sanitize_text_field($discovery['zone_id']);
+        }
+
+        if (empty($token) || strpos($token, '••••') !== false) {
+            $token = $this->core->get_cf_api_token();
+        }
+
+        if (empty($token)) {
+            return '';
+        }
+
+        $res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?per_page=10', array(
+            'timeout' => 8,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+            ),
+        ));
+
+        if (!is_wp_error($res) && wp_remote_retrieve_response_code($res) === 200) {
+            $body = json_decode(wp_remote_retrieve_body($res), true);
+            if (!empty($body['result']) && is_array($body['result'])) {
+                $wp_host = wp_parse_url(home_url(), PHP_URL_HOST) ?: '';
+                $fe_url  = $this->core->get_frontend_url();
+                $fe_host = wp_parse_url($fe_url, PHP_URL_HOST) ?: $wp_host;
+                $search  = strtolower($fe_host ?: $wp_host);
+
+                foreach ($body['result'] as $z) {
+                    $z_name = strtolower($z['name'] ?? '');
+                    if ($z_name && ($search === $z_name || (strlen($search) > strlen($z_name) && substr($search, -strlen('.' . $z_name)) === '.' . $z_name))) {
+                        $found_id = sanitize_text_field($z['id']);
+                        update_option(AstroPress::OPTION_CF_ZONE_ID, $found_id);
+                        return $found_id;
+                    }
+                }
+                if (!empty($body['result'][0]['id'])) {
+                    $first_id = sanitize_text_field($body['result'][0]['id']);
+                    update_option(AstroPress::OPTION_CF_ZONE_ID, $first_id);
+                    return $first_id;
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
