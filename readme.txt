@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.3.0
+Stable tag: 2.3.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.3.6 =
+* Term Redirection Exact Matching: Replaced loose SQL wildcard searches on Rank Math redirection table with exact deserialized pattern matching, preventing active category archives from being hijacked by post redirections.
+* Full Hierarchical Page URIs: Implemented `get_page_uri($post)` resolution for page post types across frontend permalink filters, preview links, cache purges, and automated cache warmer.
+* Rank Math Frontend Domain Bridge: Added `rest_pre_dispatch` hook to transparently map Astro frontend URLs to WordPress origin URLs in `/wp-json/rankmath/v1/getHead`, eliminating HTTP 400 "Invalid parameter(s): url" errors.
+* Dynamic Updates & GitHub Rollback Hardening: Refined update checks and rollback transient injection for seamless 1-click upgrades directly within WP-Admin.
 
 = 2.3.0 =
 * 3-Stage Progressive Setup Pipeline: Re-architected setup into 3 distinct, progressive stages (Connection & Hosting Target, Revalidation & Deploy Hook, Media & Storage) with separate save buttons for each stage plus a global Save All action.
