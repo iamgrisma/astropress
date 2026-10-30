@@ -1321,15 +1321,27 @@ class AstroPress_SEO {
         if (!empty($wpdb) && !empty($wpdb->prefix)) {
             $table_name = $wpdb->prefix . 'rank_math_redirections';
             if (empty($redirect_to) && $target_post && $wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name) {
-                $slug = $target_post->post_name;
+                $slug = ($target_post->post_type === 'page') ? get_page_uri($target_post->ID) : $target_post->post_name;
                 if ($slug) {
-                    $row = $wpdb->get_row($wpdb->prepare(
-                        "SELECT url_to, header_code FROM {$table_name} WHERE status = 'active' AND sources LIKE %s ORDER BY id DESC LIMIT 1",
-                        '%' . $wpdb->esc_like($slug) . '%'
+                    $rows = $wpdb->get_results($wpdb->prepare(
+                        "SELECT sources, url_to, header_code FROM {$table_name} WHERE status = 'active' AND sources LIKE %s ORDER BY id DESC LIMIT 10",
+                        '%' . $wpdb->esc_like($target_post->post_name) . '%'
                     ), ARRAY_A);
-                    if ($row && !empty($row['url_to'])) {
-                        $redirect_to = $row['url_to'];
-                        $redirect_code = $row['header_code'] ?: '301';
+                    if (!empty($rows)) {
+                        foreach ($rows as $row) {
+                            $sources = maybe_unserialize($row['sources']);
+                            if (is_array($sources)) {
+                                foreach ($sources as $source_item) {
+                                    $pattern = trim(isset($source_item['pattern']) ? $source_item['pattern'] : '', '/');
+                                    $comparison = isset($source_item['comparison']) ? $source_item['comparison'] : 'exact';
+                                    if ($comparison === 'exact' && strcasecmp($pattern, $slug) === 0) {
+                                        $redirect_to = $row['url_to'];
+                                        $redirect_code = $row['header_code'] ?: '301';
+                                        break 2;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

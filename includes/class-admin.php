@@ -456,7 +456,8 @@ class AstroPress_Admin {
                 delete_post_meta($post_id, '_astropress_yoast_head');
                 delete_post_meta($post_id, '_astropress_seopress_head');
                 delete_post_meta($post_id, '_astropress_aioseo_head');
-                $this->core->cache->dispatch_revalidation($post->post_name, $post->post_type, 'update');
+                $slug = $this->core->cache->get_post_slug($post);
+                $this->core->cache->dispatch_revalidation($slug, $post->post_type, 'update');
             }
             wp_safe_redirect(add_query_arg('astropress_msg', 'purged_single', wp_get_referer() ?: admin_url()));
             exit;

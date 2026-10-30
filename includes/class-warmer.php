@@ -225,7 +225,7 @@ class AstroPress_Warmer {
                 global $wpdb;
                 $pages = $wpdb->get_results("SELECT ID, post_name, post_title FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' ORDER BY ID DESC LIMIT 50");
                 foreach ($pages as $p) {
-                    $items[] = array('url' => '/' . ltrim($p->post_name, '/'), 'title' => $p->post_title ?: $p->post_name, 'type' => 'Page');
+                    $items[] = array('url' => $this->get_post_path($p), 'title' => $p->post_title ?: $p->post_name, 'type' => 'Page');
                 }
             }
             if ($sitemap_type === 'sitemap_categories' || $sitemap_type === 'sitemap_crawler') {

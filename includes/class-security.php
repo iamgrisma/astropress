@@ -132,7 +132,17 @@ class AstroPress_Security {
         if (empty($frontend_url)) {
             return $permalink;
         }
-        return rtrim($frontend_url, '/') . '/' . ltrim($post->post_name, '/');
+        $path = '';
+        if ($post->post_type === 'page') {
+            $uri = get_page_uri($post);
+            $path = !empty($uri) ? $uri : $post->post_name;
+        } else {
+            $path = $post->post_name;
+        }
+        if (empty($path)) {
+            return $permalink;
+        }
+        return rtrim($frontend_url, '/') . '/' . ltrim($path, '/');
     }
 
     /**
@@ -154,7 +164,22 @@ class AstroPress_Security {
         if (empty($frontend_url)) {
             return $preview_link;
         }
-        return rtrim($frontend_url, '/') . '/' . ltrim($post->post_name, '/');
+        $path = '';
+        if ($post->post_type === 'page') {
+            $uri = get_page_uri($post);
+            $path = !empty($uri) ? $uri : $post->post_name;
+        } else {
+            $path = $post->post_name;
+        }
+        if (empty($path)) {
+            return $preview_link;
+        }
+        $query = parse_url($preview_link, PHP_URL_QUERY);
+        $url = rtrim($frontend_url, '/') . '/' . ltrim($path, '/');
+        if (!empty($query)) {
+            $url .= '?' . $query;
+        }
+        return $url;
     }
 
     /**
