@@ -1497,16 +1497,29 @@
     });
 
     // ========================================================
-    // 9. Cloudflare Deploy Hook Trigger
+    // 9. Cloudflare Deploy Hook Trigger (Concealed & Encrypted)
     // ========================================================
-    $('#astropress-trigger-deploy-now').on('click', function(e) {
+    $(document).on('click', '#astropress-trigger-deploy-now, #onboard-test-deploy-btn', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const $status = $('#astropress-deploy-status');
-      if (!confirm('Trigger Cloudflare Pages deploy hook now?')) return;
+      const isWizard = $btn.attr('id') === 'onboard-test-deploy-btn';
+      const $input = isWizard ? $('#onboard_cf_deploy_hook') : $('#astropress_cf_deploy_hook');
+      const $status = isWizard ? $('#onboard-deploy-status') : $('#astropress-deploy-status');
+      const $badge = isWizard ? $('#onboard-deploy-badge') : $('#astropress-deploy-badge');
+      const rawVal = $input.val()?.trim() || '';
+      const deployHookVal = (!rawVal.startsWith('•••')) ? rawVal : '';
 
-      $btn.prop('disabled', true).text('Triggering...');
-      $status.html('<span style="color:#64748b;">Sending POST to deploy hook...</span>');
+      if (!rawVal) {
+        $status.show().html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please paste your Cloudflare Pages Deploy Hook URL first.</div>');
+        $input.focus();
+        return;
+      }
+
+      if (!confirm('Trigger Cloudflare Pages build now via deploy hook?')) return;
+
+      const origHtml = $btn.html();
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Triggering...');
+      $status.show().html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Sending POST request to Cloudflare Pages deploy hook...</div>');
 
       $.ajax({
         url: ajaxurl,
@@ -1514,21 +1527,30 @@
         dataType: 'json',
         data: {
           action: 'astropress_trigger_deploy_hook',
-          deploy_hook: $('#astropress_cf_deploy_hook').val()?.trim() || '',
+          deploy_hook: deployHookVal,
           nonce: nonce,
         },
         success: function(res) {
           if (res.success) {
-            $status.html('<span style="color:#057a55;font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + res.data.message + '</span>');
+            $input.val('••••••••••••••••••••••••••••••••');
+            if ($badge.length) {
+              $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Deploy Hook Active (Encrypted)');
+            }
+            let successHtml = '<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Verified:</strong> ' + escapeHtml(res.data.message);
+            if (isWizard) {
+              successHtml += '<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; color:#166534;">Build is now compiling on Cloudflare Pages. Once finished (~30-60s), click <strong>Test Handshake</strong> above to verify your frontend!</div>';
+            }
+            successHtml += '</div>';
+            $status.html(successHtml);
           } else {
-            $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + (res.data?.message || 'Trigger failed') + '</span>');
+            $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> ' + escapeHtml(res.data?.message || 'Deploy hook trigger failed.') + '</div>');
           }
         },
         error: function(xhr, status, err) {
-          $status.html('<span style="color:#e02424;font-weight:600;"><span class="dashicons dashicons-dismiss" style="vertical-align:-2px;"></span> Network error: ' + err + '</span>');
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Network error: ' + escapeHtml(err) + '</div>');
         },
         complete: function() {
-          $btn.prop('disabled', false).text('Trigger Deploy');
+          $btn.prop('disabled', false).html(origHtml);
         }
       });
     });

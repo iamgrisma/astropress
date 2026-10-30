@@ -44,16 +44,19 @@ trait AstroPress_Admin_Ajax_Cloudflare {
     public function ajax_trigger_deploy_hook() {
         $this->verify_admin_ajax();
 
-        $hook_url = isset($_POST['deploy_hook']) ? esc_url_raw(trim(wp_unslash($_POST['deploy_hook']))) : '';
-        if (!empty($hook_url)) {
-            update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, $hook_url);
+        $hook_url = isset($_POST['deploy_hook']) ? trim(wp_unslash($_POST['deploy_hook'])) : '';
+        if (!empty($hook_url) && strpos($hook_url, '••••') === false) {
+            $clean_hook = esc_url_raw($hook_url);
+            if (!empty($clean_hook)) {
+                update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, AstroPress_Encryption::encrypt($clean_hook));
+            }
         }
 
         $success = $this->core->cache->trigger_deploy_hook('Manual Trigger from AstroPress Admin');
         if ($success) {
-            wp_send_json_success(array('message' => esc_html__('Cloudflare Pages deploy hook saved and triggered successfully.', 'astropress')));
+            wp_send_json_success(array('message' => esc_html__('Cloudflare Pages deploy hook validated and triggered successfully (Build queued on Cloudflare Pages).', 'astropress')));
         } else {
-            wp_send_json_error(array('message' => esc_html__('Deploy hook trigger failed. Verify your Deploy Hook URL.', 'astropress')));
+            wp_send_json_error(array('message' => esc_html__('Deploy hook trigger failed. Verify your Deploy Hook URL or network connection.', 'astropress')));
         }
     }
 

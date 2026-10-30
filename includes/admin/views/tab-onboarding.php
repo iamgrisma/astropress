@@ -206,11 +206,18 @@ if (!defined('ABSPATH')) {
                     </div>
 
                     <div class="wizard-field" style="margin-top:14px;">
-                        <label for="onboard_cf_deploy_hook"><strong><?php esc_html_e('Cloudflare Pages Deploy Hook (Optional)', 'astropress'); ?></strong></label>
+                        <label for="onboard_cf_deploy_hook"><strong><?php esc_html_e('Cloudflare Pages Deploy Hook (Optional & Encrypted):', 'astropress'); ?></strong></label>
                         <div class="wizard-input-row">
-                            <input type="url" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo esc_attr($this->core->get_cf_deploy_hook()); ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." />
+                            <input type="password" id="onboard_cf_deploy_hook" name="onboard_cf_deploy_hook" value="<?php echo $this->core->has_cf_deploy_hook() ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." autocomplete="new-password" style="flex:1; min-width:240px;" />
+                            <button type="button" class="button button-secondary" id="onboard-test-deploy-btn" title="<?php esc_attr_e('Trigger and validate deploy hook', 'astropress'); ?>">
+                                <span class="dashicons dashicons-cloud-upload"></span> <?php esc_html_e('Save & Test Deploy', 'astropress'); ?>
+                            </button>
+                            <span id="onboard-deploy-badge" class="astropress-badge" style="padding:4px 10px; font-size:12px;">
+                                <?php echo $this->core->has_cf_deploy_hook() ? esc_html__('Deploy Hook Active (Encrypted)', 'astropress') : esc_html__('No Deploy Hook', 'astropress'); ?>
+                            </span>
                         </div>
-                        <p class="field-help"><?php esc_html_e('Optional: Automatically triggers a static frontend rebuild in Cloudflare Pages when full edge cache purges occur.', 'astropress'); ?></p>
+                        <p class="field-help"><?php esc_html_e('Concealed & encrypted at rest. When syncing environment variables or executing a full cache purge, AstroPress automatically calls this hook to rebuild and activate changes with zero downtime.', 'astropress'); ?></p>
+                        <div id="onboard-deploy-status" style="margin-top:8px; display:none;"></div>
                     </div>
                 </section>
 

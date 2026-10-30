@@ -164,11 +164,16 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
                     <th scope="row"><label for="astropress_cf_deploy_hook"><?php esc_html_e('Cloudflare Pages Deploy Hook', 'astropress'); ?></label></th>
                     <td>
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
-                            <input type="url" id="astropress_cf_deploy_hook" name="cf_deploy_hook" value="<?php echo esc_attr($cf_deploy_hook); ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." style="flex:1; min-width:240px;" />
-                            <button type="button" class="button button-secondary" id="astropress-trigger-deploy-now"><?php esc_html_e('Save & Trigger Deploy', 'astropress'); ?></button>
+                            <input type="password" id="astropress_cf_deploy_hook" name="cf_deploy_hook" value="<?php echo $this->core->has_cf_deploy_hook() ? '••••••••••••••••••••••••••••••••' : ''; ?>" class="regular-text" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." autocomplete="new-password" style="flex:1; min-width:240px;" />
+                            <button type="button" class="button button-secondary" id="astropress-trigger-deploy-now">
+                                <span class="dashicons dashicons-cloud-upload"></span> <?php esc_html_e('Save & Test Deploy', 'astropress'); ?>
+                            </button>
+                            <span id="astropress-deploy-badge" style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
+                                <?php echo $this->core->has_cf_deploy_hook() ? esc_html__('Deploy Hook Active (Encrypted)', 'astropress') : esc_html__('No Deploy Hook', 'astropress'); ?>
+                            </span>
                         </div>
-                        <p class="description"><?php esc_html_e('Optional: Trigger a static site build in Cloudflare Pages when a full cache purge is requested.', 'astropress'); ?></p>
-                        <div id="astropress-deploy-status" style="margin-top:8px;"></div>
+                        <p class="description"><?php esc_html_e('Concealed & encrypted at rest. Triggers an automatic zero-downtime rebuild in Cloudflare Pages when syncing environment variables or executing a full cache purge.', 'astropress'); ?></p>
+                        <div id="astropress-deploy-status" style="margin-top:8px; display:none;"></div>
                     </td>
                 </tr>
             </table>

@@ -22,8 +22,8 @@ class AstroPress {
      */
     private static $instance = null;
 
-    const VERSION            = '2.1.4';
-    const ASTROPRESS_VERSION = '2.1.4';
+    const VERSION            = '2.1.5';
+    const ASTROPRESS_VERSION = '2.1.5';
 
     // Headless Bridge Option Keys
     const OPTION_SETUP_COMPLETED   = 'astropress_setup_completed';
@@ -444,7 +444,15 @@ class AstroPress {
     }
 
     public function get_cf_deploy_hook() {
-        return (string) get_option(self::OPTION_CF_DEPLOY_HOOK, '');
+        $val = get_option(self::OPTION_CF_DEPLOY_HOOK, '');
+        if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
+            $val = AstroPress_Encryption::decrypt($val);
+        }
+        return (string) $val;
+    }
+
+    public function has_cf_deploy_hook() {
+        return !empty($this->get_cf_deploy_hook());
     }
 
     public function should_debounce_webhooks() {

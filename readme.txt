@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.1.4
+Stable tag: 2.1.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,7 +35,10 @@ It seamlessly combines:
 
 == Changelog ==
 
-= 2.1.4 =
+= 2.1.5 =
+* Concealed & Encrypted Deploy Hook: Protected Cloudflare Pages deploy hook credentials with AES-256 encryption at rest and bullet masking (`••••••••••••••••••••••••••••••••`) across Setup Wizard and Cloudflare settings.
+* Streamlined Setup Wizard Step 2 Verification Flow: Integrated "Save & Test Deploy" action right inside the wizard to trigger and validate build hooks before frontend handshake testing.
+* Auto-Deployment on 1-Click Environment Sync: Automatically invokes the encrypted deploy hook after pushing `REVALIDATE_SECRET`, `WP_API_URL`, and `CDN_MEDIA_URL` to Cloudflare Pages, triggering an instant zero-downtime rebuild so environment variables activate immediately without manual Cloudflare dashboard intervention.
 * 1-Click Zero-Touch Cloudflare Pages Environment Sync: Integrated direct 1-click synchronization (`astropress_sync_pages_env`) in both Setup Wizard (Step 2) and Cloudflare Invalidation tab. Uses the Cloudflare API Token to automatically provision and sync `REVALIDATE_SECRET`, `WP_API_URL`, `API_URL`, and `CDN_MEDIA_URL` directly into Cloudflare Pages project deployment configs (Production & Preview), completely eliminating manual copy-pasting in the Cloudflare dashboard.
 * Automatic Revalidation Secret Generator: Added on-demand 32-character cryptographically secure secret generation in WordPress (`wp_generate_password(32, false)`), with instant field autofill and badge updates.
 * Cloudflare Pages Project Auto-Discovery: Cloudflare Quick Connect auto-populates the Pages Project datalist and autofills the project input with discovered Cloudflare Pages projects.
