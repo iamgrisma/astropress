@@ -852,7 +852,7 @@
               if (r.status >= 300 && r.status < 400) statusClass = 'astropress-log-status-redirect';
               else if (r.status >= 400 || !r.ok) statusClass = 'astropress-log-status-err';
 
-              var metaStr = 'HTTP ' + r.status + ' | ' + (r.cf_cache || 'MISS') + ' | ' + r.duration_ms + 'ms';
+              var metaStr = 'HTTP ' + r.status + ' | ' + (r.cf_cache || 'MISS') + ' | Latency: ' + r.duration_ms + 'ms';
               appendWarmLog(statusClass, r.url, metaStr);
             });
           }
@@ -1088,22 +1088,6 @@
     let syncPaused = false;
     let syncCancelled = false;
 
-    $('#r2g-sync-quality-slider').on('input', function() {
-      $('#r2g-sync-quality-val').text($(this).val() + '%');
-    });
-
-    $('#r2g-sync-engine').on('change', function() {
-      const eng = $(this).val();
-      const $notice = $('#r2g-sync-notice-text');
-      if (eng === 'resmush') {
-        $notice.text('reSmush.it Engine: Compresses via free reSmush API (auto-fallback to PHP GD/Imagick if >5MB or offline).');
-      } else if (eng === 'none') {
-        $notice.text('Lossless Engine: Pushes binary files directly to R2 without alteration.');
-      } else {
-        $notice.text('Server Engine: Media items are processed and pushed to R2 by PHP in safe batches of 5.');
-      }
-    });
-
     // Bulk Sync Execution
     $('#r2g-btn-start-sync, #astropress-start-sync').on('click', function(e) {
       e.preventDefault();
@@ -1120,10 +1104,6 @@
       const $progFill = $('#r2g-sync-progress-fill');
       const $progText = $('#r2g-sync-status-text');
       const $progPct = $('#r2g-sync-percentage');
-
-      const syncPreset = $('#r2g-sync-preset').val() || 'keep_current';
-      const syncQuality = parseInt($('#r2g-sync-quality-slider').val(), 10) || 82;
-      const syncEngine = $('#r2g-sync-engine').val() || 'server';
 
       $startBtn.hide();
       $pauseBtn.show().text('Pause');
@@ -1142,10 +1122,7 @@
           data: {
             action: 'astropress_bulk_sync_batch',
             batch_size: 5,
-            format: 'keep',
-            preset: syncPreset,
-            quality: syncQuality,
-            engine: syncEngine,
+            format: 'keep_current',
             exclude_ids: failedIds,
             nonce: nonce,
           },
@@ -1499,13 +1476,12 @@
     // ========================================================
     // 9. Cloudflare Deploy Hook Trigger (Concealed & Encrypted)
     // ========================================================
-    $(document).on('click', '#astropress-trigger-deploy-now, #onboard-test-deploy-btn', function(e) {
+    $(document).on('click', '#astropress-trigger-deploy-now', function(e) {
       e.preventDefault();
       const $btn = $(this);
-      const isWizard = $btn.attr('id') === 'onboard-test-deploy-btn';
-      const $input = isWizard ? $('#onboard_cf_deploy_hook') : $('#astropress_cf_deploy_hook');
-      const $status = isWizard ? $('#onboard-deploy-status') : $('#astropress-deploy-status');
-      const $badge = isWizard ? $('#onboard-deploy-badge') : $('#astropress-deploy-badge');
+      const $input = $('#astropress_cf_deploy_hook');
+      const $status = $('#astropress-deploy-status');
+      const $badge = $('#astropress-deploy-badge');
       const rawVal = $input.val()?.trim() || '';
       const deployHookVal = (!rawVal.startsWith('•••')) ? rawVal : '';
 
@@ -2285,6 +2261,169 @@
       });
     });
 
+    // 11b. Media & Storage Tab: CDN Rules Audit
+    $(document).on('click', '#r2-audit-cdn-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const cdnDomain = $('input[name="r2_custom_domain"]').val() || $('#r2-active-domain-label').text().trim();
+      const bucket = $('input[name="r2_bucket"]').val() || $('#r2-active-bucket-label').text().trim();
+      const accountId = $('#r2_account_id').val() || '';
+      const $box = $('#r2-cdn-audit-box');
+
+      if (!cdnDomain || cdnDomain === 'Origin Uploads' || cdnDomain === 'None') {
+        alert('Please configure an active R2 Custom CDN Domain in Setup Wizard first.');
+        return;
+      }
+
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Auditing...');
+      $box.show().html('<div class="astropress-cdn-audit-loading"><span class="dashicons dashicons-update spin"></span> Auditing DNS records, R2 bucket domain attachment & Edge cache rules for ' + escapeHtml(cdnDomain) + '...</div>');
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_audit_cdn_domain',
+          custom_domain: cdnDomain,
+          bucket_name: bucket,
+          account_id: accountId,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            const d = res.data;
+            let html = '<div class="astropress-cdn-audit-wrap" style="padding:16px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; margin-top:10px;">';
+            html += '<div style="font-weight:700; font-size:13px; color:#1e293b; margin-bottom:10px;">CDN Domain Audit Report for <code>' + escapeHtml(d.host) + '</code>:</div>';
+            html += '<div class="astropress-cdn-audit-grid" style="display:flex; flex-direction:column; gap:8px;">';
+
+            // DNS Status
+            html += '<div class="astropress-cdn-audit-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#f8fafc; border-radius:6px;">';
+            html += '<div><strong>DNS Routing:</strong> ' + (d.dns_found ? (d.dns_proxied ? 'Proxied via Cloudflare Edge (Orange Cloud)' : 'DNS Found (Unproxied)') : 'No DNS Record Found') + '</div>';
+            html += '<span class="astropress-badge" style="' + (d.dns_proxied ? 'background:#ecfdf5;color:#065f46;' : 'background:#fffbeb;color:#b45309;') + '">' + (d.dns_proxied ? 'Optimal' : (d.dns_found ? 'DNS OK' : 'Pending')) + '</span>';
+            html += '</div>';
+
+            // R2 Custom Domain Attachment
+            html += '<div class="astropress-cdn-audit-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#f8fafc; border-radius:6px;">';
+            html += '<div><strong>R2 Bucket Attachment:</strong> ' + (d.r2_attached ? 'Domain Attached to Bucket (' + escapeHtml(d.r2_status) + ')' : 'Domain Not Attached to R2 Bucket') + '</div>';
+            if (d.r2_attached) {
+              html += '<span class="astropress-badge" style="background:#ecfdf5;color:#065f46;">Attached</span>';
+            } else {
+              html += '<button type="button" class="button button-primary button-small" id="r2-tab-attach-domain-btn" data-host="' + escapeHtml(d.host) + '" data-bucket="' + escapeHtml(bucket) + '">Attach Domain to R2 (1-Click)</button>';
+            }
+            html += '</div>';
+
+            // Cache Rule Status
+            html += '<div class="astropress-cdn-audit-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#f8fafc; border-radius:6px;">';
+            html += '<div><strong>Edge Cache Rule:</strong> ' + escapeHtml(d.rule_desc || 'No cache rule') + '</div>';
+            if (d.rule_status === 'optimal') {
+              html += '<span class="astropress-badge" style="background:#ecfdf5;color:#065f46;">1-Year Cache Everything Active</span>';
+            } else {
+              html += '<button type="button" class="button button-secondary button-small astropress-deploy-rule-preset" data-preset="r2_cdn">Deploy / Upgrade Cache Rule</button>';
+            }
+            html += '</div>';
+
+            html += '</div></div>';
+            $box.html(html);
+          } else {
+            $box.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; margin-top:8px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' + escapeHtml(res.data?.message || 'Audit failed.') + '</div>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $box.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px; margin-top:8px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Request error: ' + escapeHtml(err) + '</div>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-admin-tools" style="vertical-align:-2px;"></span> Audit Rules');
+        }
+      });
+    });
+
+    // 11c. Media & Storage Tab: Attach Custom Domain
+    $(document).on('click', '#r2-tab-attach-domain-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const host = $btn.data('host');
+      const bucket = $btn.data('bucket');
+      const accountId = $('#r2_account_id').val() || '';
+
+      $btn.prop('disabled', true).text('Attaching...');
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_attach_r2_custom_domain',
+          custom_domain: host,
+          bucket_name: bucket,
+          account_id: accountId,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            alert(res.data.message || 'Domain attached successfully!');
+            $('#r2-audit-cdn-btn').trigger('click');
+          } else {
+            alert(res.data?.message || 'Attachment failed.');
+            $btn.prop('disabled', false).text('Attach Domain to R2 (1-Click)');
+          }
+        },
+        error: function(xhr, status, err) {
+          alert('Request error: ' + err);
+          $btn.prop('disabled', false).text('Attach Domain to R2 (1-Click)');
+        }
+      });
+    });
+
+    // 11d. Media & Storage Tab: Purge CDN Cache
+    $(document).on('click', '#r2-purge-cdn-btn', function(e) {
+      e.preventDefault();
+      const confirmed = window.confirm(
+        "CRITICAL CACHE PURGE WARNING:\n\n" +
+        "Are you sure you want to purge all cached media assets from Cloudflare Edge POP servers?\n\n" +
+        "- All cached images on your CDN domain will be re-fetched from R2 on their next request.\n" +
+        "Do you wish to proceed?"
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      const $btn = $(this);
+      const $status = $('#astropress-r2-status');
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Purging...');
+      $status.html('<div style="color:#0284c7; padding:6px 0;"><span class="dashicons dashicons-update spin"></span> Purging Cloudflare Edge cache for R2 CDN domain...</div>').show();
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_purge_cf_zone',
+          purge_everything: 1,
+          nonce: nonce,
+        },
+        success: function(res) {
+          if (res.success) {
+            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> ' + escapeHtml(res.data?.message || 'CDN Edge cache purged successfully!') + '</div>');
+          } else {
+            $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> ' + escapeHtml(res.data?.message || 'Purge failed.') + '</div>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Request error: ' + escapeHtml(err) + '</div>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html('<span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> Purge CDN Cache');
+        }
+      });
+    });
+
+    // 11e. Admin Bar Quick Action Purge Confirmation
+    $(document).on('click', '#wp-admin-bar-astropress-purge-all a', function(e) {
+      if (!window.confirm("CRITICAL CACHE PURGE WARNING:\n\nAre you sure you want to purge the ENTIRE edge cache across all Cloudflare edge locations?")) {
+        e.preventDefault();
+        return false;
+      }
+    });
+
     // ========================================================
     // ASTROPRESS v2.2 UNIFIED 2-STAGE SETUP PIPELINE
     // ========================================================
@@ -2438,6 +2577,8 @@
         data: {
           action: 'astropress_detect_r2_custom_domain',
           bucket_name: val,
+          account_id: $('#onboard_r2_account_id').val() || '',
+          token: $('#onboard_cf_api_token').val() || '',
           nonce: nonce
         },
         success: function(res) {
@@ -2935,6 +3076,18 @@
       }
 
       const urls = raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      if (!urls.length) {
+        return;
+      }
+
+      const confirmed = window.confirm(
+        "CACHE PURGE CONFIRMATION:\n\n" +
+        "Are you sure you want to purge the following URL(s) from Cloudflare Edge POP cache?\n\n" +
+        urls.join("\n")
+      );
+      if (!confirmed) {
+        return;
+      }
       const origHtml = $btn.html();
       $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Purging...');
       $status.html('<div style="color:#0284c7; display:flex; align-items:center; gap:6px;"><span class="dashicons dashicons-update spin"></span> Purging path from Cloudflare Edge...</div>').show();

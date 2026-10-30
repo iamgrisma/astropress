@@ -363,6 +363,21 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $account_id    = $this->core->get_r2_account_id();
         $zone_id       = $this->core->get_cf_zone_id();
 
+        // Resolve account_id and zone_id from discovery cache if not yet stored in options
+        $cached_disc = get_transient('astropress_cf_discovery_cache');
+        if (empty($account_id) && !empty($cached_disc['account_id'])) {
+            $account_id = sanitize_text_field($cached_disc['account_id']);
+            update_option('astropress_r2_account_id', $account_id);
+            update_option('r2g_account_id', $account_id);
+        }
+        if (empty($zone_id) && !empty($cached_disc['zone_id'])) {
+            $zone_id = sanitize_text_field($cached_disc['zone_id']);
+            update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
+        }
+        if (empty($zone_id) && !empty($token)) {
+            $zone_id = $this->resolve_zone_id($token);
+        }
+
         if ($media_mode === 'wp') {
             update_option(AstroPress::OPTION_MEDIA_MODE, 'wp');
             update_option('astropress_r2_auto_upload', 0);

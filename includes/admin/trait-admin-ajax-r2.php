@@ -326,6 +326,13 @@ trait AstroPress_Admin_Ajax_R2 {
         $account_id  = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
         $token       = trim(sanitize_text_field($_POST['token'] ?? ''));
 
+        if (empty($account_id)) {
+            $cached_disc = get_transient('astropress_cf_discovery_cache');
+            if (!empty($cached_disc['account_id'])) {
+                $account_id = sanitize_text_field($cached_disc['account_id']);
+            }
+        }
+
         if (empty($token) || strpos($token, '••••') !== false) {
             $token = $this->core->get_cf_api_token();
         }

@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,14 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.2.2 =
+* R2 Custom Domain 10040 Fix: Resolved Cloudflare API 10040 error when attaching custom domains to R2 buckets by resolving and supplying valid zoneId via discovery cache, targeted root domain search, and active zone iteration.
+* Deploy Hook Persistence Fix: Fixed bug where submitting forms without raw deploy hook or with masked bullets deleted the encrypted deploy hook.
+* Media & Storage Interactive Controls: Connected active event handlers for "Audit Rules", "Purge CDN Cache", and "Attach Domain to R2" in the Media & Storage tab.
+* Unified Media Optimization: Debloated redundant sync presets and quality sliders in the Bulk Sync view, consolidating on authoritative Image Optimizer settings.
+* Warmer Metrics Clarification: Differentiated Cloudflare edge response latency (e.g. 5ms TTFB) from inter-batch pacing delay in logs and console.
+* Cache Purge Safety: Added confirmation prompts for individual, entire-zone, CDN domain, and admin-bar cache evictions to prevent accidental purges.
 
 = 2.2.1 =
 * Cloudflare Pages Project Select Dropdown: Replaced manual project text input with a reactive `<select>` dropdown populated directly from Cloudflare Pages API. Selecting a project automatically syncs variables and pre-fills the canonical Frontend URL from the project's production domains.

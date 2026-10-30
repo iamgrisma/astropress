@@ -1541,6 +1541,33 @@ class AstroPress_Cache {
 
         // Auto-discover zone ID if not currently configured
         if (empty($zone_id)) {
+            $cached_disc = get_transient('astropress_cf_discovery_cache');
+            if (!empty($cached_disc['zone_id'])) {
+                $zone_id = sanitize_text_field($cached_disc['zone_id']);
+            }
+        }
+
+        if (empty($zone_id)) {
+            // Attempt targeted lookup by root zone
+            $host_parts = explode('.', $host);
+            if (count($host_parts) >= 2) {
+                $root_zone_search = implode('.', array_slice($host_parts, -2));
+                $direct_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?name=' . rawurlencode($root_zone_search), array(
+                    'timeout' => 8,
+                    'headers' => array('Authorization' => 'Bearer ' . $token),
+                ));
+                if (!is_wp_error($direct_res) && wp_remote_retrieve_response_code($direct_res) === 200) {
+                    $db = json_decode(wp_remote_retrieve_body($direct_res), true);
+                    if (!empty($db['result'][0]['id'])) {
+                        $zone_id   = sanitize_text_field($db['result'][0]['id']);
+                        $zone_name = sanitize_text_field($db['result'][0]['name'] ?? '');
+                        update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
+                    }
+                }
+            }
+        }
+
+        if (empty($zone_id)) {
             $zones_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?status=active&per_page=50', array(
                 'timeout' => 8,
                 'headers' => array('Authorization' => 'Bearer ' . $token),
@@ -1549,7 +1576,7 @@ class AstroPress_Cache {
                 $zb = json_decode(wp_remote_retrieve_body($zones_res), true);
                 if (!empty($zb['result']) && is_array($zb['result'])) {
                     foreach ($zb['result'] as $z) {
-                        if (!empty($z['name']) && (strpos($host, $z['name']) !== false || $host === $z['name'])) {
+                        if (!empty($z['name']) && (str_ends_with(strtolower($host), strtolower($z['name'])) || strtolower($host) === strtolower($z['name']))) {
                             $zone_id   = sanitize_text_field($z['id']);
                             $zone_name = sanitize_text_field($z['name']);
                             update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
@@ -1563,6 +1590,13 @@ class AstroPress_Cache {
                     }
                 }
             }
+        }
+
+        if (empty($zone_id)) {
+            return array(
+                'success' => false,
+                'message' => sprintf(esc_html__('Could not determine Cloudflare Zone ID for domain "%s". Cloudflare R2 requires an active Zone in the same account to attach custom domains.', 'astropress'), $host),
+            );
         }
 
         $endpoint = "https://api.cloudflare.com/client/v4/accounts/{$account_id}/r2/buckets/" . rawurlencode($bucket_name) . "/domains/custom";

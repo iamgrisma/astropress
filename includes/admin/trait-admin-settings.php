@@ -41,7 +41,7 @@ trait AstroPress_Admin_Settings {
                     if (!empty($clean_hook)) {
                         update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, AstroPress_Encryption::encrypt($clean_hook));
                     }
-                } elseif (empty($raw_hook)) {
+                } elseif (!empty($_POST['clear_cf_deploy_hook'])) {
                     delete_option(AstroPress::OPTION_CF_DEPLOY_HOOK);
                 }
             }
@@ -281,14 +281,14 @@ trait AstroPress_Admin_Settings {
             }
 
             // Cloudflare Pages Deploy Hook & Project (if specified in onboarding)
-            $raw_hook = trim(wp_unslash($_POST['onboard_cf_deploy_hook'] ?? ''));
-            if (!empty($raw_hook) && strpos($raw_hook, '••••') === false) {
-                $clean_hook = esc_url_raw($raw_hook);
-                if (!empty($clean_hook)) {
-                    update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, AstroPress_Encryption::encrypt($clean_hook));
+            if (isset($_POST['onboard_cf_deploy_hook'])) {
+                $raw_hook = trim(wp_unslash($_POST['onboard_cf_deploy_hook']));
+                if (!empty($raw_hook) && strpos($raw_hook, '••••') === false) {
+                    $clean_hook = esc_url_raw($raw_hook);
+                    if (!empty($clean_hook)) {
+                        update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, AstroPress_Encryption::encrypt($clean_hook));
+                    }
                 }
-            } elseif (empty($raw_hook)) {
-                delete_option(AstroPress::OPTION_CF_DEPLOY_HOOK);
             }
             $pages_project = sanitize_text_field(trim(wp_unslash($_POST['onboard_cf_pages_project'] ?? '')));
             if (!empty($pages_project)) {

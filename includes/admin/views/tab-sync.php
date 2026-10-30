@@ -61,44 +61,20 @@ if (!defined('ABSPATH')) {
                 <h2><?php esc_html_e('Bulk Media Sync Engine', 'astropress'); ?></h2>
                 <p class="description"><?php esc_html_e('Push all unsynced media attachments to Cloudflare R2 in safe, progressive batches without server timeouts.', 'astropress'); ?></p>
 
-                <!-- Batch Wildcard Configuration -->
-                <div class="r2g-bulk-config-box" style="margin-bottom:18px; padding:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">
-                    <h3 style="margin-top:0; font-size:13px; font-weight:700; color:#0f172a; margin-bottom:10px;"><?php esc_html_e('Batch Conversion & Sync Options', 'astropress'); ?></h3>
-                    <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center;">
-                        <div>
-                            <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px;"><?php esc_html_e('Sync Preset:', 'astropress'); ?></label>
-                            <select id="r2g-sync-preset" class="r2g-input" style="height:32px; font-size:12px; font-weight:600;">
-                                <option value="keep_current"><?php esc_html_e('Keep Existing Files (Recommended)', 'astropress'); ?></option>
-                                <option value="custom"><?php esc_html_e('Use Current Upload Defaults', 'astropress'); ?></option>
-                                <option value="webp_balanced" selected><?php esc_html_e('WebP Balanced (82%, 1920px)', 'astropress'); ?></option>
-                                <option value="webp_high"><?php esc_html_e('WebP High Quality (90%, 2560px)', 'astropress'); ?></option>
-                                <option value="jpeg_balanced"><?php esc_html_e('JPEG Balanced (82%, 1920px)', 'astropress'); ?></option>
-                                <option value="jpeg_high"><?php esc_html_e('JPEG High Quality (90%, 2560px)', 'astropress'); ?></option>
-                                <option value="raw_lossless"><?php esc_html_e('Raw Offload (No Processing)', 'astropress'); ?></option>
-                            </select>
-                        </div>
-                        <div id="r2g-sync-quality-wrap">
-                            <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px;"><?php esc_html_e('Active Image Quality:', 'astropress'); ?></label>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span id="r2g-sync-quality-val" class="r2g-quality-badge" style="font-weight:700; font-size:13px;"><?php echo esc_html($quality); ?>%</span>
-                                <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2&sub=optimizer')); ?>" class="button button-small" style="font-size:11px;">
-                                    <?php esc_html_e('Adjust in Optimizer &rarr;', 'astropress'); ?>
-                                </a>
-                                <input type="hidden" id="r2g-sync-quality-slider" value="<?php echo esc_attr($quality); ?>" />
-                            </div>
-                        </div>
-                        <div>
-                            <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px;"><?php esc_html_e('Processing Engine:', 'astropress'); ?></label>
-                            <select id="r2g-sync-engine" class="r2g-input" style="height:32px; font-size:12px; font-weight:600;">
-                                <option value="resmush" <?php selected($engine, 'resmush'); ?>><?php esc_html_e('reSmush.it Free API (Auto GD/Imagick fallback)', 'astropress'); ?></option>
-                                <option value="server" <?php selected($engine, 'server'); ?>><?php esc_html_e('Server: PHP GD / Imagick (Native Background)', 'astropress'); ?></option>
-                                <option value="none" <?php selected($engine, 'none'); ?>><?php esc_html_e('Raw Offload (Lossless)', 'astropress'); ?></option>
-                            </select>
-                        </div>
+                <!-- Unified Optimization Policy Summary -->
+                <div class="r2g-bulk-config-box" style="margin-bottom:18px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                    <div>
+                        <h3 style="margin:0 0 4px 0; font-size:13px; font-weight:700; color:#0f172a;"><?php esc_html_e('Global Optimization Policy Active', 'astropress'); ?></h3>
+                        <p style="margin:0; font-size:12px; color:#475569;">
+                            <strong><?php esc_html_e('Target Format:', 'astropress'); ?></strong> <code><?php echo esc_html(strtoupper(AstroPress_Optimizer::get_format())); ?></code> &bull; 
+                            <strong><?php esc_html_e('Quality:', 'astropress'); ?></strong> <code><?php echo esc_html($quality); ?>%</code> &bull; 
+                            <strong><?php esc_html_e('Engine:', 'astropress'); ?></strong> <code><?php echo esc_html($engine); ?></code> &bull; 
+                            <strong><?php esc_html_e('Batch Size:', 'astropress'); ?></strong> <code>5</code>
+                        </p>
                     </div>
-                    <div id="r2g-sync-engine-notice" style="margin-top:12px; font-size:12px; color:#64748b; line-height:1.4;">
-                        <span id="r2g-sync-notice-text"><?php esc_html_e('Server Engine: Media items are processed and pushed to R2 in safe batches of 5.', 'astropress'); ?></span>
-                    </div>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=astropress&tab=r2&sub=optimizer')); ?>" class="button button-secondary button-small">
+                        <span class="dashicons dashicons-admin-generic" style="vertical-align:-2px;"></span> <?php esc_html_e('Customize in Image Optimizer &rarr;', 'astropress'); ?>
+                    </a>
                 </div>
 
                 <!-- Safety Guarantee Banner -->
