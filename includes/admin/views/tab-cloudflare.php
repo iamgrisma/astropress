@@ -136,12 +136,28 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
                     <th scope="row"><label for="astropress_revalidate_secret"><?php esc_html_e('Astro Webhook Secret', 'astropress'); ?></label></th>
                     <td>
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
-                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank if not set in Cloudflare', 'astropress'); ?>" autocomplete="new-password" style="flex:1; min-width:240px;" />
+                            <input type="password" id="astropress_revalidate_secret" name="revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank to auto-generate or paste custom secret', 'astropress'); ?>" autocomplete="new-password" style="flex:1; min-width:240px;" />
+                            <button type="button" class="button button-secondary" id="astropress-generate-secret-btn" title="<?php esc_attr_e('Generate strong 32-character secret', 'astropress'); ?>">
+                                <span class="dashicons dashicons-randomize"></span> <?php esc_html_e('Generate Secret', 'astropress'); ?>
+                            </button>
                             <span id="astropress-key-badge" style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; border:1px solid #cbd5e1; background:#f8fafc; color:#64748b;">
                                 <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('No Secret (Open Endpoint)', 'astropress'); ?>
                             </span>
                         </div>
-                        <p class="description"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Matches the REVALIDATE_SECRET environment variable in Cloudflare Pages/Workers. If not using a secret, leave blank.', 'astropress'); ?></p>
+                        <p class="description"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Protects your frontend from unauthorized cache purges and DoS cache stampedes.', 'astropress'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="astropress_cf_pages_project"><?php esc_html_e('Cloudflare Pages 1-Click Sync', 'astropress'); ?></label></th>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:680px;">
+                            <input type="text" id="astropress_cf_pages_project" name="cf_pages_project" value="<?php echo esc_attr($this->core->get_cf_pages_project()); ?>" class="regular-text" placeholder="Pages project name (e.g. topnepali-election)" style="flex:1; min-width:240px;" />
+                            <button type="button" class="button button-primary astropress-sync-pages-btn" data-input="#astropress_cf_pages_project" data-secret="#astropress_revalidate_secret" data-status="#astropress-pages-sync-status">
+                                <span class="dashicons dashicons-update"></span> <?php esc_html_e('Sync to Cloudflare Pages', 'astropress'); ?>
+                            </button>
+                        </div>
+                        <p class="description"><?php esc_html_e('Automatically pushes REVALIDATE_SECRET, WP_API_URL, and CDN_MEDIA_URL to your Cloudflare Pages project (Production & Preview) via Cloudflare API. Eliminates manual copy-pasting in Cloudflare dashboard.', 'astropress'); ?></p>
+                        <div id="astropress-pages-sync-status" style="margin-top:8px; display:none;"></div>
                     </td>
                 </tr>
                 <tr>

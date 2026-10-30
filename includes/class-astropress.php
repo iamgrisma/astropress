@@ -22,8 +22,8 @@ class AstroPress {
      */
     private static $instance = null;
 
-    const VERSION            = '2.1.3';
-    const ASTROPRESS_VERSION = '2.1.3';
+    const VERSION            = '2.1.4';
+    const ASTROPRESS_VERSION = '2.1.4';
 
     // Headless Bridge Option Keys
     const OPTION_SETUP_COMPLETED   = 'astropress_setup_completed';
@@ -45,6 +45,7 @@ class AstroPress {
     const OPTION_CF_API_TOKEN      = 'astropress_cf_api_token';
     const OPTION_CF_ZONE_ID        = 'astropress_cf_zone_id';
     const OPTION_CF_DEPLOY_HOOK    = 'astropress_cf_deploy_hook';
+    const OPTION_CF_PAGES_PROJECT  = 'astropress_cf_pages_project';
     const OPTION_DEBOUNCE_ENABLED  = 'astropress_debounce_enabled';
     const OPTION_CF_DIRECT_PURGE   = 'astropress_cf_direct_purge';
 
@@ -265,6 +266,27 @@ class AstroPress {
      */
     public function get_revalidate_secret() {
         return $this->get_secret();
+    }
+
+    /**
+     * Generate and persist a strong 32-character revalidation secret
+     *
+     * @return string
+     */
+    public function generate_secret() {
+        $secret = wp_generate_password(32, false);
+        update_option(self::OPTION_SECRET, AstroPress_Encryption::encrypt($secret));
+        $this->cached_secret = $secret;
+        return $secret;
+    }
+
+    /**
+     * Get configured Cloudflare Pages project name
+     *
+     * @return string
+     */
+    public function get_cf_pages_project() {
+        return sanitize_text_field(get_option(self::OPTION_CF_PAGES_PROJECT, ''));
     }
 
     /**

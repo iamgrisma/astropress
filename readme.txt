@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.1.3
+Stable tag: 2.1.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,7 +35,28 @@ It seamlessly combines:
 
 == Changelog ==
 
-= 2.0.21 =
+= 2.1.4 =
+* 1-Click Zero-Touch Cloudflare Pages Environment Sync: Integrated direct 1-click synchronization (`astropress_sync_pages_env`) in both Setup Wizard (Step 2) and Cloudflare Invalidation tab. Uses the Cloudflare API Token to automatically provision and sync `REVALIDATE_SECRET`, `WP_API_URL`, `API_URL`, and `CDN_MEDIA_URL` directly into Cloudflare Pages project deployment configs (Production & Preview), completely eliminating manual copy-pasting in the Cloudflare dashboard.
+* Automatic Revalidation Secret Generator: Added on-demand 32-character cryptographically secure secret generation in WordPress (`wp_generate_password(32, false)`), with instant field autofill and badge updates.
+* Cloudflare Pages Project Auto-Discovery: Cloudflare Quick Connect auto-populates the Pages Project datalist and autofills the project input with discovered Cloudflare Pages projects.
+* Revalidation Security Clarity: Updated inline documentation and 401 error resolution guidance explaining why `REVALIDATE_SECRET` protects against public cache stampede DoS attacks on the WordPress origin server.
+
+= 2.1.3 =
+* Unified Image Quality Storage: Eliminated conflicting unlinked range slider from sync tab and consolidated on authoritative `AstroPress_Optimizer::get_quality()` and `get_format()`.
+* Image Optimizer Sub-tab Routing: Fixed sub-tab tab redirection so image compression controls route cleanly to the unified Optimizer view.
+
+= 2.1.2 =
+* Clear Secret Semantics: Pruned misleading legacy fallback placeholders and clarified optional revalidation secret behavior.
+* Hardened Astro Endpoint Auth Check: Fixed conditional check in `src/pages/api/revalidate.ts` snippet to strictly require matching secret when configured.
+
+= 2.1.1 =
+* R2 Custom Domain Discovery Schema: Fixed Cloudflare API 400 Bad Request error by sending strictly valid schema in custom domain attachment and correctly parsing `{ result: { domains: [...] } }`.
+* Unified Warmer Pacing: Unified pacing slider with auto-save and eliminated broken 5ms minimum constraint.
+* Persistent Deploy Hook: Fixed Cloudflare Pages deploy hook persistence and added cache purge impact warnings.
+
+= 2.1.0 =
+* Single Source of Truth Architecture: Full refactor consolidating settings into 5 canonical tabs (Setup Wizard, Overview, Cloudflare & Invalidation, R2 Media & Optimization, Tools & Logs).
+* Dead Code Pruning: Pruned redundant sliders, duplicated credential inputs, and orphaned handlers across the entire codebase.
 * Complete Elimination of Synthetic Probe Traps: Removed fragile synthetic probe checks for Cache Rules, Cache Purge, and DNS that were triggering false-positive "Missing" badges due to Cloudflare API discrepancies between dashboard permission names (e.g. "Cache Rules: Edit") and Ruleset API entrypoint codes.
 * 100% Reliable Token Verification: Once an API token is verified as active via Cloudflare's official verification endpoint and mapped to an active zone and account, all zone-level capabilities (Cache Purge, Cache Rules, DNS, and Zone Read) and R2 storage are cleanly authenticated as Granted.
 * Zero False Remediation Prompts: Remediation prompts and missing scope warnings are now strictly restricted to cases where target resources genuinely cannot be resolved.

@@ -174,9 +174,12 @@ if (!defined('ABSPATH')) {
                     </div>
 
                     <div class="wizard-field" style="margin-top:16px;">
-                        <label for="onboard_secret"><strong><?php esc_html_e('Astro Webhook Revalidate Secret (Optional):', 'astropress'); ?></strong></label>
+                        <label for="onboard_secret"><strong><?php esc_html_e('Astro Webhook Revalidate Secret:', 'astropress'); ?></strong></label>
                         <div class="wizard-input-row">
-                            <input type="password" id="onboard_secret" name="onboard_revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank if not set in Cloudflare', 'astropress'); ?>" autocomplete="new-password" />
+                            <input type="password" id="onboard_secret" name="onboard_revalidate_secret" value="<?php echo $this->core->has_custom_secret() ? '••••••••••••••••' : ''; ?>" class="regular-text" placeholder="<?php esc_attr_e('Leave blank to auto-generate or paste custom secret', 'astropress'); ?>" autocomplete="new-password" />
+                            <button type="button" class="button button-secondary" id="onboard-generate-secret-btn" title="<?php esc_attr_e('Generate strong 32-character secret', 'astropress'); ?>">
+                                <span class="dashicons dashicons-randomize"></span> <?php esc_html_e('Generate Secret', 'astropress'); ?>
+                            </button>
                             <button type="button" class="button button-secondary" id="onboard-test-handshake-btn">
                                 <span class="dashicons dashicons-admin-network"></span> <?php esc_html_e('Test Handshake', 'astropress'); ?>
                             </button>
@@ -184,8 +187,22 @@ if (!defined('ABSPATH')) {
                                 <?php echo $this->core->has_custom_secret() ? esc_html__('Custom Secret Stored', 'astropress') : esc_html__('No Secret (Open Endpoint)', 'astropress'); ?>
                             </span>
                         </div>
-                        <p class="field-help"><?php esc_html_e('Optional: If your Cloudflare Pages/Workers project has a REVALIDATE_SECRET environment variable, enter it here. If left blank, no secret is sent and your endpoint must allow unauthenticated revalidation requests.', 'astropress'); ?></p>
+                        <p class="field-help"><?php esc_html_e('Shared secret between WordPress and your Astro /api/revalidate endpoint. Protects your site from public spam and cache stampede DoS attacks.', 'astropress'); ?></p>
                         <div id="onboard-handshake-status" style="margin-top:8px;"></div>
+                    </div>
+
+                    <!-- Cloudflare Pages 1-Click Sync -->
+                    <div class="wizard-field" style="margin-top:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+                        <label for="onboard_cf_pages_project"><strong><span class="dashicons dashicons-cloud" style="vertical-align:-2px;"></span> <?php esc_html_e('Cloudflare Pages 1-Click Environment Sync:', 'astropress'); ?></strong></label>
+                        <div class="wizard-input-row" style="margin-top:6px;">
+                            <input type="text" id="onboard_cf_pages_project" name="onboard_cf_pages_project" value="<?php echo esc_attr($this->core->get_cf_pages_project()); ?>" class="regular-text" placeholder="Pages project name (e.g. topnepali-election)" list="onboard-pages-projects-list" style="flex:1; min-width:220px;" />
+                            <datalist id="onboard-pages-projects-list"></datalist>
+                            <button type="button" class="button button-primary astropress-sync-pages-btn" data-input="#onboard_cf_pages_project" data-secret="#onboard_secret" data-status="#onboard-pages-sync-status">
+                                <span class="dashicons dashicons-update"></span> <?php esc_html_e('1-Click Sync to Cloudflare Pages', 'astropress'); ?>
+                            </button>
+                        </div>
+                        <p class="field-help" style="margin:6px 0 0 0;"><?php esc_html_e('Uses your Cloudflare API Token to push REVALIDATE_SECRET, WP_API_URL, and CDN_MEDIA_URL directly into your Cloudflare Pages environment variables. Completely eliminates manual copy-pasting!', 'astropress'); ?></p>
+                        <div id="onboard-pages-sync-status" style="margin-top:8px; display:none;"></div>
                     </div>
 
                     <div class="wizard-field" style="margin-top:14px;">

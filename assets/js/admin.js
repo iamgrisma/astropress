@@ -1743,6 +1743,22 @@
                 }
               }
 
+              if (data.pages_projects && data.pages_projects.length > 0) {
+                const $dl = $('#onboard-pages-projects-list');
+                if ($dl.length) {
+                  $dl.empty();
+                  data.pages_projects.forEach(function(p) {
+                    $dl.append('<option value="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + ' (' + escapeHtml(p.subdomain) + ')</option>');
+                  });
+                }
+                if ($('#onboard_cf_pages_project').length && !$('#onboard_cf_pages_project').val()) {
+                  $('#onboard_cf_pages_project').val(data.pages_projects[0].name);
+                }
+                if ($('#astropress_cf_pages_project').length && !$('#astropress_cf_pages_project').val()) {
+                  $('#astropress_cf_pages_project').val(data.pages_projects[0].name);
+                }
+              }
+
 
               // On verified success, keep field closed and update connected card
               if ($('#onboard-token-connected-card').length) {
@@ -2013,6 +2029,100 @@
         },
         complete: function() {
           $btn.prop('disabled', false).html('<span class="dashicons dashicons-yes" style="vertical-align:-2px;"></span> Test Connection');
+        }
+      });
+    });
+
+    // 8c. Generate Strong Revalidation Secret Button
+    $(document).on('click', '#onboard-generate-secret-btn, #astropress-generate-secret-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const isWizard = $btn.attr('id') === 'onboard-generate-secret-btn';
+      const $input = isWizard ? $('#onboard_secret') : $('#astropress_revalidate_secret');
+      const $badge = isWizard ? $('#onboard-secret-badge') : $('#astropress-key-badge');
+
+      $btn.prop('disabled', true);
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_generate_secret',
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success && res.data?.secret) {
+            $input.attr('type', 'text').val(res.data.secret);
+            if ($badge.length) {
+              $badge.css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Custom Secret Stored');
+            }
+            if ($('#code-env').length) {
+              const curEnv = $('#code-env').text();
+              $('#code-env').text(curEnv.replace(/REVALIDATE_SECRET=.*/, 'REVALIDATE_SECRET=' + res.data.secret));
+            }
+          }
+        },
+        complete: function() {
+          $btn.prop('disabled', false);
+        }
+      });
+    });
+
+    // 8d. 1-Click Zero-Touch Sync Environment Variables to Cloudflare Pages
+    $(document).on('click', '.astropress-sync-pages-btn', function(e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const inputSelector = $btn.data('input') || '#onboard_cf_pages_project';
+      const secretSelector = $btn.data('secret') || '#onboard_secret';
+      const statusSelector = $btn.data('status') || '#onboard-pages-sync-status';
+
+      const $projInput = $(inputSelector);
+      const $secInput = $(secretSelector);
+      const $status = $(statusSelector);
+      const projectName = $projInput.val()?.trim();
+      const rawSecret = $secInput.val()?.trim() || '';
+      const secretVal = (!rawSecret.startsWith('•••')) ? rawSecret : '';
+
+      if (!projectName) {
+        $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Please specify your Cloudflare Pages Project Name first.</div>').slideDown(150);
+        $projInput.focus();
+        return;
+      }
+
+      const origHtml = $btn.html();
+      $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Syncing to Pages...');
+      $status.html('<div style="padding:8px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; color:#0369a1; font-size:12px;"><span class="dashicons dashicons-update spin" style="vertical-align:-2px;"></span> Syncing REVALIDATE_SECRET & WP_API_URL to Cloudflare Pages project <strong>' + escapeHtml(projectName) + '</strong>...</div>').slideDown(150);
+
+      $.ajax({
+        url: ajaxurl,
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          action: 'astropress_sync_pages_env',
+          project_name: projectName,
+          secret: secretVal,
+          nonce: nonce
+        },
+        success: function(res) {
+          if (res.success) {
+            if (res.data?.secret) {
+              $secInput.attr('type', 'text').val(res.data.secret);
+              $('#onboard-secret-badge, #astropress-key-badge').css({'background': '#ecfdf5', 'color': '#065f46', 'border-color': '#a7f3d0'}).text('Custom Secret Stored');
+              if ($('#code-env').length) {
+                const curEnv = $('#code-env').text();
+                $('#code-env').text(curEnv.replace(/REVALIDATE_SECRET=.*/, 'REVALIDATE_SECRET=' + res.data.secret));
+              }
+            }
+            $status.html('<div style="padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; color:#15803d; font-size:12px;"><span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> <strong>Synced:</strong> ' + escapeHtml(res.data.message) + '</div>');
+          } else {
+            $status.html('<div style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><div style="font-weight:700;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Sync Failed: ' + escapeHtml(res.data?.message || 'Unknown error') + '</div></div>');
+          }
+        },
+        error: function(xhr, status, err) {
+          $status.html('<div style="padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c; font-size:12px;"><span class="dashicons dashicons-warning" style="vertical-align:-2px;"></span> Network error: ' + escapeHtml(err) + '</div>');
+        },
+        complete: function() {
+          $btn.prop('disabled', false).html(origHtml);
         }
       });
     });

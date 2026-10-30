@@ -103,7 +103,11 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         $this->verify_admin_ajax();
 
         $project_name = trim(sanitize_text_field($_POST['project_name'] ?? ''));
-        $account_id   = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
+        if (empty($project_name)) {
+            $project_name = $this->core->get_cf_pages_project();
+        }
+
+        $account_id   = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: $this->core->get_r2_account_id();
         $token        = trim(sanitize_text_field($_POST['token'] ?? ''));
 
         if (empty($token) || strpos($token, '••••') !== false) {
@@ -114,8 +118,19 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             wp_send_json_error(array('message' => esc_html__('Cloudflare Pages project name is required.', 'astropress')));
         }
 
-        $revalidate_secret = $this->core->get_revalidate_secret();
-        $wp_api_url        = home_url();
+        // Auto-save or generate secret
+        $raw_secret = trim(sanitize_text_field($_POST['secret'] ?? ''));
+        if (!empty($raw_secret) && strpos($raw_secret, '••••') === false) {
+            update_option(AstroPress::OPTION_SECRET, AstroPress_Encryption::encrypt($raw_secret));
+            $revalidate_secret = $raw_secret;
+        } else {
+            $revalidate_secret = $this->core->get_revalidate_secret();
+            if (empty($revalidate_secret)) {
+                $revalidate_secret = $this->core->generate_secret();
+            }
+        }
+
+        $wp_api_url = home_url();
 
         $env_vars = array(
             'REVALIDATE_SECRET' => $revalidate_secret,
@@ -123,13 +138,33 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'API_URL'           => $wp_api_url,
         );
 
+        $custom_domain = AstroPress_Admin::get_r2_option('custom_domain', '');
+        if (!empty($custom_domain)) {
+            $clean_domain = preg_replace('#^https?://#', '', rtrim($custom_domain, '/'));
+            $env_vars['CDN_MEDIA_URL'] = 'https://' . $clean_domain;
+        }
+
         $result = $this->core->cache->sync_pages_env($project_name, $env_vars, $account_id, $token);
         if (!empty($result['success'])) {
             update_option('astropress_cf_pages_project', $project_name);
+            $result['secret'] = $revalidate_secret;
             wp_send_json_success($result);
         } else {
             wp_send_json_error($result);
         }
+    }
+
+    /**
+     * AJAX: Generate Strong Revalidation Secret
+     */
+    public function ajax_generate_secret() {
+        $this->verify_admin_ajax();
+
+        $secret = $this->core->generate_secret();
+        wp_send_json_success(array(
+            'secret'  => $secret,
+            'message' => esc_html__('Strong 32-character secret generated and saved securely in WordPress.', 'astropress'),
+        ));
     }
 
     /**
@@ -1086,7 +1121,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
             if ($code === 401) {
                 $err_msg  = esc_html__('Authentication Failed (HTTP 401 Unauthorized): Secret token mismatch.', 'astropress');
-                $guidance = esc_html__('Your Astro frontend rejected the request. To fix this: 1) Go to Cloudflare Dashboard > Workers & Pages > Your Project > Settings > Environment Variables. 2) Check the value of REVALIDATE_SECRET. 3) Enter that exact secret in the Astro Webhook Secret field.', 'astropress');
+                $guidance = esc_html__('Your Astro frontend rejected the request because the secret does not match. Use the "1-Click Sync to Cloudflare Pages" button to automatically synchronize the secret to your environment, or verify REVALIDATE_SECRET in Cloudflare Pages.', 'astropress');
             } elseif ($code === 404) {
                 $err_msg  = esc_html__('Endpoint Not Found (HTTP 404): /api/revalidate does not exist on your Astro site.', 'astropress');
                 $guidance = esc_html__('Ensure your Astro project contains "src/pages/api/revalidate.ts" and that your site is deployed. You can copy the code snippet directly from the Astro Snippets tab.', 'astropress');

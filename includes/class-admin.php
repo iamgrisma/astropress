@@ -82,6 +82,7 @@ class AstroPress_Admin {
             add_action('wp_ajax_astropress_save_warmer_settings', array($this, 'ajax_save_warmer_settings'));
             add_action('wp_ajax_astropress_detect_frontend', array($this, 'ajax_detect_frontend'));
             add_action('wp_ajax_astropress_sync_pages_env', array($this, 'ajax_sync_pages_env'));
+            add_action('wp_ajax_astropress_generate_secret', array($this, 'ajax_generate_secret'));
             add_action('wp_ajax_astropress_audit_cdn_domain', array($this, 'ajax_audit_cdn_domain'));
             add_action('wp_ajax_astropress_attach_r2_custom_domain', array($this, 'ajax_attach_r2_custom_domain'));
             add_action('wp_ajax_astropress_detect_r2_custom_domain', array($this, 'ajax_detect_r2_custom_domain'));

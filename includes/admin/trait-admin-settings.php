@@ -48,6 +48,10 @@ trait AstroPress_Admin_Settings {
                 }
             }
 
+            if (isset($_POST['cf_pages_project'])) {
+                update_option(AstroPress::OPTION_CF_PAGES_PROJECT, sanitize_text_field(trim(wp_unslash($_POST['cf_pages_project']))));
+            }
+
             $cf_token = trim(wp_unslash($_POST['cf_api_token'] ?? ''));
             if (!empty($cf_token) && strpos($cf_token, '••••') === false) {
                 update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($cf_token));
@@ -268,10 +272,14 @@ trait AstroPress_Admin_Settings {
                 }
             }
 
-            // Cloudflare Pages Deploy Hook (if specified in onboarding)
+            // Cloudflare Pages Deploy Hook & Project (if specified in onboarding)
             $deploy_hook = esc_url_raw(trim(wp_unslash($_POST['onboard_cf_deploy_hook'] ?? '')));
             if (!empty($deploy_hook)) {
                 update_option(AstroPress::OPTION_CF_DEPLOY_HOOK, $deploy_hook);
+            }
+            $pages_project = sanitize_text_field(trim(wp_unslash($_POST['onboard_cf_pages_project'] ?? '')));
+            if (!empty($pages_project)) {
+                update_option(AstroPress::OPTION_CF_PAGES_PROJECT, $pages_project);
             }
 
             // Revalidation Secret (if specified in onboarding)

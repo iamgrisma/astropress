@@ -101,12 +101,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
                     <button type="button" class="button button-small astropress-copy-btn" data-target="code-env"><?php esc_html_e('Copy', 'astropress'); ?></button>
                 </div>
                 <pre><code id="code-env"># .env or Cloudflare Pages > Settings > Environment Variables
-REVALIDATE_SECRET=your_revalidate_secret_token
+REVALIDATE_SECRET=<?php echo esc_html($secret ?: 'your_revalidate_secret_token'); ?>
 
 WP_API_URL=<?php echo esc_html(home_url()); ?>
 
 CDN_MEDIA_URL=https://<?php echo esc_html($custom_domain); ?>
 </code></pre>
+                <div style="margin-top:8px; font-size:12px; color:#475569; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px;">
+                    <strong>Zero-Touch Tip:</strong> If your Cloudflare API Token has the Pages permission, you do not need to configure these manually in the Cloudflare dashboard. Use the <strong>"1-Click Sync to Cloudflare Pages"</strong> button in Setup Wizard or Cloudflare tab to push them automatically via API!
+                </div>
             </div>
 
             <div class="astropress-snippet-block" style="margin-top:20px;">
