@@ -2051,16 +2051,29 @@
 
               // 1-Click Remediation for Missing Cloudflare Scopes
               if (!data.all_granted && data.fix_token_url) {
+                var missingLabels = [];
+                if (data.abilities) {
+                  for (var k in data.abilities) {
+                    if (!data.abilities[k].granted && data.abilities[k].required !== false && !data.abilities[k].optional) {
+                      missingLabels.push(data.abilities[k].label || data.abilities[k].scope);
+                    }
+                  }
+                }
+                var missingDesc = missingLabels.length ? ': <strong>' + escapeHtml(missingLabels.join(', ')) + '</strong>' : '';
                 html += '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:12px; margin-top:10px;">';
                 html += '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">';
                 html += '<div>';
                 html += '<strong style="color:#b45309; font-size:13px;"><span class="dashicons dashicons-warning"></span> Incomplete Cloudflare Permissions</strong>';
-                html += '<p style="margin:2px 0 0 0; font-size:12px; color:#92400e;">Missing ' + (data.missing_scopes ? data.missing_scopes.length : 'required') + ' permission(s). Click to re-generate with all required scopes pre-filled.</p>';
+                html += '<p style="margin:2px 0 0 0; font-size:12px; color:#92400e;">Missing ' + (data.missing_scopes ? data.missing_scopes.length : 'required') + ' permission(s)' + missingDesc + '. Click to re-generate with required scopes pre-filled.</p>';
                 html += '</div>';
                 html += '<a href="' + data.fix_token_url + '" target="_blank" rel="noopener noreferrer" class="button button-primary button-small" style="background:#d97706; border-color:#b45309;">';
                 html += '<span class="dashicons dashicons-external"></span> Re-Generate Token &rarr;';
                 html += '</a>';
                 html += '</div>';
+                html += '</div>';
+              } else {
+                html += '<div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:6px; padding:10px 12px; margin-top:10px; color:#065f46; font-size:13px; font-weight:600;">';
+                html += '<span class="dashicons dashicons-yes-alt" style="vertical-align:-2px;"></span> All required Cloudflare permissions verified successfully!';
                 html += '</div>';
               }
 
@@ -2072,13 +2085,19 @@
                 for (const key in data.abilities) {
                   const ab = data.abilities[key];
                   const isGranted = ab.granted;
-                  const icon = isGranted ? 'dashicons-yes' : 'dashicons-warning';
-                  const badgeStyle = isGranted ? 'background:#ecfdf5;color:#065f46;' : 'background:#fffbeb;color:#b45309;';
-                  html += '<div class="astropress-audit-row ' + (isGranted ? 'is-pass' : 'is-fail') + '">';
+                  const isOptional = ab.optional || ab.required === false;
+                  const icon = isGranted ? 'dashicons-yes' : (isOptional ? 'dashicons-info' : 'dashicons-warning');
+                  const badgeStyle = isGranted 
+                    ? 'background:#ecfdf5;color:#065f46;' 
+                    : (isOptional ? 'background:#f1f5f9;color:#475569;' : 'background:#fffbeb;color:#b45309;');
+                  const badgeText = isGranted ? 'Granted' : (isOptional ? 'Optional' : 'Missing');
+                  const rowClass = isGranted ? 'is-pass' : (isOptional ? 'is-optional' : 'is-fail');
+
+                  html += '<div class="astropress-audit-row ' + rowClass + '">';
                   html += '<span class="dashicons ' + icon + '"></span>';
                   html += '<span class="audit-name">' + escapeHtml(ab.label) + '</span>';
                   html += '<code class="audit-scope">' + escapeHtml(ab.scope) + '</code>';
-                  html += '<span class="audit-badge" style="' + badgeStyle + '">' + (isGranted ? 'Granted' : 'Missing') + '</span>';
+                  html += '<span class="audit-badge" style="' + badgeStyle + '">' + badgeText + '</span>';
                   html += '</div>';
                 }
                 html += '</div>';

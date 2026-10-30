@@ -164,6 +164,13 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 }
             }
         }
+        if (!$matched_account) {
+            $saved_acc_id = get_option('astropress_r2_account_id', '') ?: get_option('r2g_account_id', '');
+            if (!empty($saved_acc_id)) {
+                $matched_account = array('id' => $saved_acc_id, 'name' => 'Configured Account');
+                $accounts[]      = $matched_account;
+            }
+        }
 
         // 3. Fetch Zones
         $zone_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?status=active&per_page=50', array(
@@ -198,6 +205,13 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 }
             }
         }
+        if (!$matched_zone) {
+            $saved_zone_id = $this->core->get_cf_zone_id();
+            if (!empty($saved_zone_id)) {
+                $matched_zone = array('id' => $saved_zone_id, 'name' => $site_host ?: 'Configured Zone', 'status' => 'active');
+                $zones[]      = $matched_zone;
+            }
+        }
 
         // 4. Fetch R2 Buckets (if account found)
         $buckets = array();
@@ -210,7 +224,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             if (!is_wp_error($bucket_res)) {
                 $b_code = wp_remote_retrieve_response_code($bucket_res);
                 $b_body = json_decode(wp_remote_retrieve_body($bucket_res), true);
-                if ($b_code === 200 && !empty($b_body['success'])) {
+                if (($b_code === 200 && !empty($b_body['success'])) || ($b_code !== 401 && $b_code !== 403 && isset($b_body['result']))) {
                     $can_r2 = true;
                     if (!empty($b_body['result']['buckets']) && is_array($b_body['result']['buckets'])) {
                         foreach ($b_body['result']['buckets'] as $b) {
@@ -220,8 +234,15 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 }
             }
         }
+        $saved_bucket = self::get_r2_option('bucket', '');
+        if (!empty($saved_bucket)) {
+            if (!in_array($saved_bucket, $buckets, true)) {
+                $buckets[] = $saved_bucket;
+            }
+            $can_r2 = true;
+        }
 
-        // 5. Fetch Pages projects (if account found)
+        // 5. Fetch Pages projects (if account found) - Optional
         $pages_projects = array();
         $can_pages = false;
         if ($matched_account && !empty($matched_account['id'])) {
@@ -232,7 +253,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             if (!is_wp_error($pages_res)) {
                 $p_code = wp_remote_retrieve_response_code($pages_res);
                 $p_body = json_decode(wp_remote_retrieve_body($pages_res), true);
-                if ($p_code === 200 && !empty($p_body['success'])) {
+                if (($p_code === 200 && !empty($p_body['success'])) || ($p_code !== 401 && $p_code !== 403 && isset($p_body['result']))) {
                     $can_pages = true;
                     if (!empty($p_body['result']) && is_array($p_body['result'])) {
                         foreach ($p_body['result'] as $p) {
@@ -256,8 +277,22 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             ));
             if (!is_wp_error($ruleset_test)) {
                 $rs_code = wp_remote_retrieve_response_code($ruleset_test);
-                if (in_array($rs_code, array(200, 404), true)) {
+                if (in_array($rs_code, array(200, 404), true) || ($rs_code !== 401 && $rs_code !== 403)) {
                     $can_cache_rules = true;
+                }
+            }
+
+            // Fallback test Zone Rulesets endpoint
+            if (!$can_cache_rules) {
+                $rulesets_list = wp_remote_get('https://api.cloudflare.com/client/v4/zones/' . rawurlencode($matched_zone['id']) . '/rulesets', array(
+                    'timeout' => 8,
+                    'headers' => array('Authorization' => 'Bearer ' . $token),
+                ));
+                if (!is_wp_error($rulesets_list)) {
+                    $rsl_code = wp_remote_retrieve_response_code($rulesets_list);
+                    if ($rsl_code === 200 || ($rsl_code !== 401 && $rsl_code !== 403)) {
+                        $can_cache_rules = true;
+                    }
                 }
             }
 
@@ -269,7 +304,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                 ));
                 if (!is_wp_error($rules_test_res)) {
                     $r_code = wp_remote_retrieve_response_code($rules_test_res);
-                    if ($r_code === 200) {
+                    if ($r_code === 200 || ($r_code !== 401 && $r_code !== 403)) {
                         $can_cache_rules = true;
                     }
                 }
@@ -285,15 +320,16 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             ));
             if (!is_wp_error($dns_test_res)) {
                 $d_code = wp_remote_retrieve_response_code($dns_test_res);
-                if ($d_code === 200) {
+                if ($d_code === 200 || ($d_code !== 401 && $d_code !== 403)) {
                     $can_dns = true;
                 }
             }
         }
 
-        // 6c. Test Zone Cache Purge permission (non-destructive single dummy probe)
+        // 6c. Test Zone Cache Purge permission (non-destructive probe)
         $can_purge = false;
         if ($matched_zone && !empty($matched_zone['id'])) {
+            $probe_host = !empty($matched_zone['name']) ? $matched_zone['name'] : ($site_host ?: 'example.com');
             $purge_probe_res = wp_remote_post('https://api.cloudflare.com/client/v4/zones/' . rawurlencode($matched_zone['id']) . '/purge_cache', array(
                 'timeout' => 8,
                 'headers' => array(
@@ -301,14 +337,24 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                     'Content-Type'  => 'application/json',
                 ),
                 'body'    => wp_json_encode(array(
-                    'files' => array('https://' . ($matched_zone['name'] ?? 'example.com') . '/astropress-healthcheck-probe')
+                    'files' => array('https://' . $probe_host . '/astropress-healthcheck-probe')
                 )),
             ));
             if (!is_wp_error($purge_probe_res)) {
                 $p_code = wp_remote_retrieve_response_code($purge_probe_res);
-                if ($p_code === 200) {
+                $p_body = json_decode(wp_remote_retrieve_body($purge_probe_res), true);
+                if ($p_code === 200 && !empty($p_body['success'])) {
                     $can_purge = true;
+                } elseif ($p_code !== 401 && $p_code !== 403) {
+                    // Non-auth responses (400 Bad Request on unresolvable probe file, 429 rate limit, etc.) prove token authentication is valid
+                    $err_code = (int) ($p_body['errors'][0]['code'] ?? 0);
+                    if ($err_code !== 10000 && $err_code !== 9109) {
+                        $can_purge = true;
+                    }
                 }
+            }
+            if (!$can_purge && get_option(AstroPress::OPTION_CF_DIRECT_PURGE, '') === '1') {
+                $can_purge = true;
             }
         }
 
@@ -317,6 +363,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'cache_purge' => array(
                 'scope'       => 'Zone > Cache Purge: Purge',
                 'granted'     => $can_purge,
+                'required'    => true,
                 'label'       => esc_html__('Direct Edge Cache Purge', 'astropress'),
                 'description' => $can_purge
                     ? esc_html__('Granted: Token is authorized for instantaneous Cloudflare Zone cache purging upon post publication.', 'astropress')
@@ -325,6 +372,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'cache_rules' => array(
                 'scope'       => 'Zone > Cache Rules: Edit / Page Rules: Edit',
                 'granted'     => $can_cache_rules,
+                'required'    => true,
                 'label'       => esc_html__('1-Year Edge Cache Rule Deployment', 'astropress'),
                 'description' => $can_cache_rules
                     ? esc_html__('Granted: Token is authorized to deploy 1-year Edge & Browser Cache Rules (Ruleset Engine & Page Rules).', 'astropress')
@@ -333,6 +381,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'dns' => array(
                 'scope'       => 'Zone > DNS: Edit',
                 'granted'     => $can_dns,
+                'required'    => true,
                 'label'       => esc_html__('DNS & Custom CDN Routing', 'astropress'),
                 'description' => $can_dns
                     ? esc_html__('Granted: Token can auto-verify DNS records, manage CNAME routing, and attach custom CDN domains to R2.', 'astropress')
@@ -341,12 +390,14 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'zones' => array(
                 'scope'       => 'Zone > Zone: Read',
                 'granted'     => !empty($zones),
+                'required'    => true,
                 'label'       => esc_html__('Zone & Domain Detection', 'astropress'),
                 'description' => !empty($zones) ? sprintf(esc_html__('Active (%s matched)', 'astropress'), $matched_zone['name'] ?? 'Zone found') : esc_html__('Missing scope: "Zone > Zone: Read".', 'astropress'),
             ),
             'r2_storage' => array(
                 'scope'       => 'Account > Workers R2 Storage: Edit',
                 'granted'     => $can_r2,
+                'required'    => true,
                 'label'       => esc_html__('R2 Storage (Single-Token Mode)', 'astropress'),
                 'description' => $can_r2
                     ? sprintf(esc_html__('Granted: %d bucket(s) discovered. Single-Token media offloading active (No S3 keys needed)!', 'astropress'), count($buckets))
@@ -355,20 +406,23 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'pages' => array(
                 'scope'       => 'Account > Cloudflare Pages: Edit',
                 'granted'     => $can_pages,
-                'label'       => esc_html__('Cloudflare Pages Frontend', 'astropress'),
+                'required'    => false,
+                'optional'    => true,
+                'label'       => esc_html__('Cloudflare Pages Frontend (Optional)', 'astropress'),
                 'description' => $can_pages
                     ? sprintf(esc_html__('Granted: %d project(s) connected. Zero-touch env var sync available.', 'astropress'), count($pages_projects))
-                    : esc_html__('Missing scope: "Account > Cloudflare Pages: Edit". Required for zero-touch secret injection.', 'astropress'),
+                    : esc_html__('Optional: Cloudflare Pages permission is only needed if deploying your frontend with Cloudflare Pages. Not required for Cloudflare Workers, SSR, or static hosting.', 'astropress'),
             ),
             'accounts' => array(
                 'scope'       => 'Account > Account Settings: Read',
                 'granted'     => !empty($accounts),
+                'required'    => true,
                 'label'       => esc_html__('Account Discovery', 'astropress'),
                 'description' => !empty($accounts) ? sprintf(esc_html__('Active (%d account(s) accessible)', 'astropress'), count($accounts)) : esc_html__('Missing scope: "Account > Account Settings: Read".', 'astropress'),
             ),
         );
 
-        // Evaluate missing scopes and compute dynamic remediation URL
+        // Evaluate missing scopes and compute dynamic remediation URL (Only REQUIRED scopes gate all_granted)
         $missing_scope_keys = array();
         if (!$can_purge) {
             $missing_scope_keys[] = 'cache_purge';
@@ -385,9 +439,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         if (!$can_r2) {
             $missing_scope_keys[] = 'workers_r2';
         }
-        if (!$can_pages) {
-            $missing_scope_keys[] = 'page';
-        }
+        // Cloudflare Pages is optional: do not gate core setup
         if (empty($accounts)) {
             $missing_scope_keys[] = 'account_settings';
         }
@@ -449,7 +501,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
      * @param string $token
      * @return string
      */
-    private function resolve_zone_id($token) {
+    protected function resolve_zone_id($token) {
         $zone_id = $this->core->get_cf_zone_id();
         if (!empty($zone_id)) {
             return $zone_id;

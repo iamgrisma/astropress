@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.0.19
+Stable tag: 2.0.20
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.0.20 =
+* Fixed False-Positive Token Scope Detection: Token capability probes for Cache Purge, Cache Rules (Ruleset Engine & Page Rules), DNS, and R2 no longer falsely report "Missing" when non-auth HTTP responses (such as 400 Bad Request on probe dummy files or Ruleset 404 uninitialized states) are returned. Authentication verification now accurately identifies granted scopes.
+* Made Cloudflare Pages Scope Optional: Cloudflare Pages permission (`Account > Cloudflare Pages: Edit`) is now designated as strictly optional for setups deploying Astro via Cloudflare Workers, Astro SSR, or external hosts. Tokens lacking Pages scope now pass validation cleanly with an "Optional" badge without triggering remediation warnings or blocking setup.
+* Actionable Missing Scope Identification: When a required scope is genuinely missing, the remediation notice explicitly names the exact missing capability (e.g. `Zone > Cache Purge: Purge`) rather than displaying an ambiguous generic count.
+* Resilient Zone ID Auto-Resolution: Added automated Zone ID discovery fallback across all R2 custom domain attachment and CDN cache rule deployment routines, preventing premature "Cloudflare API Token and Zone ID must be configured first" errors.
 
 = 2.0.19 =
 * R2 Custom Domain Auto-Detection & Autofill: Querying R2 custom domains now distinguishes between clean buckets (no custom domains linked yet) and API errors. Automatically suggests `media.<domain>` and autofills on bucket selection, enabling seamless 1-click CNAME creation.

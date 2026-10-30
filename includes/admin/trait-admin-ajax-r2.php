@@ -229,7 +229,7 @@ trait AstroPress_Admin_Ajax_R2 {
         if (empty($token) || strpos($token, '••••') !== false) {
             $token = $this->core->get_cf_api_token();
         }
-        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
+        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: ($this->core->get_cf_zone_id() ?: $this->resolve_zone_id($token));
         $cdn_url = trim(sanitize_text_field($_POST['cdn_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
 
         if (empty($token) || empty($zone_id)) {
@@ -591,16 +591,15 @@ trait AstroPress_Admin_Ajax_R2 {
     public function ajax_attach_r2_custom_domain() {
         $this->verify_admin_ajax();
 
-        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
-        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
-        $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
-        $zone_name     = trim(sanitize_text_field($_POST['zone_name'] ?? ''));
-        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
-        $token         = trim(sanitize_text_field($_POST['token'] ?? ''));
-
         if (empty($token) || strpos($token, '••••') !== false) {
             $token = $this->core->get_cf_api_token();
         }
+
+        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
+        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
+        $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: ($this->core->get_cf_zone_id() ?: $this->resolve_zone_id($token));
+        $zone_name     = trim(sanitize_text_field($_POST['zone_name'] ?? ''));
+        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
 
         if (empty($custom_domain)) {
             wp_send_json_error(array('message' => esc_html__('Custom domain is required.', 'astropress')));

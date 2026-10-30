@@ -125,8 +125,8 @@ trait AstroPress_Admin_Preflight {
                 'category' => 'Account',
                 'name'     => 'Cloudflare Pages',
                 'key'      => 'page',
-                'access'   => 'Edit',
-                'desc'     => 'Zero-touch push of environment variables (REVALIDATE_SECRET, WP_API_URL)',
+                'access'   => 'Edit (Optional)',
+                'desc'     => 'Optional: Zero-touch push of environment variables if hosting on Cloudflare Pages (Not needed for Cloudflare Workers, Astro SSR, or external hosts)',
             ),
             array(
                 'category' => 'Account',
