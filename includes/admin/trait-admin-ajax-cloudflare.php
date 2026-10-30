@@ -148,6 +148,18 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         if (!empty($result['success'])) {
             update_option('astropress_cf_pages_project', $project_name);
             $result['secret'] = $revalidate_secret;
+
+            // If Deploy Hook is configured, auto-trigger zero-downtime rebuild to activate variables immediately
+            $deploy_hook = $this->core->get_cf_deploy_hook();
+            if (!empty($deploy_hook)) {
+                $hook_ok = $this->core->cache->trigger_deploy_hook('Auto-redeploy after environment variable sync');
+                if ($hook_ok) {
+                    $result['message'] .= ' ' . esc_html__('A rebuild was automatically triggered via your Deploy Hook to activate variables immediately!', 'astropress');
+                }
+            } else {
+                $result['message'] .= ' ' . esc_html__('Note: In Cloudflare Pages, new environment variables activate on your next deployment. Trigger a rebuild or redeploy in Cloudflare to activate.', 'astropress');
+            }
+
             wp_send_json_success($result);
         } else {
             wp_send_json_error($result);
