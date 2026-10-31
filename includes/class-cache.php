@@ -1454,6 +1454,15 @@ class AstroPress_Cache {
             }
         }
 
+        // C3. Self-Healing Auto-Deploy: If Cache Rule is missing, automatically ensure it on Cloudflare
+        if ($rule_status === 'missing' && !empty($token)) {
+            $ensure_res = $this->ensure_cache_rule($zone_id, $host, $token);
+            if (!empty($ensure_res['success'])) {
+                $rule_status = 'optimal';
+                $rule_desc   = '1-Year Edge Cache Active (Auto-Deployed by AstroPress)';
+            }
+        }
+
         return array(
             'success'          => true,
             'host'             => $host,
@@ -1787,6 +1796,101 @@ class AstroPress_Cache {
 
         $c_err = !empty($c_body['errors'][0]['message']) ? $c_body['errors'][0]['message'] : "HTTP {$c_code}";
         return array('success' => false, 'message' => $c_err);
+    }
+
+    /**
+     * Auto-Deploy or Ensure AstroPress Global Edge Cache Rule on Cloudflare Zone
+     *
+     * Creates or updates the Modern Cloudflare Cache Rule (Ruleset Engine Phase: http_request_cache_settings)
+     * configured for Respect Origin Headers (1-Year Edge TTL based on s-maxage).
+     *
+     * @param string $zone_id
+     * @param string $host
+     * @param string $token
+     * @return array
+     */
+    public function ensure_cache_rule($zone_id, $host, $token = '') {
+        $token = $token ?: $this->core->get_cf_api_token();
+        $host = trim(preg_replace('#^https?://#i', '', $host), '/');
+        $host = explode('/', $host)[0];
+
+        if (empty($zone_id) || empty($host) || empty($token)) {
+            return array('success' => false, 'message' => esc_html__('Zone ID, host, and token are required.', 'astropress'));
+        }
+
+        $headers = array(
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+        );
+
+        $entry_url = "https://api.cloudflare.com/client/v4/zones/" . rawurlencode($zone_id) . "/rulesets/phases/http_request_cache_settings/entrypoint";
+        $get_res = wp_remote_get($entry_url, array('timeout' => 10, 'headers' => $headers));
+
+        $existing_rules = array();
+        if (!is_wp_error($get_res) && wp_remote_retrieve_response_code($get_res) === 200) {
+            $body = json_decode(wp_remote_retrieve_body($get_res), true);
+            $existing_rules = $body['result']['rules'] ?? array();
+        }
+
+        $rule_expr = '(http.host eq "' . addslashes($host) . '")';
+        $rule_to_add = array(
+            'expression'        => $rule_expr,
+            'description'       => 'AstroPress: Global Edge Cache (Respect Origin Headers)',
+            'action'            => 'set_cache_settings',
+            'action_parameters' => array(
+                'cache'       => true,
+                'edge_ttl'    => array('mode' => 'respect_origin'),
+                'browser_ttl' => array('mode' => 'respect_origin'),
+            ),
+            'enabled'           => true,
+        );
+
+        $clean_rules = array();
+        $found = false;
+        foreach ($existing_rules as $r) {
+            if (empty($r['expression']) || empty($r['action'])) continue;
+            $item = array(
+                'expression'        => $r['expression'],
+                'description'       => $r['description'] ?? 'Cache Rule',
+                'action'            => $r['action'],
+                'action_parameters' => $r['action_parameters'] ?? array(),
+                'enabled'           => isset($r['enabled']) ? (bool) $r['enabled'] : true,
+            );
+            if (!empty($r['id'])) $item['id'] = $r['id'];
+            if (!empty($r['ref'])) $item['ref'] = $r['ref'];
+
+            if ($item['expression'] === $rule_expr || strpos($item['expression'], $host) !== false) {
+                $item['enabled'] = true;
+                $item['description'] = $rule_to_add['description'];
+                $item['action_parameters'] = $rule_to_add['action_parameters'];
+                $found = true;
+            }
+            $clean_rules[] = $item;
+        }
+
+        if (!$found) {
+            $clean_rules[] = $rule_to_add;
+        }
+
+        $put_res = wp_remote_request($entry_url, array(
+            'method'  => 'PUT',
+            'timeout' => 15,
+            'headers' => $headers,
+            'body'    => wp_json_encode(array('rules' => $clean_rules)),
+        ));
+
+        if (is_wp_error($put_res)) {
+            return array('success' => false, 'message' => $put_res->get_error_message());
+        }
+
+        $put_code = wp_remote_retrieve_response_code($put_res);
+        $put_body = json_decode(wp_remote_retrieve_body($put_res), true);
+        if (in_array($put_code, array(200, 201), true) && !empty($put_body['success'])) {
+            return array('success' => true, 'message' => sprintf(esc_html__('AstroPress Global Edge Cache Rule ensured for %s on Cloudflare.', 'astropress'), $host));
+        }
+
+        $err = $put_body['errors'][0]['message'] ?? ('HTTP ' . $put_code);
+        return array('success' => false, 'message' => $err);
     }
 
     /**
