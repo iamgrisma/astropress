@@ -266,8 +266,53 @@ class AstroPress_Updater {
             }
         }
 
-        $url = sprintf('https://api.github.com/repos/%s/%s/releases/latest', self::GITHUB_OWNER, self::GITHUB_REPO);
+        // 1. PRIMARY: Query raw.githubusercontent.com via Fastly CDN (Zero rate limits, zero HTTP 403s)
+        $raw_url = sprintf('https://raw.githubusercontent.com/%s/%s/main/astropress.php', self::GITHUB_OWNER, self::GITHUB_REPO);
+        $raw_res = wp_remote_get($raw_url, array(
+            'timeout'   => 8,
+            'sslverify' => true,
+            'headers'   => array('User-Agent' => 'AstroPress-WP/' . ASTROPRESS_VERSION),
+        ));
 
+        if (!is_wp_error($raw_res) && wp_remote_retrieve_response_code($raw_res) === 200) {
+            $raw_code = wp_remote_retrieve_body($raw_res);
+            if (preg_match('/Version:\s*([0-9\.]+)/i', $raw_code, $matches)) {
+                $raw_ver = trim($matches[1]);
+                $tag = 'v' . $raw_ver;
+
+                // Grab changelog summary from Atom feed if available
+                $changelog = 'AstroPress ' . $tag . ' release';
+                $atom_releases = $this->fetch_releases_from_atom();
+                if (!empty($atom_releases[0]['changelog'])) {
+                    $changelog = $atom_releases[0]['changelog'];
+                }
+
+                $result = array(
+                    'version'     => $raw_ver,
+                    'tag_name'    => $tag,
+                    'url'         => sprintf('https://github.com/%s/%s/releases/tag/%s', self::GITHUB_OWNER, self::GITHUB_REPO, $tag),
+                    'package'     => sprintf('https://github.com/%s/%s/releases/download/%s/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $tag, self::PLUGIN_SLUG),
+                    'published'   => current_time('mysql', true),
+                    'changelog'   => $changelog,
+                    'author'      => self::GITHUB_OWNER,
+                );
+                set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
+                update_option('astropress_last_known_latest_release', $result, false);
+                return $result;
+            }
+        }
+
+        // 2. SECONDARY: Parse GitHub Releases Atom RSS Feed (Public web feed, zero REST API rate limits)
+        $atom_releases = $this->fetch_releases_from_atom();
+        if (!empty($atom_releases[0]['version'])) {
+            $result = $atom_releases[0];
+            set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
+            update_option('astropress_last_known_latest_release', $result, false);
+            return $result;
+        }
+
+        // 3. TERTIARY / LAST RESORT: GitHub REST API (Subject to 60 req/hr IP rate limits)
+        $url = sprintf('https://api.github.com/repos/%s/%s/releases/latest', self::GITHUB_OWNER, self::GITHUB_REPO);
         $response = wp_remote_get($url, array(
             'timeout'   => 10,
             'sslverify' => true,
@@ -277,87 +322,47 @@ class AstroPress_Updater {
             ),
         ));
 
-        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
-            // Fallback 1: Query raw.githubusercontent.com (Fastly CDN - zero REST API 403 rate limits)
-            $raw_url = sprintf('https://raw.githubusercontent.com/%s/%s/main/astropress.php', self::GITHUB_OWNER, self::GITHUB_REPO);
-            $raw_res = wp_remote_get($raw_url, array(
-                'timeout'   => 8,
-                'sslverify' => true,
-                'headers'   => array('User-Agent' => 'AstroPress-WP/' . ASTROPRESS_VERSION),
-            ));
-            if (!is_wp_error($raw_res) && wp_remote_retrieve_response_code($raw_res) === 200) {
-                $raw_code = wp_remote_retrieve_body($raw_res);
-                if (preg_match('/Version:\s*([0-9\.]+)/i', $raw_code, $matches)) {
-                    $raw_ver = trim($matches[1]);
-                    $tag = 'v' . $raw_ver;
-                    $result = array(
-                        'version'     => $raw_ver,
-                        'tag_name'    => $tag,
-                        'url'         => sprintf('https://github.com/%s/%s/releases/tag/%s', self::GITHUB_OWNER, self::GITHUB_REPO, $tag),
-                        'package'     => sprintf('https://github.com/%s/%s/releases/latest/download/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, self::PLUGIN_SLUG),
-                        'published'   => current_time('mysql', true),
-                        'changelog'   => 'Fetched via GitHub CDN (rate-limit immune fallback).',
-                        'author'      => self::GITHUB_OWNER,
-                    );
-                    set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
-                    update_option('astropress_last_known_latest_release', $result, false);
-                    return $result;
-                }
-            }
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
 
-            // Fallback 2: Parse GitHub Releases Atom RSS Feed (no 403 rate limits)
-            $atom_releases = $this->fetch_releases_from_atom();
-            if (!empty($atom_releases[0]['version'])) {
-                $result = $atom_releases[0];
+            if (is_array($data) && !empty($data['tag_name'])) {
+                $tag = ltrim($data['tag_name'], 'vV');
+                $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $data['tag_name']);
+
+                if (!empty($data['assets']) && is_array($data['assets'])) {
+                    foreach ($data['assets'] as $asset) {
+                        if (isset($asset['name']) && strpos(strtolower($asset['name']), 'astropress') !== false && substr($asset['name'], -4) === '.zip') {
+                            $package_url = $asset['browser_download_url'];
+                            break;
+                        }
+                    }
+                }
+
+                $result = array(
+                    'version'     => $tag,
+                    'tag_name'    => $data['tag_name'],
+                    'url'         => $data['html_url'] ?? sprintf('https://github.com/%s/%s', self::GITHUB_OWNER, self::GITHUB_REPO),
+                    'package'     => $package_url,
+                    'published'   => $data['published_at'] ?? '',
+                    'changelog'   => $data['body'] ?? '',
+                    'author'      => $data['author']['login'] ?? 'iamgrisma',
+                );
+
                 set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
                 update_option('astropress_last_known_latest_release', $result, false);
                 return $result;
             }
-
-            $fallback = get_option('astropress_last_known_latest_release', get_option('r2g_last_known_latest_release', null));
-            if (!empty($fallback) && is_array($fallback)) {
-                return $fallback;
-            }
-            return null;
         }
 
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (!is_array($data) || empty($data['tag_name'])) {
-            return null;
+        // 4. FALLBACK: Last known cached release from database
+        $fallback = get_option('astropress_last_known_latest_release', get_option('r2g_last_known_latest_release', null));
+        if (!empty($fallback) && is_array($fallback)) {
+            return $fallback;
         }
 
-        $tag = ltrim($data['tag_name'], 'vV');
-        $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $data['tag_name']);
-
-        // Prioritize custom built astropress.zip in release assets
-        if (!empty($data['assets']) && is_array($data['assets'])) {
-            foreach ($data['assets'] as $asset) {
-                if (isset($asset['name']) && strpos(strtolower($asset['name']), 'astropress') !== false && substr($asset['name'], -4) === '.zip') {
-                    $package_url = $asset['browser_download_url'];
-                    break;
-                }
-            }
-            // If no exact match, take any attached zip asset
-            if (empty($package_url) || strpos($package_url, 'zipball') !== false) {
-                foreach ($data['assets'] as $asset) {
-                    if (isset($asset['browser_download_url']) && substr($asset['browser_download_url'], -4) === '.zip') {
-                        $package_url = $asset['browser_download_url'];
-                        break;
-                    }
-                }
-            }
-        }
-        if (empty($package_url) || strpos($package_url, 'zipball') !== false) {
-            $package_url = sprintf('https://github.com/%s/%s/archive/refs/tags/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $data['tag_name']);
-        }
-
-        $result = array(
-            'version'     => $tag,
-            'tag_name'    => $data['tag_name'],
-            'url'         => $data['html_url'] ?? sprintf('https://github.com/%s/%s', self::GITHUB_OWNER, self::GITHUB_REPO),
-            'package'     => $package_url,
+        return null;
+    }
             'published'   => $data['published_at'] ?? '',
             'changelog'   => $data['body'] ?? '',
             'author'      => $data['author']['login'] ?? 'iamgrisma',
@@ -384,6 +389,15 @@ class AstroPress_Updater {
             }
         }
 
+        // 1. PRIMARY: Query GitHub Atom RSS feed (Rate-limit immune, zero 403s)
+        $atom_releases = $this->fetch_releases_from_atom();
+        if (!empty($atom_releases)) {
+            set_transient(self::TRANSIENT_RELEASES, $atom_releases, 6 * HOUR_IN_SECONDS);
+            update_option('astropress_last_known_releases', $atom_releases, false);
+            return $atom_releases;
+        }
+
+        // 2. FALLBACK: Query GitHub REST API (Subject to 60 req/hr IP rate limits)
         $releases = array();
         $page = 1;
 
@@ -400,13 +414,6 @@ class AstroPress_Updater {
             ));
 
             if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
-                // If GitHub REST API is rate-limited (HTTP 403) on page 1, fallback to Atom feed
-                if ($page === 1) {
-                    $atom_releases = $this->fetch_releases_from_atom();
-                    if (!empty($atom_releases)) {
-                        $releases = $atom_releases;
-                    }
-                }
                 break;
             }
 
