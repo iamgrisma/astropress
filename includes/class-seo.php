@@ -788,36 +788,36 @@ class AstroPress_SEO {
             try {
                 $singular = new \RankMath\Paper\Singular();
                 $singular->set_object($target_post);
-                $title = (string) $singular->title();
-                $desc  = (string) $singular->description();
-                $rob   = $singular->robots();
+                $cand_title = (string) $singular->title();
+                $cand_desc  = (string) $singular->description();
+                if (!empty($cand_title) && trim(preg_replace('/[\(\)\[\]\-\—\s\|]/', '', $cand_title)) !== '') {
+                    $title = $cand_title;
+                }
+                if (!empty($cand_desc) && trim($cand_desc) !== '') {
+                    $desc = $cand_desc;
+                }
+                $rob = $singular->robots();
                 if (is_array($rob)) {
                     $robots_directives = array_keys(array_filter($rob));
                 }
             } catch (\Throwable $e) {}
         }
 
-        // 2. Direct PostMeta Resolution for Rank Math Custom Overrides
+        // 2. Robust Resolution for Rank Math Custom Overrides
         if ($post_id) {
-            if (empty($title)) {
-                $raw_title = get_post_meta($post_id, 'rank_math_title', true);
-                if (!empty($raw_title)) {
-                    if (class_exists('\RankMath\Helper') && method_exists('\RankMath\Helper', 'replace_vars')) {
-                        $title = \RankMath\Helper::replace_vars($raw_title, $target_post);
-                    } else {
-                        $title = $this->resolve_seo_template_vars($raw_title, $target_post);
-                    }
+            $raw_title = get_post_meta($post_id, 'rank_math_title', true);
+            if (!empty($raw_title)) {
+                $resolved = $this->resolve_seo_template_vars($raw_title, $target_post);
+                if (!empty($resolved)) {
+                    $title = $resolved;
                 }
             }
 
-            if (empty($desc)) {
-                $raw_desc = get_post_meta($post_id, 'rank_math_description', true);
-                if (!empty($raw_desc)) {
-                    if (class_exists('\RankMath\Helper') && method_exists('\RankMath\Helper', 'replace_vars')) {
-                        $desc = \RankMath\Helper::replace_vars($raw_desc, $target_post);
-                    } else {
-                        $desc = $this->resolve_seo_template_vars($raw_desc, $target_post);
-                    }
+            $raw_desc = get_post_meta($post_id, 'rank_math_description', true);
+            if (!empty($raw_desc)) {
+                $resolved_desc = $this->resolve_seo_template_vars($raw_desc, $target_post);
+                if (!empty($resolved_desc)) {
+                    $desc = $resolved_desc;
                 }
             }
         }
