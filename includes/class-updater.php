@@ -363,17 +363,6 @@ class AstroPress_Updater {
 
         return null;
     }
-            'published'   => $data['published_at'] ?? '',
-            'changelog'   => $data['body'] ?? '',
-            'author'      => $data['author']['login'] ?? 'iamgrisma',
-        );
-
-        // Cache for 15 minutes (rapid discovery of new GitHub releases)
-        set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
-        update_option('astropress_last_known_latest_release', $result, false);
-
-        return $result;
-    }
 
     /**
      * Fetch all recent releases for Rollback and Version Inspection
