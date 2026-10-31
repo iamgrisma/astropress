@@ -61,6 +61,7 @@ class AstroPress_SEO {
         // Cache invalidation hooks for rendered head meta across engines
         add_action('save_post', array($this, 'invalidate_post_seo_cache'), 10, 2);
         add_action('deleted_post', array($this, 'invalidate_post_seo_cache'), 10, 1);
+        add_action('clean_post_cache', array($this, 'invalidate_post_seo_cache'), 10, 1);
 
         // Dynamic Redirection Sync hook
         add_action('init', array($this, 'sync_default_redirections'));
@@ -462,27 +463,26 @@ class AstroPress_SEO {
             }
 
             $head = '';
-            $orig_post = $GLOBALS['post'] ?? null;
-            if ($target_post) {
-                $GLOBALS['post'] = $target_post;
-                setup_postdata($target_post);
-            }
-
-            if (class_exists('\RankMath\Paper\Paper')) {
+            // If on frontend where rank_math()->head is active, attempt official action
+            if (class_exists('\RankMath\Paper\Paper') && function_exists('rank_math') && !empty(rank_math()->head)) {
+                $orig_post = $GLOBALS['post'] ?? null;
+                if ($target_post) {
+                    $GLOBALS['post'] = $target_post;
+                    setup_postdata($target_post);
+                }
                 ob_start();
                 do_action('rank_math/head');
                 $head = ob_get_clean();
-            }
-
-            if ($orig_post) {
-                $GLOBALS['post'] = $orig_post;
-                setup_postdata($orig_post);
-            } else {
-                wp_reset_postdata();
+                if ($orig_post) {
+                    $GLOBALS['post'] = $orig_post;
+                    setup_postdata($orig_post);
+                } else {
+                    wp_reset_postdata();
+                }
             }
 
             if (empty($head)) {
-                $head = $this->render_native_head($target_post, $full_url);
+                $head = $this->render_rank_math_head($target_post, $full_url);
             }
 
             $clean_head = !empty($head) ? trim($head) : '';
@@ -763,6 +763,139 @@ class AstroPress_SEO {
             'twitter_image'          => $tw_img,
             'json_ld'                => $schema_graph,
             'schema_class'           => 'yoast-schema-graph',
+        ));
+    }
+
+    /**
+     * Render Rank Math head HTML for a post or page with high-fidelity meta extraction
+     * Supports Singular Paper, Rank Math helper API, and direct postmeta fallbacks
+     *
+     * @param WP_Post|null $target_post
+     * @param string $full_url
+     * @return string
+     */
+    protected function render_rank_math_head($target_post, $full_url) {
+        $frontend_url = $this->core->get_frontend_url();
+        $site_name    = get_bloginfo('name') ?: 'AstroPress';
+        $post_id      = $target_post ? $target_post->ID : 0;
+
+        $title = '';
+        $desc  = '';
+        $robots_directives = array();
+
+        // 1. Try Rank Math Singular Paper if class exists
+        if (class_exists('\RankMath\Paper\Singular') && $target_post) {
+            try {
+                $singular = new \RankMath\Paper\Singular();
+                $singular->set_object($target_post);
+                $title = (string) $singular->title();
+                $desc  = (string) $singular->description();
+                $rob   = $singular->robots();
+                if (is_array($rob)) {
+                    $robots_directives = array_keys(array_filter($rob));
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // 2. Direct PostMeta Resolution for Rank Math Custom Overrides
+        if ($post_id) {
+            if (empty($title)) {
+                $raw_title = get_post_meta($post_id, 'rank_math_title', true);
+                if (!empty($raw_title)) {
+                    if (class_exists('\RankMath\Helper') && method_exists('\RankMath\Helper', 'replace_vars')) {
+                        $title = \RankMath\Helper::replace_vars($raw_title, $target_post);
+                    } else {
+                        $title = $this->resolve_seo_template_vars($raw_title, $target_post);
+                    }
+                }
+            }
+
+            if (empty($desc)) {
+                $raw_desc = get_post_meta($post_id, 'rank_math_description', true);
+                if (!empty($raw_desc)) {
+                    if (class_exists('\RankMath\Helper') && method_exists('\RankMath\Helper', 'replace_vars')) {
+                        $desc = \RankMath\Helper::replace_vars($raw_desc, $target_post);
+                    } else {
+                        $desc = $this->resolve_seo_template_vars($raw_desc, $target_post);
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback defaults if still empty
+        if (empty($title)) {
+            $title = $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name;
+        }
+        if (empty($desc) && $target_post) {
+            $desc = !empty($target_post->post_excerpt)
+                ? wp_strip_all_tags($target_post->post_excerpt)
+                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
+        }
+
+        // Canonical
+        $raw_canon = $post_id ? get_post_meta($post_id, 'rank_math_canonical_url', true) : '';
+        $canonical = $raw_canon ?: ($full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url));
+        $canonical = str_replace($this->get_origin_hosts(), $frontend_url, $canonical);
+
+        // Featured Image
+        $thumb_img = '';
+        if ($post_id) {
+            $thumb_id = get_post_thumbnail_id($post_id);
+            if ($thumb_id) {
+                $thumb_img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
+            }
+        }
+        $thumb_img = $thumb_img ? str_replace($this->get_origin_hosts(), $frontend_url, $thumb_img) : '';
+
+        // OpenGraph
+        $og_title = ($post_id ? get_post_meta($post_id, 'rank_math_facebook_title', true) : '') ?: $title;
+        $og_desc  = ($post_id ? get_post_meta($post_id, 'rank_math_facebook_description', true) : '') ?: $desc;
+        $og_img   = ($post_id ? get_post_meta($post_id, 'rank_math_facebook_image', true) : '') ?: $thumb_img;
+        $og_img   = $og_img ? str_replace($this->get_origin_hosts(), $frontend_url, $og_img) : '';
+
+        // Twitter
+        $tw_title = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_title', true) : '') ?: $og_title;
+        $tw_desc  = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_description', true) : '') ?: $og_desc;
+        $tw_img   = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_image', true) : '') ?: $og_img;
+        $tw_img   = $tw_img ? str_replace($this->get_origin_hosts(), $frontend_url, $tw_img) : '';
+        $tw_card  = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_card_type', true) : '') ?: 'summary_large_image';
+
+        // Robots
+        if (empty($robots_directives) && $post_id) {
+            $raw_robots = get_post_meta($post_id, 'rank_math_robots', true);
+            if (is_string($raw_robots) && strpos($raw_robots, 'a:') === 0) {
+                $raw_robots = maybe_unserialize($raw_robots);
+            }
+            if (is_array($raw_robots)) {
+                $robots_directives = array_filter($raw_robots);
+            }
+        }
+        if (empty($robots_directives)) {
+            $robots_directives = array('index', 'follow', 'max-image-preview:large');
+        }
+        $robots_str = implode(', ', array_unique($robots_directives));
+
+        $pub_time = $target_post ? get_the_date('c', $target_post) : '';
+        $mod_time = $target_post ? get_the_modified_date('c', $target_post) : '';
+
+        return $this->assemble_head_tags(array(
+            'title'                  => $title,
+            'description'            => $desc,
+            'robots'                 => $robots_str,
+            'canonical'              => $canonical,
+            'og_locale'              => get_locale(),
+            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
+            'og_title'               => $og_title,
+            'og_description'         => $og_desc,
+            'og_url'                 => $canonical,
+            'og_site_name'           => $site_name,
+            'article_published_time' => $pub_time,
+            'article_modified_time'  => $mod_time,
+            'og_image'               => $og_img,
+            'twitter_card'           => $tw_card,
+            'twitter_title'          => $tw_title,
+            'twitter_description'    => $tw_desc,
+            'twitter_image'          => $tw_img,
         ));
     }
 
