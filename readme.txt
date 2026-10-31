@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.3.8
+Stable tag: 2.3.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,7 +35,7 @@ It seamlessly combines:
 
 == Changelog ==
 
-= 2.3.8 =
+= 2.3.9 =
 * Multi-part TLD & ccTLD Resolution: Added `AstroPress::get_root_domain()` supporting `.com.np`, `.org.np`, `.co.uk`, `.co.in`, and other multi-part extensions, ensuring Cloudflare zones match accurately.
 * Core Runtime Zone Auto-Resolution: Promoted `resolve_zone_id()` into the core `AstroPress` class with automatic runtime discovery and persistence, eliminating headless Zone ID missing errors.
 * Immediate Persistence on Verification: Token verification now automatically saves `OPTION_CF_API_TOKEN`, `OPTION_CF_ZONE_ID`, and direct edge purge options immediately to the database.
