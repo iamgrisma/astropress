@@ -255,16 +255,21 @@ class AstroPress_Cache {
 
         // 1. Direct Cloudflare Zone Cache API Purge (Primary Invalidation)
         $is_purge_all = ($type === 'all' || in_array('/*', $clean_urls, true));
-        if (!empty($cf_token) && !empty($cf_zone)) {
-            if ($is_purge_all) {
-                $results['cloudflare_api'] = $this->purge_cloudflare_zone(array(), true);
-            } else if (!empty($full_urls)) {
-                $results['cloudflare_api'] = $this->purge_cloudflare_zone($full_urls, false);
+        if (!empty($cf_token)) {
+            if (empty($cf_zone)) {
+                $cf_zone = $this->core->resolve_zone_id($cf_token);
+            }
+            if (!empty($cf_zone)) {
+                if ($is_purge_all) {
+                    $results['cloudflare_api'] = $this->purge_cloudflare_zone(array(), true, $cf_token, $cf_zone);
+                } else if (!empty($full_urls)) {
+                    $results['cloudflare_api'] = $this->purge_cloudflare_zone($full_urls, false, $cf_token, $cf_zone);
+                }
             }
         }
 
         // 2. Dual Invalidation: Ping Astro Cloudflare Worker (/api/revalidate)
-        // Authenticates via single-use dynamic ticket or optional custom secret
+        // Authenticates via single-use dynamic ticket and shared secret token
         // Must ALWAYS execute when frontend_url is defined, even if direct Cloudflare API credentials are not set
         if (!empty($frontend_url)) {
             $revalidate_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
@@ -278,21 +283,44 @@ class AstroPress_Cache {
                 'purge_everything'  => $is_purge_all,
                 'timestamp'         => time(),
             );
+            $revalidate_secret = $this->core->get_custom_secret();
+            if (empty($revalidate_secret)) {
+                $revalidate_secret = 'astropress_revalidate_secret';
+            }
             $headers = array(
                 'Content-Type'        => 'application/json',
+                'User-Agent'          => 'Mozilla/5.0 (compatible; AstroPress-WP/' . ASTROPRESS_VERSION . '; +' . home_url() . ')',
                 'x-astropress-ticket' => $ticket,
+                'x-revalidate-secret' => $revalidate_secret,
+                'Authorization'       => 'Bearer ' . $revalidate_secret,
             );
-            $revalidate_secret = $this->core->get_custom_secret();
-            if (!empty($revalidate_secret)) {
-                $headers['x-revalidate-secret'] = $revalidate_secret;
-                $headers['Authorization']       = 'Bearer ' . $revalidate_secret;
-            }
-            wp_remote_post($revalidate_endpoint, array(
+
+            // Execute synchronously with a safe 5-second timeout so LiteSpeed does not kill the HTTP socket on shutdown
+            $start_rev = microtime(true);
+            $rev_res = wp_remote_post($revalidate_endpoint, array(
                 'timeout'   => 5,
-                'blocking'  => false,
+                'blocking'  => true,
                 'sslverify' => true,
                 'headers'   => $headers,
                 'body'      => wp_json_encode($payload),
+            ));
+            $rev_latency = round((microtime(true) - $start_rev) * 1000);
+            $rev_code    = is_wp_error($rev_res) ? 0 : wp_remote_retrieve_response_code($rev_res);
+            $rev_body    = is_wp_error($rev_res) ? '' : wp_remote_retrieve_body($rev_res);
+            $rev_data    = json_decode($rev_body, true);
+            $rev_success = (!is_wp_error($rev_res) && $rev_code === 200 && !empty($rev_data['success']));
+
+            $this->log_webhook_event(array(
+                'trigger'     => $action . ':' . ($slug ?: $type),
+                'target'      => 'Astro Frontend (' . $revalidate_endpoint . ')',
+                'type'        => 'astro_revalidate',
+                'urls_count'  => count($full_urls),
+                'urls'        => array_slice($full_urls, 0, 10),
+                'status'      => $rev_success ? 'success' : 'failed',
+                'http_code'   => $rev_code,
+                'duration_ms' => $rev_latency,
+                'message'     => $rev_success ? 'Astro Edge Cache Purged & Revalidated' : (is_wp_error($rev_res) ? $rev_res->get_error_message() : ($rev_data['error'] ?? ('HTTP ' . $rev_code))),
+                'payload'     => $payload,
             ));
         }
 
@@ -1593,7 +1621,8 @@ class AstroPress_Cache {
                 $zb = json_decode(wp_remote_retrieve_body($zones_res), true);
                 if (!empty($zb['result']) && is_array($zb['result'])) {
                     foreach ($zb['result'] as $z) {
-                        if (!empty($z['name']) && (str_ends_with(strtolower($host), strtolower($z['name'])) || strtolower($host) === strtolower($z['name']))) {
+                        $z_low = strtolower($z['name']);
+                        if (!empty($z['name']) && (substr(strtolower($host), -strlen($z_low)) === $z_low || strtolower($host) === $z_low)) {
                             $zone_id   = sanitize_text_field($z['id']);
                             $zone_name = sanitize_text_field($z['name']);
                             update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);

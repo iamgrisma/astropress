@@ -165,7 +165,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                     if (
                         $z_name === $root_search ||
                         $z_name === $search_host ||
-                        ($search_host && str_ends_with($search_host, '.' . $z_name))
+                        ($search_host && (substr($search_host, -strlen('.' . $z_name)) === '.' . $z_name))
                     ) {
                         $matched_zone = $z_item;
                         if (!empty($z['account']['id'])) {

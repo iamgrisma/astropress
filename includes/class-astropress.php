@@ -236,8 +236,14 @@ class AstroPress {
         if (empty($val)) {
             $val = get_option('astropress_headless_secret', '');
         }
+        if (empty($val)) {
+            $val = get_option('topnepali_headless_secret', '');
+        }
         if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
             $val = AstroPress_Encryption::decrypt($val);
+        }
+        if (empty($val)) {
+            $val = 'astropress_revalidate_secret';
         }
         return (string) $val;
     }
@@ -600,7 +606,7 @@ class AstroPress {
                     if (
                         $z_name === $target_root ||
                         $z_name === $search_host ||
-                        ($search_host && str_ends_with($search_host, '.' . $z_name))
+                        ($search_host && (substr($search_host, -strlen('.' . $z_name)) === '.' . $z_name))
                     ) {
                         $found_id = sanitize_text_field($z['id']);
                         update_option(self::OPTION_CF_ZONE_ID, $found_id);
