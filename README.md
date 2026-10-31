@@ -15,7 +15,8 @@ AstroPress seamlessly combines high-performance headless cache invalidation, aut
 - **LiteSpeed Cache Sync**: Intercepts LiteSpeed Cache purge actions to keep Cloudflare edge caches in lockstep.
 
 ### 2. Direct Cloudflare Edge Invalidation & Deploy Hooks
-- **Direct Cloudflare Zone Cache API Purge**: Directly instructs Cloudflare Edge POP nodes to purge files or entire zone caches via Cloudflare API v4.
+- **Direct Cloudflare Zone Cache API Purge**: Directly instructs Cloudflare Edge POP nodes to purge files or entire zone caches via Cloudflare API v4 in <150ms.
+- **Self-Healing Modern Cache Rules**: Automatically detects and deploys the Cloudflare Ruleset Cache Rule (`http_request_cache_settings`, 1-year Respect Origin Headers) via Cloudflare API v4 during CDN audit if missing.
 - **Pages Deploy Hook**: Triggers on-demand static builds in Cloudflare Pages upon full cache purges.
 - **Webhook Delivery Audit Log**: Complete delivery history with latency, HTTP response codes, payload preview, and 1-click resend capability.
 - **Automated Cron Retries**: Failed webhooks are safely queued with exponential backoff and retried automatically.
