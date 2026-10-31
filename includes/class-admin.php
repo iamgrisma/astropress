@@ -330,6 +330,17 @@ class AstroPress_Admin {
             return;
         }
 
+        if (!empty($_GET['astropress_msg'])) {
+            $msg = sanitize_key($_GET['astropress_msg']);
+            if ($msg === 'purged_single') {
+                echo '<div class="notice notice-success is-dismissible"><p><strong>AstroPress:</strong> Post edge cache purged successfully.</p></div>';
+            } elseif ($msg === 'purged_all') {
+                echo '<div class="notice notice-success is-dismissible"><p><strong>AstroPress:</strong> Entire Cloudflare edge cache purged successfully.</p></div>';
+            } elseif ($msg === 'nonce_expired') {
+                echo '<div class="notice notice-warning is-dismissible"><p><strong>AstroPress:</strong> Security token expired or refreshed. Action cancelled safely without error.</p></div>';
+            }
+        }
+
         if (!AstroPress_Encryption::is_available()) {
             echo '<div class="notice notice-error is-dismissible"><p><strong>AstroPress:</strong> Neither OpenSSL nor Sodium extension is available in PHP. Cloudflare R2 Secret Keys will not be encrypted at rest.</p></div>';
         } elseif (!AstroPress_Encryption::has_strong_salts()) {
@@ -443,7 +454,8 @@ class AstroPress_Admin {
         if (isset($_GET['action']) && ($_GET['action'] === 'astropress_purge_single' || $_GET['action'] === 'topnepali_purge_single') && isset($_GET['post_id'])) {
             $nonce = sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'] ?? ''));
             if (!wp_verify_nonce($nonce, 'astropress_purge_single_nonce') && !wp_verify_nonce($nonce, 'topnepali_purge_single_nonce')) {
-                wp_die(esc_html__('Invalid or missing security token (nonce).', 'astropress'), 403);
+                wp_safe_redirect(add_query_arg('astropress_msg', 'nonce_expired', wp_get_referer() ?: admin_url()));
+                exit;
             }
             $post_id = intval($_GET['post_id']);
             if (!current_user_can('edit_post', $post_id)) {
@@ -467,7 +479,8 @@ class AstroPress_Admin {
         if (isset($_GET['action']) && ($_GET['action'] === 'astropress_purge_all' || $_GET['action'] === 'topnepali_purge_all')) {
             $nonce = sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'] ?? ''));
             if (!wp_verify_nonce($nonce, 'astropress_purge_all_nonce') && !wp_verify_nonce($nonce, 'topnepali_purge_all_nonce')) {
-                wp_die(esc_html__('Invalid or missing security token (nonce).', 'astropress'), 403);
+                wp_safe_redirect(add_query_arg('astropress_msg', 'nonce_expired', wp_get_referer() ?: admin_url()));
+                exit;
             }
             if (!current_user_can('manage_options')) {
                 wp_die(esc_html__('Unauthorized.', 'astropress'), 403);

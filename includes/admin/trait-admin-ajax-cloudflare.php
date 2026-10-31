@@ -697,7 +697,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         // Friendly actionable detection for missing Cache Rules permission
         if ($code === 401 || $code === 403 || $err_code === 10000 || stripos($err_msg, 'authentication error') !== false) {
             wp_send_json_error(array(
-                'message'       => esc_html__('Cloudflare API Token is missing the "Zone > Cache Rules: Edit" (internal key: cache_settings) permission. Please update your token in Cloudflare or re-create it via the Setup Wizard.', 'astropress'),
+                'message'       => esc_html__('Cloudflare API Token lacks the optional "Zone > Cache Rules: Edit" permission. Note: Cache Rules are completely optional because Astro already sets long-term edge caching headers automatically. Your token is still fully functional for cache purging and headless operations.', 'astropress'),
                 'code'          => 10000,
                 'missing_scope' => 'cache_settings',
                 'fix_token_url' => $this->get_cf_token_template_url(array('cache_settings')),
@@ -881,7 +881,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
             if ($get_code === 401 || $get_code === 403 || $err_code === 10000 || stripos($err_msg, 'authentication error') !== false) {
                 wp_send_json_error(array(
-                    'message'       => esc_html__('Could not fetch existing cache rules: Your Cloudflare API Token is missing the "Zone > Cache Rules: Edit" (permission key: cache_settings). Please re-generate or update your token.', 'astropress'),
+                    'message'       => esc_html__('Cloudflare API Token lacks the optional "Zone > Cache Rules: Edit" permission. Standard edge purge and headless operations remain fully functional.', 'astropress'),
                     'code'          => 10000,
                     'missing_scope' => 'cache_settings',
                     'fix_token_url' => $this->get_cf_token_template_url(array('cache_settings')),
@@ -953,7 +953,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
 
         if ($put_code === 401 || $put_code === 403 || $err_code === 10000 || stripos($err_msg, 'authentication error') !== false) {
             wp_send_json_error(array(
-                'message'       => esc_html__('Could not deploy Cache Rule: Cloudflare API Token is missing "Zone > Cache Rules: Edit" (permission key: cache_settings).', 'astropress'),
+                'message'       => esc_html__('Cloudflare API Token lacks the optional "Zone > Cache Rules: Edit" permission. Standard edge purge and headless operations remain fully functional.', 'astropress'),
                 'code'          => 10000,
                 'missing_scope' => 'cache_settings',
                 'fix_token_url' => $this->get_cf_token_template_url(array('cache_settings')),

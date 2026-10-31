@@ -278,6 +278,42 @@ class AstroPress_Updater {
         ));
 
         if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            // Fallback 1: Query raw.githubusercontent.com (Fastly CDN - zero REST API 403 rate limits)
+            $raw_url = sprintf('https://raw.githubusercontent.com/%s/%s/main/astropress.php', self::GITHUB_OWNER, self::GITHUB_REPO);
+            $raw_res = wp_remote_get($raw_url, array(
+                'timeout'   => 8,
+                'sslverify' => true,
+                'headers'   => array('User-Agent' => 'AstroPress-WP/' . ASTROPRESS_VERSION),
+            ));
+            if (!is_wp_error($raw_res) && wp_remote_retrieve_response_code($raw_res) === 200) {
+                $raw_code = wp_remote_retrieve_body($raw_res);
+                if (preg_match('/Version:\s*([0-9\.]+)/i', $raw_code, $matches)) {
+                    $raw_ver = trim($matches[1]);
+                    $tag = 'v' . $raw_ver;
+                    $result = array(
+                        'version'     => $raw_ver,
+                        'tag_name'    => $tag,
+                        'url'         => sprintf('https://github.com/%s/%s/releases/tag/%s', self::GITHUB_OWNER, self::GITHUB_REPO, $tag),
+                        'package'     => sprintf('https://github.com/%s/%s/releases/latest/download/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, self::PLUGIN_SLUG),
+                        'published'   => current_time('mysql', true),
+                        'changelog'   => 'Fetched via GitHub CDN (rate-limit immune fallback).',
+                        'author'      => self::GITHUB_OWNER,
+                    );
+                    set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
+                    update_option('astropress_last_known_latest_release', $result, false);
+                    return $result;
+                }
+            }
+
+            // Fallback 2: Parse GitHub Releases Atom RSS Feed (no 403 rate limits)
+            $atom_releases = $this->fetch_releases_from_atom();
+            if (!empty($atom_releases[0]['version'])) {
+                $result = $atom_releases[0];
+                set_transient(self::TRANSIENT_LATEST, $result, 15 * MINUTE_IN_SECONDS);
+                update_option('astropress_last_known_latest_release', $result, false);
+                return $result;
+            }
+
             $fallback = get_option('astropress_last_known_latest_release', get_option('r2g_last_known_latest_release', null));
             if (!empty($fallback) && is_array($fallback)) {
                 return $fallback;
@@ -313,8 +349,8 @@ class AstroPress_Updater {
                 }
             }
         }
-        if (empty($package_url)) {
-            $package_url = $data['zipball_url'] ?? '';
+        if (empty($package_url) || strpos($package_url, 'zipball') !== false) {
+            $package_url = sprintf('https://github.com/%s/%s/archive/refs/tags/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $data['tag_name']);
         }
 
         $result = array(
@@ -364,6 +400,13 @@ class AstroPress_Updater {
             ));
 
             if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+                // If GitHub REST API is rate-limited (HTTP 403) on page 1, fallback to Atom feed
+                if ($page === 1) {
+                    $atom_releases = $this->fetch_releases_from_atom();
+                    if (!empty($atom_releases)) {
+                        $releases = $atom_releases;
+                    }
+                }
                 break;
             }
 
@@ -390,8 +433,8 @@ class AstroPress_Updater {
                         }
                     }
                 }
-                if (empty($package_url)) {
-                    $package_url = $rel['zipball_url'] ?? '';
+                if (empty($package_url) || strpos($package_url, 'zipball') !== false) {
+                    $package_url = sprintf('https://github.com/%s/%s/archive/refs/tags/%s.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $rel['tag_name']);
                 }
 
                 $releases[] = array(
@@ -425,6 +468,69 @@ class AstroPress_Updater {
         }
 
         return array();
+    }
+
+    /**
+     * Fallback: Fetch releases from GitHub Atom RSS feed (bypasses REST API 403 rate limits)
+     *
+     * @return array
+     */
+    public function fetch_releases_from_atom() {
+        $feed_url = sprintf('https://github.com/%s/%s/releases.atom', self::GITHUB_OWNER, self::GITHUB_REPO);
+        $res = wp_remote_get($feed_url, array(
+            'timeout'   => 10,
+            'sslverify' => true,
+            'headers'   => array('User-Agent' => 'AstroPress-WP/' . ASTROPRESS_VERSION),
+        ));
+
+        if (is_wp_error($res) || wp_remote_retrieve_response_code($res) !== 200) {
+            return array();
+        }
+
+        $xml = wp_remote_retrieve_body($res);
+        if (empty($xml)) {
+            return array();
+        }
+
+        $releases = array();
+        if (preg_match_all('#<entry>(.*?)</entry>#is', $xml, $entries)) {
+            foreach ($entries[1] as $entry) {
+                $tag_name  = '';
+                $published = '';
+                $title     = '';
+
+                if (preg_match('#releases/tag/([^"\'\s>]+)#i', $entry, $m_tag)) {
+                    $tag_name = trim($m_tag[1]);
+                }
+
+                if (preg_match('#<title>(.*?)</title>#i', $entry, $m_t)) {
+                    $title = html_entity_decode(trim($m_t[1]));
+                }
+                if (preg_match('#<updated>(.*?)</updated>#i', $entry, $m_u)) {
+                    $published = trim($m_u[1]);
+                }
+
+                if (empty($tag_name)) {
+                    continue;
+                }
+
+                $version = ltrim($tag_name, 'vV');
+                $package_url = sprintf('https://github.com/%s/%s/releases/download/%s/astropress.zip', self::GITHUB_OWNER, self::GITHUB_REPO, $tag_name);
+
+                $releases[] = array(
+                    'version'     => $version,
+                    'tag_name'    => $tag_name,
+                    'url'         => sprintf('https://github.com/%s/%s/releases/tag/%s', self::GITHUB_OWNER, self::GITHUB_REPO, $tag_name),
+                    'package'     => $package_url,
+                    'published'   => $published,
+                    'changelog'   => $title,
+                    'author'      => self::GITHUB_OWNER,
+                    'prerelease'  => false,
+                );
+            }
+        }
+
+        return $releases;
     }
 
     /**
@@ -682,7 +788,16 @@ class AstroPress_Updater {
         }
 
         if (!$nonce_verified) {
-            wp_die(esc_html__('Invalid update verification security token (nonce).', 'astropress'));
+            $redirect_tab  = !empty($_GET['tab']) ? sanitize_key($_GET['tab']) : 'tools';
+            $redirect_sub  = !empty($_GET['sub']) ? sanitize_key($_GET['sub']) : 'updates';
+            $redirect_page = !empty($_GET['page']) ? sanitize_key($_GET['page']) : 'astropress';
+            wp_safe_redirect(add_query_arg(array(
+                'page'          => $redirect_page,
+                'tab'           => $redirect_tab,
+                'sub'           => $redirect_sub,
+                'nonce_expired' => '1',
+            ), admin_url('admin.php')));
+            exit;
         }
 
         if (!current_user_can('update_plugins')) {

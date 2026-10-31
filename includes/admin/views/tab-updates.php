@@ -24,6 +24,12 @@ if (!defined('ABSPATH')) {
                 </div>
             <?php endif; ?>
 
+            <?php if (!empty($_GET['nonce_expired'])): ?>
+                <div class="notice notice-warning inline" style="margin:12px 0 16px; padding:10px 14px; border-left-color:#f59e0b; background:#fffbeb;">
+                    <p style="margin:0; font-weight:600; color:#b45309;"><span class="dashicons dashicons-warning" style="color:#f59e0b; vertical-align:middle;"></span> <?php esc_html_e('Security session token refreshed. Please click "Check for Updates Now" again.', 'astropress'); ?></p>
+                </div>
+            <?php endif; ?>
+
             <table class="astropress-status-table">
                 <tr>
                     <td><strong><?php esc_html_e('Installed Version', 'astropress'); ?></strong></td>
