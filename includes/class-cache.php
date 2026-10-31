@@ -125,8 +125,8 @@ class AstroPress_Cache {
      * @return bool
      */
     public function queue_invalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $extra_data = array()) {
-        // If debouncing is disabled, dispatch immediately
-        if (!$this->core->should_debounce_webhooks()) {
+        // If debouncing is disabled OR during a REST API / MCP update, dispatch immediately
+        if (!$this->core->should_debounce_webhooks() || (defined('REST_REQUEST') && REST_REQUEST)) {
             return $this->dispatch_revalidation($slug, $type, $action, $extra_urls, false, $extra_data);
         }
 
@@ -223,77 +223,77 @@ class AstroPress_Cache {
             'deploy_hook'    => null,
         );
 
-        // 1. Direct Cloudflare Zone Cache API Purge (Primary Invalidation)
-        if (!empty($cf_token) && !empty($cf_zone)) {
-            $is_purge_all = ($type === 'all' || in_array('/*', $clean_urls, true));
-            if ($is_purge_all) {
-                $results['cloudflare_api'] = $this->purge_cloudflare_zone(array(), true);
+        // Build full absolute URLs with dual trailing-slash normalization for both Cloudflare Zone API and Astro
+        $full_urls = array();
+        $base = !empty($frontend_url) ? rtrim($frontend_url, '/') : rtrim(home_url(), '/');
+        $all_paths = $clean_urls;
+        if (!empty($slug)) {
+            $all_paths[] = '/' . ltrim($slug, '/');
+        }
+
+        foreach ($all_paths as $p) {
+            if (strpos($p, 'http') === 0) {
+                $full_urls[] = $p;
+                $url_path = wp_parse_url($p, PHP_URL_PATH);
+                if (!empty($url_path) && $url_path !== '/') {
+                    $has_slash = (substr($p, -1) === '/');
+                    $full_urls[] = $has_slash ? rtrim($p, '/') : ($p . '/');
+                }
             } else {
-                // Build full absolute URLs for Cloudflare API files array with dual trailing-slash normalization
-                $full_urls = array();
-                $base = !empty($frontend_url) ? rtrim($frontend_url, '/') : rtrim(home_url(), '/');
-
-                $all_paths = $clean_urls;
-                if (!empty($slug)) {
-                    $all_paths[] = '/' . ltrim($slug, '/');
-                }
-
-                foreach ($all_paths as $p) {
-                    if (strpos($p, 'http') === 0) {
-                        $full_urls[] = $p;
-                        $url_path = wp_parse_url($p, PHP_URL_PATH);
-                        if (!empty($url_path) && $url_path !== '/') {
-                            $has_slash = (substr($p, -1) === '/');
-                            $full_urls[] = $has_slash ? rtrim($p, '/') : ($p . '/');
-                        }
-                    } else {
-                        $clean_p = '/' . ltrim($p, '/');
-                        if ($clean_p === '/') {
-                            $full_urls[] = $base . '/';
-                            $full_urls[] = $base;
-                        } else {
-                            $clean_no_slash = rtrim($clean_p, '/');
-                            $full_urls[] = $base . $clean_no_slash;
-                            $full_urls[] = $base . $clean_no_slash . '/';
-                        }
-                    }
-                }
-                $full_urls = array_values(array_unique(array_filter($full_urls)));
-                if (!empty($full_urls)) {
-                    $results['cloudflare_api'] = $this->purge_cloudflare_zone($full_urls, false);
-                }
-
-                // Dual Invalidation: Ping Astro Cloudflare Worker (/api/revalidate)
-                // Authenticates via single-use dynamic ticket or optional custom secret
-                if (!empty($frontend_url)) {
-                    $revalidate_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
-                    $ticket = $this->generate_auth_ticket($action);
-                    $payload = array(
-                        'slug'      => $slug,
-                        'type'      => $type,
-                        'action'    => $action,
-                        'urls'      => $clean_urls,
-                        'full_urls' => $full_urls,
-                        'timestamp' => time(),
-                    );
-                    $headers = array(
-                        'Content-Type'        => 'application/json',
-                        'x-astropress-ticket' => $ticket,
-                    );
-                    $revalidate_secret = $this->core->get_custom_secret();
-                    if (!empty($revalidate_secret)) {
-                        $headers['x-revalidate-secret'] = $revalidate_secret;
-                        $headers['Authorization']       = 'Bearer ' . $revalidate_secret;
-                    }
-                    wp_remote_post($revalidate_endpoint, array(
-                        'timeout'   => 5,
-                        'blocking'  => false,
-                        'sslverify' => true,
-                        'headers'   => $headers,
-                        'body'      => wp_json_encode($payload),
-                    ));
+                $clean_p = '/' . ltrim($p, '/');
+                if ($clean_p === '/') {
+                    $full_urls[] = $base . '/';
+                    $full_urls[] = $base;
+                } else {
+                    $clean_no_slash = rtrim($clean_p, '/');
+                    $full_urls[] = $base . $clean_no_slash;
+                    $full_urls[] = $base . $clean_no_slash . '/';
                 }
             }
+        }
+        $full_urls = array_values(array_unique(array_filter($full_urls)));
+
+        // 1. Direct Cloudflare Zone Cache API Purge (Primary Invalidation)
+        $is_purge_all = ($type === 'all' || in_array('/*', $clean_urls, true));
+        if (!empty($cf_token) && !empty($cf_zone)) {
+            if ($is_purge_all) {
+                $results['cloudflare_api'] = $this->purge_cloudflare_zone(array(), true);
+            } else if (!empty($full_urls)) {
+                $results['cloudflare_api'] = $this->purge_cloudflare_zone($full_urls, false);
+            }
+        }
+
+        // 2. Dual Invalidation: Ping Astro Cloudflare Worker (/api/revalidate)
+        // Authenticates via single-use dynamic ticket or optional custom secret
+        // Must ALWAYS execute when frontend_url is defined, even if direct Cloudflare API credentials are not set
+        if (!empty($frontend_url)) {
+            $revalidate_endpoint = rtrim($frontend_url, '/') . '/api/revalidate';
+            $ticket = $this->generate_auth_ticket($action);
+            $payload = array(
+                'slug'              => $slug,
+                'type'              => $type,
+                'action'            => $action,
+                'urls'              => $clean_urls,
+                'full_urls'         => $full_urls,
+                'purge_everything'  => $is_purge_all,
+                'timestamp'         => time(),
+            );
+            $headers = array(
+                'Content-Type'        => 'application/json',
+                'x-astropress-ticket' => $ticket,
+            );
+            $revalidate_secret = $this->core->get_custom_secret();
+            if (!empty($revalidate_secret)) {
+                $headers['x-revalidate-secret'] = $revalidate_secret;
+                $headers['Authorization']       = 'Bearer ' . $revalidate_secret;
+            }
+            wp_remote_post($revalidate_endpoint, array(
+                'timeout'   => 5,
+                'blocking'  => false,
+                'sslverify' => true,
+                'headers'   => $headers,
+                'body'      => wp_json_encode($payload),
+            ));
         }
 
         // 2. Trigger Cloudflare Deploy Hook on full site cache purge
@@ -322,6 +322,10 @@ class AstroPress_Cache {
     public function purge_cloudflare_zone($urls = array(), $purge_everything = false, $override_token = '', $override_zone_id = '') {
         $token   = !empty($override_token) ? $override_token : $this->core->get_cf_api_token();
         $zone_id = !empty($override_zone_id) ? $override_zone_id : $this->core->get_cf_zone_id();
+
+        if (empty($zone_id) && !empty($token)) {
+            $zone_id = $this->core->resolve_zone_id($token);
+        }
 
         if (empty($token) || empty($zone_id)) {
             return false;
@@ -1563,9 +1567,8 @@ class AstroPress_Cache {
 
         if (empty($zone_id)) {
             // Attempt targeted lookup by root zone
-            $host_parts = explode('.', $host);
-            if (count($host_parts) >= 2) {
-                $root_zone_search = implode('.', array_slice($host_parts, -2));
+            $root_zone_search = AstroPress::get_root_domain($host);
+            if (!empty($root_zone_search)) {
                 $direct_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?name=' . rawurlencode($root_zone_search), array(
                     'timeout' => 8,
                     'headers' => array('Authorization' => 'Bearer ' . $token),

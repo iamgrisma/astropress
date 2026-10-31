@@ -334,9 +334,46 @@ class AstroPress {
     }
 
     /**
+     * Compute the canonical root domain for any host, accounting for multi-part TLDs (e.g. .com.np, .co.uk)
+     *
+     * @param string $host Hostname or URL
+     * @return string Root domain (e.g. 'grisma.com.np', 'topnepali.com')
+     */
+    public static function get_root_domain($host) {
+        $host = strtolower(trim(preg_replace('#^https?://#i', '', (string)$host)));
+        $host = preg_replace('#[:/].*$#', '', $host);
+        if (empty($host)) {
+            return '';
+        }
+        $parts = explode('.', $host);
+        $num_parts = count($parts);
+        if ($num_parts <= 2) {
+            return $host;
+        }
+
+        $multi_tlds = array(
+            'com.np', 'org.np', 'edu.np', 'net.np', 'gov.np', 'mil.np',
+            'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk',
+            'com.au', 'net.au', 'org.au', 'edu.au',
+            'co.in', 'net.in', 'org.in', 'gen.in',
+            'co.nz', 'net.nz', 'org.nz',
+            'com.br', 'net.br',
+            'co.za', 'net.za',
+            'com.sg', 'edu.sg',
+        );
+
+        $suffix = implode('.', array_slice($parts, -2));
+        if (in_array($suffix, $multi_tlds, true)) {
+            return implode('.', array_slice($parts, -3));
+        }
+
+        return implode('.', array_slice($parts, -2));
+    }
+
+    /**
      * Derive recommended Astro frontend URL from WordPress host.
      * E.g. https://wp.topnepali.com -> https://topnepali.com
-     * E.g. https://backend.news.org.np -> https://news.org.np
+     * E.g. https://wp.grisma.com.np -> https://grisma.com.np
      *
      * @return string
      */
@@ -346,19 +383,8 @@ class AstroPress {
             return '';
         }
 
-        $parts = explode('.', $wp_host);
-        $multi_tlds = array('com.np', 'org.np', 'edu.np', 'net.np', 'gov.np', 'co.uk', 'com.au', 'co.in');
-        $suffix = implode('.', array_slice($parts, -2));
-
-        if (in_array(strtolower($suffix), $multi_tlds, true) && count($parts) >= 3) {
-            $root = implode('.', array_slice($parts, -3));
-        } elseif (count($parts) >= 2) {
-            $root = implode('.', array_slice($parts, -2));
-        } else {
-            $root = $wp_host;
-        }
-
-        return 'https://' . $root;
+        $root = self::get_root_domain($wp_host);
+        return 'https://' . ($root ?: $wp_host);
     }
 
     /**
@@ -510,7 +536,97 @@ class AstroPress {
                 update_option(self::OPTION_CF_ZONE_ID, $val);
             }
         }
+        if (empty($val)) {
+            $val = $this->resolve_zone_id();
+        }
         return (string) $val;
+    }
+
+    /**
+     * Dynamically resolve Cloudflare Zone ID from Cloudflare API using the configured or provided token.
+     * Automatically matches root domain or frontend host and persists the Zone ID and Account ID to wp_options.
+     *
+     * @param string $token Optional Cloudflare API token
+     * @return string Resolved Zone ID or empty string
+     */
+    public function resolve_zone_id($token = '') {
+        $token = !empty($token) ? $token : $this->get_cf_api_token();
+        if (empty($token) || strpos($token, '••••') !== false) {
+            return '';
+        }
+
+        $wp_host     = wp_parse_url(home_url(), PHP_URL_HOST) ?: '';
+        $fe_url      = $this->get_frontend_url();
+        $fe_host     = wp_parse_url($fe_url, PHP_URL_HOST) ?: $wp_host;
+        $target_root = self::get_root_domain($fe_host ?: $wp_host);
+        $search_host = strtolower($fe_host ?: $wp_host);
+
+        $headers = array(
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+        );
+
+        // 1. Direct targeted lookup by canonical root domain (e.g. ?name=grisma.com.np)
+        if (!empty($target_root)) {
+            $direct_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?name=' . rawurlencode($target_root), array(
+                'timeout' => 8,
+                'headers' => $headers,
+            ));
+            if (!is_wp_error($direct_res) && wp_remote_retrieve_response_code($direct_res) === 200) {
+                $db = json_decode(wp_remote_retrieve_body($direct_res), true);
+                if (!empty($db['result'][0]['id'])) {
+                    $found_id = sanitize_text_field($db['result'][0]['id']);
+                    update_option(self::OPTION_CF_ZONE_ID, $found_id);
+                    update_option(self::OPTION_CF_DIRECT_PURGE, '1');
+                    if (!empty($db['result'][0]['account']['id'])) {
+                        update_option('astropress_r2_account_id', sanitize_text_field($db['result'][0]['account']['id']));
+                        update_option('r2g_account_id', sanitize_text_field($db['result'][0]['account']['id']));
+                    }
+                    return $found_id;
+                }
+            }
+        }
+
+        // 2. Fallback: Search all active zones in token scope
+        $zones_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?status=active&per_page=50', array(
+            'timeout' => 8,
+            'headers' => $headers,
+        ));
+        if (!is_wp_error($zones_res) && wp_remote_retrieve_response_code($zones_res) === 200) {
+            $zb = json_decode(wp_remote_retrieve_body($zones_res), true);
+            if (!empty($zb['result']) && is_array($zb['result'])) {
+                foreach ($zb['result'] as $z) {
+                    $z_name = strtolower($z['name'] ?? '');
+                    if (
+                        $z_name === $target_root ||
+                        $z_name === $search_host ||
+                        ($search_host && str_ends_with($search_host, '.' . $z_name))
+                    ) {
+                        $found_id = sanitize_text_field($z['id']);
+                        update_option(self::OPTION_CF_ZONE_ID, $found_id);
+                        update_option(self::OPTION_CF_DIRECT_PURGE, '1');
+                        if (!empty($z['account']['id'])) {
+                            update_option('astropress_r2_account_id', sanitize_text_field($z['account']['id']));
+                            update_option('r2g_account_id', sanitize_text_field($z['account']['id']));
+                        }
+                        return $found_id;
+                    }
+                }
+                // If only one zone exists under this scoped token, use it
+                if (!empty($zb['result'][0]['id'])) {
+                    $first_id = sanitize_text_field($zb['result'][0]['id']);
+                    update_option(self::OPTION_CF_ZONE_ID, $first_id);
+                    update_option(self::OPTION_CF_DIRECT_PURGE, '1');
+                    if (!empty($zb['result'][0]['account']['id'])) {
+                        update_option('astropress_r2_account_id', sanitize_text_field($zb['result'][0]['account']['id']));
+                        update_option('r2g_account_id', sanitize_text_field($zb['result'][0]['account']['id']));
+                    }
+                    return $first_id;
+                }
+            }
+        }
+
+        return '';
     }
 
     public function get_r2_account_id() {
@@ -524,6 +640,10 @@ class AstroPress {
                 $val = $cached['account_id'];
                 update_option('astropress_r2_account_id', $val);
             }
+        }
+        if (empty($val)) {
+            $this->resolve_zone_id();
+            $val = get_option('astropress_r2_account_id', '');
         }
         return (string) $val;
     }

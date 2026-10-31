@@ -136,15 +136,14 @@ trait AstroPress_Admin_Ajax_Cloudflare {
         }
 
         // 2. Discover root zone search term
-        $wp_host = wp_parse_url(home_url(), PHP_URL_HOST);
-        $fe_url  = $this->core->get_frontend_url();
-        $fe_host = wp_parse_url($fe_url, PHP_URL_HOST) ?: $wp_host;
-        $search_host = $fe_host ?: $wp_host;
-        $parts = explode('.', $search_host);
-        $root_search = count($parts) >= 2 ? implode('.', array_slice($parts, -2)) : $search_host;
+        $wp_host     = wp_parse_url(home_url(), PHP_URL_HOST) ?: '';
+        $fe_url      = $this->core->get_frontend_url();
+        $fe_host     = wp_parse_url($fe_url, PHP_URL_HOST) ?: $wp_host;
+        $search_host = strtolower($fe_host ?: $wp_host);
+        $root_search = AstroPress::get_root_domain($search_host);
 
         // 3. Probe Zone & Cache Purge capability (Essential)
-        $z_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?per_page=10', array(
+        $z_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?per_page=50', array(
             'timeout' => 8,
             'headers' => $headers,
         ));
@@ -162,7 +161,12 @@ trait AstroPress_Admin_Ajax_Cloudflare {
                         'name' => sanitize_text_field($z['name'] ?? ''),
                     );
                     $zones[] = $z_item;
-                    if (strcasecmp($z_item['name'], $root_search) === 0 || str_ends_with(strtolower($search_host), '.' . strtolower($z_item['name']))) {
+                    $z_name = strtolower($z_item['name']);
+                    if (
+                        $z_name === $root_search ||
+                        $z_name === $search_host ||
+                        ($search_host && str_ends_with($search_host, '.' . $z_name))
+                    ) {
                         $matched_zone = $z_item;
                         if (!empty($z['account']['id'])) {
                             $matched_account = array(
@@ -290,6 +294,23 @@ trait AstroPress_Admin_Ajax_Cloudflare {
             'pages_projects' => $pages_projects,
         );
         AstroPress::set_discovery_cache($discovery_data);
+
+        // Auto-persist verified credentials immediately so user only needs to provide token
+        if (!empty($token) && strpos($token, '••••') === false) {
+            update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($token));
+        }
+        if (!empty($zone_id)) {
+            update_option(AstroPress::OPTION_CF_ZONE_ID, $zone_id);
+            update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
+            update_option(AstroPress::OPTION_PURGE_ON_SAVE, '1');
+        }
+        if (!empty($account_id)) {
+            update_option('astropress_r2_account_id', $account_id);
+            update_option('r2g_account_id', $account_id);
+        }
+        if (empty($fe_url) && !empty($matched_zone['name'])) {
+            update_option(AstroPress::OPTION_FRONTEND_URL, 'https://' . $matched_zone['name']);
+        }
 
         $essential_pass = $can_zone_read;
 
@@ -619,57 +640,7 @@ trait AstroPress_Admin_Ajax_Cloudflare {
      * @return string Zone ID or empty string
      */
     public function resolve_zone_id($token = '') {
-        $zone_id = $this->core->get_cf_zone_id();
-        if (!empty($zone_id)) {
-            return $zone_id;
-        }
-
-        $discovery = AstroPress::get_discovery_cache();
-        if (!empty($discovery['zone_id'])) {
-            return sanitize_text_field($discovery['zone_id']);
-        }
-
-        if (empty($token) || strpos($token, '••••') !== false) {
-            $token = $this->core->get_cf_api_token();
-        }
-
-        if (empty($token)) {
-            return '';
-        }
-
-        $res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?per_page=10', array(
-            'timeout' => 8,
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type'  => 'application/json',
-            ),
-        ));
-
-        if (!is_wp_error($res) && wp_remote_retrieve_response_code($res) === 200) {
-            $body = json_decode(wp_remote_retrieve_body($res), true);
-            if (!empty($body['result']) && is_array($body['result'])) {
-                $wp_host = wp_parse_url(home_url(), PHP_URL_HOST) ?: '';
-                $fe_url  = $this->core->get_frontend_url();
-                $fe_host = wp_parse_url($fe_url, PHP_URL_HOST) ?: $wp_host;
-                $search  = strtolower($fe_host ?: $wp_host);
-
-                foreach ($body['result'] as $z) {
-                    $z_name = strtolower($z['name'] ?? '');
-                    if ($z_name && ($search === $z_name || (strlen($search) > strlen($z_name) && substr($search, -strlen('.' . $z_name)) === '.' . $z_name))) {
-                        $found_id = sanitize_text_field($z['id']);
-                        update_option(AstroPress::OPTION_CF_ZONE_ID, $found_id);
-                        return $found_id;
-                    }
-                }
-                if (!empty($body['result'][0]['id'])) {
-                    $first_id = sanitize_text_field($body['result'][0]['id']);
-                    update_option(AstroPress::OPTION_CF_ZONE_ID, $first_id);
-                    return $first_id;
-                }
-            }
-        }
-
-        return '';
+        return $this->core->resolve_zone_id($token);
     }
 
     /**

@@ -35,6 +35,13 @@ It seamlessly combines:
 
 == Changelog ==
 
+= 2.3.8 =
+* Multi-part TLD & ccTLD Resolution: Added `AstroPress::get_root_domain()` supporting `.com.np`, `.org.np`, `.co.uk`, `.co.in`, and other multi-part extensions, ensuring Cloudflare zones match accurately.
+* Core Runtime Zone Auto-Resolution: Promoted `resolve_zone_id()` into the core `AstroPress` class with automatic runtime discovery and persistence, eliminating headless Zone ID missing errors.
+* Immediate Persistence on Verification: Token verification now automatically saves `OPTION_CF_API_TOKEN`, `OPTION_CF_ZONE_ID`, and direct edge purge options immediately to the database.
+* Synchronous REST & MCP Invalidation: Bypasses delayed shutdown queueing during REST API requests (`defined('REST_REQUEST')`) to guarantee edge cache purging succeeds on LiteSpeed/cPanel hosts.
+* Decoupled Astro Webhook: Ensures Astro SSR `/api/revalidate` is dispatched reliably regardless of direct Cloudflare Zone API state.
+
 = 2.3.7 =
 * Comprehensive RSS & Feed Invalidation: Added automatic cache purging for `/feed`, `/rss`, `/feed.xml`, `/rss.xml`, and hierarchical category feeds (`$term_path/feed`, `$term_path/rss`) on taxonomy, menu, site info, and post updates.
 
