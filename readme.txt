@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.4.5
+Stable tag: 2.4.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.4.6 =
+* LiteSpeed & Redis Cache Purge Synchronization: Flushes object cache and purges LiteSpeed on-disk REST API cache prior to sending edge revalidation webhooks.
+* Instant WP-CLI & Terminal Mutation Dispatch: Bypasses delayed shutdown queueing during WP-CLI and headless mutation execution (`defined('WP_CLI') && WP_CLI`), guaranteeing instant revalidation.
+* Cloudflare POP API Credential Auto-Forwarding: Forwards Zone ID and API Token in revalidation requests for unified edge cache clearance.
+* Fastly CDN & Atom Feed Discovery: Immune to GitHub API rate limits.
 
 = 2.3.9 =
 * Multi-part TLD & ccTLD Resolution: Added `AstroPress::get_root_domain()` supporting `.com.np`, `.org.np`, `.co.uk`, `.co.in`, and other multi-part extensions, ensuring Cloudflare zones match accurately.
