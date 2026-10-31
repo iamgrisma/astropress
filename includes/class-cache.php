@@ -253,6 +253,18 @@ class AstroPress_Cache {
         }
         $full_urls = array_values(array_unique(array_filter($full_urls)));
 
+        // 0. Synchronize local caches: Purge LiteSpeed REST cache and Redis Object Cache BEFORE notifying Astro
+        do_action('astropress_before_revalidate', $slug, $type, $action, $clean_urls);
+        if (function_exists('headless_litespeed_auto_purge')) {
+            headless_litespeed_auto_purge();
+        }
+        if ($this->core->should_sync_litespeed() && defined('LSCWP_V')) {
+            do_action('litespeed_purge_all');
+        }
+        if (!headers_sent()) {
+            header('X-LiteSpeed-Purge: *');
+        }
+
         // 1. Direct Cloudflare Zone Cache API Purge (Primary Invalidation)
         $is_purge_all = ($type === 'all' || in_array('/*', $clean_urls, true));
         if (!empty($cf_token)) {
