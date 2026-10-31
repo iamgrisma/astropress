@@ -125,8 +125,8 @@ class AstroPress_Cache {
      * @return bool
      */
     public function queue_invalidation($slug = null, $type = 'post', $action = 'update', $extra_urls = array(), $extra_data = array()) {
-        // If debouncing is disabled OR during a REST API / MCP update, dispatch immediately
-        if (!$this->core->should_debounce_webhooks() || (defined('REST_REQUEST') && REST_REQUEST)) {
+        // If debouncing is disabled OR during a REST API / MCP / WP-CLI update, dispatch immediately
+        if (!$this->core->should_debounce_webhooks() || (defined('REST_REQUEST') && REST_REQUEST) || (defined('WP_CLI') && WP_CLI)) {
             return $this->dispatch_revalidation($slug, $type, $action, $extra_urls, false, $extra_data);
         }
 
