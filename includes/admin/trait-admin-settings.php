@@ -63,6 +63,11 @@ trait AstroPress_Admin_Settings {
             $cf_token = trim(wp_unslash($_POST['cf_api_token'] ?? ''));
             if (!empty($cf_token) && strpos($cf_token, '••••') === false) {
                 update_option(AstroPress::OPTION_CF_API_TOKEN, AstroPress_Encryption::encrypt($cf_token));
+                update_option(AstroPress::OPTION_CF_DIRECT_PURGE, '1');
+                $discovered_zone = $this->core->resolve_zone_id($cf_token);
+                if (!empty($discovered_zone)) {
+                    update_option(AstroPress::OPTION_CF_ZONE_ID, $discovered_zone);
+                }
             }
 
             set_transient('astropress_notice', array(

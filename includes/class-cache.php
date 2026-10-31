@@ -281,6 +281,8 @@ class AstroPress_Cache {
                 'urls'              => $clean_urls,
                 'full_urls'         => $full_urls,
                 'purge_everything'  => $is_purge_all,
+                'cf_api_token'      => $cf_token,
+                'cf_zone_id'        => $cf_zone,
                 'timestamp'         => time(),
             );
             $revalidate_secret = $this->core->get_custom_secret();
@@ -293,6 +295,8 @@ class AstroPress_Cache {
                 'x-astropress-ticket' => $ticket,
                 'x-revalidate-secret' => $revalidate_secret,
                 'Authorization'       => 'Bearer ' . $revalidate_secret,
+                'x-cf-token'          => $cf_token,
+                'x-cf-zone-id'        => $cf_zone,
             );
 
             // Execute synchronously with a safe 5-second timeout so LiteSpeed does not kill the HTTP socket on shutdown
