@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.4.7
+Stable tag: 2.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,7 +35,14 @@ It seamlessly combines:
 
 == Changelog ==
 
-= 2.4.6 =
+= 2.5.0 =
+* Automated .htaccess Sensitive File Shield: Automatically injects self-healing Apache and LiteSpeed rules into root `.htaccess` and `wp-content/.htaccess` using `insert_with_markers`.
+* Direct Public Log Blocking: Explicitly blocks public web access to `debug.log`, `*.log`, `.env`, and backup files with `HTTP 403 Forbidden` across LiteSpeed Enterprise and Apache.
+* Clean Lifecycle Management: Seamlessly cleans up security rules upon plugin deactivation.
+
+= 2.4.9 =
+* Self-Healing Cache Rules: Added ensure_cache_rule for Cloudflare Edge.
+* AGENTS.md Guidelines: Documented 4-tier caching architecture.
 * LiteSpeed & Redis Cache Purge Synchronization: Flushes object cache and purges LiteSpeed on-disk REST API cache prior to sending edge revalidation webhooks.
 * Instant WP-CLI & Terminal Mutation Dispatch: Bypasses delayed shutdown queueing during WP-CLI and headless mutation execution (`defined('WP_CLI') && WP_CLI`), guaranteeing instant revalidation.
 * Cloudflare POP API Credential Auto-Forwarding: Forwards Zone ID and API Token in revalidation requests for unified edge cache clearance.
