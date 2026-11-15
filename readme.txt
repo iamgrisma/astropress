@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.5.0
+Stable tag: 2.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,10 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.5.1 =
+* Redis Object Cache Invalidation: Automatically flushes WordPress Redis Object Cache (wp_cache_flush()) prior to dispatching edge revalidation webhooks, eliminating stale post query transients.
+* Edge Webhook Synchronization: Ensures unified cache clearing across Cloudflare Workers on post publish, update, and deletion.
 
 = 2.5.0 =
 * Automated .htaccess Sensitive File Shield: Automatically injects self-healing Apache and LiteSpeed rules into root `.htaccess` and `wp-content/.htaccess` using `insert_with_markers`.

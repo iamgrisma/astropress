@@ -261,6 +261,9 @@ class AstroPress_Cache {
         if ($this->core->should_sync_litespeed() && defined('LSCWP_V')) {
             do_action('litespeed_purge_all');
         }
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
         if (!headers_sent()) {
             header('X-LiteSpeed-Purge: *');
         }
