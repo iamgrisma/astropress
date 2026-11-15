@@ -109,7 +109,13 @@ class AstroPress_Cache {
         if (!is_wp_error($link)) {
             $path = wp_parse_url($link, PHP_URL_PATH);
             if ($path) {
-                return '/' . trim($path, '/');
+                $clean_path = '/' . trim($path, '/');
+                if ($term->taxonomy === 'category') {
+                    // Strip legacy /category/ prefix to return canonical destination (Rank Math stripped base)
+                    $clean_path = preg_replace('#^/category(?:/|$)#i', '/', $clean_path);
+                    return '/' . ltrim($clean_path, '/');
+                }
+                return $clean_path;
             }
         }
         return ($term->taxonomy === 'category') ? '/' . $term->slug : '/tag/' . $term->slug;
@@ -792,9 +798,16 @@ class AstroPress_Cache {
                         $term_path = $this->get_term_path($term);
                         if (!empty($term_path)) {
                             $extra_urls[] = $term_path;
+                            if ($term->taxonomy === 'category') {
+                                $extra_urls[] = '/category' . $term_path;
+                            }
                             if ($this->core->should_purge_feeds()) {
                                 $extra_urls[] = $term_path . '/feed';
                                 $extra_urls[] = $term_path . '/rss';
+                                if ($term->taxonomy === 'category') {
+                                    $extra_urls[] = '/category' . $term_path . '/feed';
+                                    $extra_urls[] = '/category' . $term_path . '/rss';
+                                }
                             }
                         }
                         if (!empty($term->parent)) {
@@ -803,9 +816,16 @@ class AstroPress_Cache {
                                 $parent_path = $this->get_term_path($parent);
                                 if (!empty($parent_path)) {
                                     $extra_urls[] = $parent_path;
+                                    if ($parent->taxonomy === 'category') {
+                                        $extra_urls[] = '/category' . $parent_path;
+                                    }
                                     if ($this->core->should_purge_feeds()) {
                                         $extra_urls[] = $parent_path . '/feed';
                                         $extra_urls[] = $parent_path . '/rss';
+                                        if ($parent->taxonomy === 'category') {
+                                            $extra_urls[] = '/category' . $parent_path . '/feed';
+                                            $extra_urls[] = '/category' . $parent_path . '/rss';
+                                        }
                                     }
                                 }
                             }
@@ -819,6 +839,9 @@ class AstroPress_Cache {
         if ($this->core->should_purge_feeds()) {
             $extra_urls[] = '/sitemap.xml';
             $extra_urls[] = '/sitemap_index.xml';
+            $extra_urls[] = '/post-sitemap.xml';
+            $extra_urls[] = '/page-sitemap.xml';
+            $extra_urls[] = '/category-sitemap.xml';
             $extra_urls[] = '/feed';
             $extra_urls[] = '/rss';
             $extra_urls[] = '/rss.xml';
@@ -890,6 +913,9 @@ class AstroPress_Cache {
                         $term_path = $this->get_term_path($term);
                         if (!empty($term_path)) {
                             $extra_urls[] = $term_path;
+                            if ($term->taxonomy === 'category') {
+                                $extra_urls[] = '/category' . $term_path;
+                            }
                         }
                     }
                 }
@@ -899,6 +925,9 @@ class AstroPress_Cache {
         if ($this->core->should_purge_feeds()) {
             $extra_urls[] = '/sitemap.xml';
             $extra_urls[] = '/sitemap_index.xml';
+            $extra_urls[] = '/post-sitemap.xml';
+            $extra_urls[] = '/page-sitemap.xml';
+            $extra_urls[] = '/category-sitemap.xml';
             $extra_urls[] = '/feed';
             $extra_urls[] = '/rss';
             $extra_urls[] = '/rss.xml';
@@ -924,13 +953,18 @@ class AstroPress_Cache {
         if (!$term || is_wp_error($term)) return;
 
         $path = $this->get_term_path($term);
+        $is_cat = ($term->taxonomy === 'category');
         $this->queue_invalidation(null, 'taxonomy', 'update', array_filter(array(
             $path,
             !empty($path) ? $path . '/feed' : '',
             !empty($path) ? $path . '/rss' : '',
+            ($is_cat && !empty($path)) ? '/category' . $path : '',
+            ($is_cat && !empty($path)) ? '/category' . $path . '/feed' : '',
+            ($is_cat && !empty($path)) ? '/category' . $path . '/rss' : '',
             '/',
             '/blogs',
             '/blog',
+            '/category-sitemap.xml',
             '/sitemap.xml',
             '/sitemap_index.xml',
             '/feed',
@@ -947,19 +981,31 @@ class AstroPress_Cache {
         if (!$this->core->should_purge_taxonomy()) return;
 
         $path = '';
+        $is_cat = false;
         if ($deleted_term && !is_wp_error($deleted_term)) {
             $path = $this->get_term_path($deleted_term);
+            $is_cat = ($deleted_term->taxonomy === 'category');
         }
 
         $this->queue_invalidation(null, 'taxonomy', 'delete', array_filter(array(
             $path,
             !empty($path) ? $path . '/feed' : '',
             !empty($path) ? $path . '/rss' : '',
+            ($is_cat && !empty($path)) ? '/category' . $path : '',
+            ($is_cat && !empty($path)) ? '/category' . $path . '/feed' : '',
+            ($is_cat && !empty($path)) ? '/category' . $path . '/rss' : '',
             '/',
             '/blogs',
             '/blog',
+            '/category-sitemap.xml',
             '/sitemap.xml',
             '/sitemap_index.xml',
+            '/feed',
+            '/rss',
+            '/rss.xml',
+            '/feed.xml',
+        )));
+    }
             '/feed',
             '/rss',
             '/rss.xml',

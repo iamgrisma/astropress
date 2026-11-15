@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.5.1
+Stable tag: 2.5.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,11 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.5.2 =
+* Cache Warmer Host-Swap Guard: Automatically rewrites any warmed URLs matching the WordPress backend host to the declared frontend Astro URL, preventing accidental backend warmup.
+* Category Base Normalization: Resolves category paths to stripped canonical destinations (eliminating 301 redirect hops in warmer), while invalidating both canonical and legacy `/category/*` paths on post/category updates.
+* Namespaced Sitemap Discovery: Supports XML namespace prefixes (`<loc>` and `<sitemap:loc>`) across sitemap indexes and auto-purges sub-sitemaps on content mutations.
 
 = 2.5.1 =
 * Redis Object Cache Invalidation: Automatically flushes WordPress Redis Object Cache (wp_cache_flush()) prior to dispatching edge revalidation webhooks, eliminating stale post query transients.

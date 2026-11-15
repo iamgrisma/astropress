@@ -160,7 +160,7 @@ class AstroPress_Warmer {
 
         if (!empty($xml_content)) {
             $is_index = (stripos($xml_content, '<sitemapindex') !== false);
-            preg_match_all('/<loc>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<>\s]+)\s*(?:\]\]>)?\s*<\/loc>/i', $xml_content, $matches);
+            preg_match_all('/<(?:[a-zA-Z0-9_-]+:)?loc>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<>\s]+)\s*(?:\]\]>)?\s*<\/(?:[a-zA-Z0-9_-]+:)?loc>/i', $xml_content, $matches);
             $locs = !empty($matches[1]) ? $matches[1] : array();
 
             if ($is_index && $sitemap_type === 'sitemap_files_only') {
@@ -172,6 +172,9 @@ class AstroPress_Warmer {
                     $parsed = parse_url($loc, PHP_URL_PATH);
                     if ($parsed) {
                         $clean = '/' . ltrim($parsed, '/');
+                        if (preg_match('#^/category(?:/|$)#i', $clean)) {
+                            $clean = '/' . ltrim(preg_replace('#^/category(?:/|$)#i', '/', $clean), '/');
+                        }
                         if (!isset($seen[$clean])) {
                             $seen[$clean] = true;
                             $items[] = array('url' => $clean, 'title' => basename($clean) . ' (Sub-Sitemap)', 'type' => 'Sitemap XML');
@@ -183,12 +186,15 @@ class AstroPress_Warmer {
                     $sub_xml = $this->fetch_sitemap_xml($sub_loc);
                     if (!$sub_xml) continue;
 
-                    preg_match_all('/<loc>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<>\s]+)\s*(?:\]\]>)?\s*<\/loc>/i', $sub_xml, $sub_matches);
+                    preg_match_all('/<(?:[a-zA-Z0-9_-]+:)?loc>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<>\s]+)\s*(?:\]\]>)?\s*<\/(?:[a-zA-Z0-9_-]+:)?loc>/i', $sub_xml, $sub_matches);
                     if (!empty($sub_matches[1])) {
                         foreach ($sub_matches[1] as $page_loc) {
                             $parsed = parse_url($page_loc, PHP_URL_PATH);
                             if ($parsed) {
                                 $clean = '/' . ltrim($parsed, '/');
+                                if (preg_match('#^/category(?:/|$)#i', $clean)) {
+                                    $clean = '/' . ltrim(preg_replace('#^/category(?:/|$)#i', '/', $clean), '/');
+                                }
                                 if (!isset($seen[$clean])) {
                                     $seen[$clean] = true;
                                     $sub_name = basename(parse_url($sub_loc, PHP_URL_PATH));
@@ -203,6 +209,9 @@ class AstroPress_Warmer {
                     $parsed = parse_url($loc, PHP_URL_PATH);
                     if ($parsed) {
                         $clean = '/' . ltrim($parsed, '/');
+                        if (preg_match('#^/category(?:/|$)#i', $clean)) {
+                            $clean = '/' . ltrim(preg_replace('#^/category(?:/|$)#i', '/', $clean), '/');
+                        }
                         if (!isset($seen[$clean])) {
                             $seen[$clean] = true;
                             $is_xml = (substr($clean, -4) === '.xml');
@@ -456,21 +465,52 @@ class AstroPress_Warmer {
             return array();
         }
 
-        $frontend_url = $this->core->get_frontend_url();
+        $frontend_url = rtrim($this->core->get_frontend_url(), '/');
+        $home_host = strtolower(parse_url(home_url(), PHP_URL_HOST) ?? '');
+        $fe_host = strtolower(parse_url($frontend_url, PHP_URL_HOST) ?? '');
         $results = array();
 
         foreach ($urls as $item) {
             $path = is_array($item) ? ($item['url'] ?? '/') : (string) $item;
-            $full_url = (strpos($path, 'http') === 0) ? $path : rtrim($frontend_url, '/') . '/' . ltrim($path, '/');
+            $raw_url = trim($path);
+
+            if (strpos($raw_url, 'http://') === 0 || strpos($raw_url, 'https://') === 0) {
+                $parsed_item = parse_url($raw_url);
+                $item_host = strtolower($parsed_item['host'] ?? '');
+                $item_path = $parsed_item['path'] ?? '/';
+                $item_query = !empty($parsed_item['query']) ? '?' . $parsed_item['query'] : '';
+
+                // Host-Swap Guard: Force warmup strictly to the declared frontend host, preventing accidental backend warmup
+                if ($item_host === $home_host || ($item_host !== $fe_host && !empty($fe_host))) {
+                    $clean_path = '/' . ltrim($item_path, '/');
+                    $full_url = $frontend_url . $clean_path . $item_query;
+                } else {
+                    $full_url = $raw_url;
+                }
+            } else {
+                $full_url = $frontend_url . '/' . ltrim($raw_url, '/');
+            }
+
+            // Category Base Normalization: Warm stripped canonical category URLs directly (Zero 301 redirect hops)
+            $parsed_full = parse_url($full_url);
+            if (!empty($parsed_full['path']) && preg_match('#^/category(?:/|$)#i', $parsed_full['path'])) {
+                $stripped_path = preg_replace('#^/category(?:/|$)#i', '/', $parsed_full['path']);
+                $full_url = ($parsed_full['scheme'] ?? 'https') . '://' . ($parsed_full['host'] ?? $fe_host)
+                          . (!empty($parsed_full['port']) ? ':' . $parsed_full['port'] : '')
+                          . '/' . ltrim($stripped_path, '/')
+                          . (!empty($parsed_full['query']) ? '?' . $parsed_full['query'] : '');
+                $path = '/' . ltrim($stripped_path, '/');
+            }
 
             $start_time = microtime(true);
             $response = wp_remote_get($full_url, array(
                 'timeout'     => 12,
                 'blocking'    => true,
-                'sslverify'   => true,
+                'sslverify'   => (bool) apply_filters('astropress_sslverify', true),
                 'headers'     => array(
-                    'User-Agent' => 'AstroPress-Cache-Warmer/1.0',
-                    'Accept'     => 'text/html,application/xhtml+xml,application/xml',
+                    'User-Agent'      => 'AstroPress-Cache-Warmer/' . ASTROPRESS_VERSION,
+                    'Accept'          => 'text/html,application/xhtml+xml,application/xml',
+                    'Accept-Encoding' => 'gzip, deflate, br',
                 ),
             ));
             $duration = round((microtime(true) - $start_time) * 1000);
