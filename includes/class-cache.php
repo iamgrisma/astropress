@@ -1006,12 +1006,6 @@ class AstroPress_Cache {
             '/feed.xml',
         )));
     }
-            '/feed',
-            '/rss',
-            '/rss.xml',
-            '/feed.xml',
-        )));
-    }
 
     /**
      * Hook: On Navigation Menu Change

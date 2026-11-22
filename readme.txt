@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.5.2
+Stable tag: 2.5.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,9 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.5.3 =
+* Fix Fatal Parse Error: Removed duplicated dangling feed invalidation block in `class-cache.php` (`on_term_delete`) that caused PHP parse error and plugin deactivation.
 
 = 2.5.2 =
 * Cache Warmer Host-Swap Guard: Automatically rewrites any warmed URLs matching the WordPress backend host to the declared frontend Astro URL, preventing accidental backend warmup.
