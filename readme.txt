@@ -5,7 +5,7 @@ Tags: headless, astro, cloudflare pages, cloudflare workers, cloudflare r2, webp
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 2.5.3
+Stable tag: 2.5.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,12 @@ It seamlessly combines:
 4. Activate the plugin and navigate to **AstroPress** in the admin sidebar.
 
 == Changelog ==
+
+= 2.5.4 =
+* Codebase Consolidation & Deduplication: Deduplicated shared cache invalidation, Cloudflare/R2 admin AJAX handlers, SEO head renderers, admin JS utilities, and CSS rules.
+* Security & SSRF Hardening: Added external URL validation guards in `class-security.php`, standardized admin nonce/capability verification via `user_can_admin_ajax()`, and removed hardcoded fallback webhook secrets (`has_custom_secret()`).
+* Headless SEO & Origin Rewriting Fixes: Fixed undefined variable bug in `filter_rank_math_url()`, implemented longest-first subpath origin rewriting in `rewrite_origin_urls()`, and aligned native/Yoast/Rank Math `<head>` rendering.
+* R2 Discovery Fallbacks & Unit Tests: Added discovery cache fallbacks in `get_r2_option()` and added CLI unit test suite in `tests/run-tests.php` (`37/37` assertions passing).
 
 = 2.5.3 =
 * Fix Fatal Parse Error: Removed duplicated dangling feed invalidation block in `class-cache.php` (`on_term_delete`) that caused PHP parse error and plugin deactivation.

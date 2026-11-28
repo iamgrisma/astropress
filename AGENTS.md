@@ -9,7 +9,7 @@
 
 - **Name:** AstroPress
 - **Repository:** `https://github.com/iamgrisma/astropress`
-- **Current Version:** `2.4.9`
+- **Current Version:** `2.5.4`
 - **Role:** Enterprise WordPress companion suite for Astro headless websites deployed on Cloudflare Pages and Workers.
 - **Core Pillars:**
   1. Multi-Tier Cache Invalidation & On-Demand Revalidation (`includes/class-cache.php`).

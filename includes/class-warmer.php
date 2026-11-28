@@ -50,16 +50,7 @@ class AstroPress_Warmer {
     }
 
     private function verify_request() {
-        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
-        if (!empty($nonce) && (
-            wp_verify_nonce($nonce, 'astropress_admin_nonce') ||
-            wp_verify_nonce($nonce, 'astropress_onboarding_nonce') ||
-            wp_verify_nonce($nonce, 'topnepali_admin_nonce') ||
-            wp_verify_nonce($nonce, 'r2g_admin_nonce')
-        )) {
-            return current_user_can('manage_options');
-        }
-        return false;
+        return AstroPress::user_can_admin_ajax('manage_options');
     }
 
     /**

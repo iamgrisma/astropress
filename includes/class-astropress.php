@@ -52,7 +52,6 @@ class AstroPress {
 
     // In-memory memoized option values
     private $cached_frontend_url = null;
-    private $cached_secret       = null;
     private $client              = null;
 
     /**
@@ -148,17 +147,74 @@ class AstroPress {
     }
 
     /**
+     * Get R2 setting with modern/legacy key fallback (`astropress_r2_*` -> `r2g_*`).
+     *
+     * @param string $key Setting suffix (e.g. 'bucket', 'custom_domain').
+     * @param mixed  $default Fallback value.
+     * @return mixed
+     */
+    public function get_r2_option($key, $default = '') {
+        $val = $this->get_compat_option("astropress_r2_{$key}", "astropress_{$key}", "r2g_{$key}", null);
+        if ($val !== null && $val !== '') {
+            return $val;
+        }
+        $cached = self::get_discovery_cache();
+        if (!empty($cached) && is_array($cached)) {
+            if ($key === 'account_id' && !empty($cached['account_id'])) {
+                return $cached['account_id'];
+            }
+            if ($key === 'zone_id' && !empty($cached['zone_id'])) {
+                return $cached['zone_id'];
+            }
+            if ($key === 'bucket' && !empty($cached['buckets'][0])) {
+                return $cached['buckets'][0];
+            }
+        }
+        return $default;
+    }
+
+    /**
+     * Validate AJAX request nonce (current or legacy) and user capability.
+     *
+     * @param string $capability WordPress capability required.
+     * @return bool
+     */
+    public static function user_can_admin_ajax($capability = 'manage_options') {
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? $_REQUEST['_ajax_nonce'] ?? ''));
+        if ($nonce === '') {
+            return false;
+        }
+        $valid = wp_verify_nonce($nonce, 'astropress_admin_nonce')
+            || wp_verify_nonce($nonce, 'astropress_onboarding_nonce')
+            || wp_verify_nonce($nonce, 'topnepali_admin_nonce')
+            || wp_verify_nonce($nonce, 'r2g_admin_nonce');
+
+        return $valid && current_user_can($capability);
+    }
+
+    /**
+     * Enforce admin AJAX nonce + capability, sending JSON 403 on failure.
+     *
+     * @param string $capability WordPress capability required.
+     */
+    public static function verify_admin_ajax($capability = 'manage_options') {
+        if (!self::user_can_admin_ajax($capability)) {
+            wp_send_json_error(array('message' => esc_html__('Invalid or missing security token or insufficient permissions.', 'astropress')), 403);
+        }
+    }
+
+    /**
      * Get R2 Client instance
      *
      * @return AstroPress_R2_Client
      */
     public function get_client() {
         if (is_null($this->client)) {
-            $account_id = $this->get_compat_option('astropress_r2_account_id', 'astropress_r2_account_id', 'r2g_account_id', '');
-            $access_key = $this->get_compat_option('astropress_r2_access_key', 'astropress_r2_access_key', 'r2g_access_key', '');
-            $secret_enc = $this->get_compat_option('astropress_r2_secret_key', 'astropress_r2_secret_key', 'r2g_secret_key', '');
+            $account_id = $this->get_r2_option('account_id', '');
+            $access_key = $this->get_r2_option('access_key', '');
+            $secret_enc = $this->get_r2_option('secret_key', '');
             $secret_key = AstroPress_Encryption::decrypt($secret_enc);
-            $bucket     = $this->get_compat_option('astropress_r2_bucket', 'astropress_r2_bucket', 'r2g_bucket', '');
+            $bucket     = $this->get_r2_option('bucket', '');
             $cf_token   = $this->get_cf_api_token();
 
             $this->client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, $bucket, $cf_token);
@@ -179,26 +235,21 @@ class AstroPress {
      * Retrieve setting with tri-tier fallback chain:
      * 1. astropress_* (unified master)
      * 2. astropress_headless_* (Grisma-AstroPress)
-     * 3. topnepali_headless_* (topnepali legacy)
+     * 3. topnepali_headless_* / r2g_* (legacy)
      *
      * @param string $primary_key
      * @param string $generic_headless_key
      * @param string $legacy_key
-     * @param mixed $default
+     * @param mixed  $default
      * @return mixed
      */
     public function get_compat_option($primary_key, $generic_headless_key, $legacy_key, $default = null) {
-        $val = get_option($primary_key, null);
-        if ($val !== null && $val !== '') {
-            return $val;
-        }
-        $val_headless = get_option($generic_headless_key, null);
-        if ($val_headless !== null && $val_headless !== '') {
-            return $val_headless;
-        }
-        $val_legacy = get_option($legacy_key, null);
-        if ($val_legacy !== null && $val_legacy !== '') {
-            return $val_legacy;
+        $keys = array_unique(array_filter(array($primary_key, $generic_headless_key, $legacy_key)));
+        foreach ($keys as $key) {
+            $val = get_option($key, null);
+            if ($val !== null && $val !== '') {
+                return $val;
+            }
         }
         return $default;
     }
@@ -222,28 +273,14 @@ class AstroPress {
     }
 
     /**
-     * Legacy secret token getter (for backwards compatibility)
-     *
-     * @return string
-     */
-    /**
      * Get user-configured custom revalidate secret (if explicitly set in database)
      *
      * @return string
      */
     public function get_custom_secret() {
-        $val = get_option(self::OPTION_SECRET, '');
-        if (empty($val)) {
-            $val = get_option('astropress_headless_secret', '');
-        }
-        if (empty($val)) {
-            $val = get_option('topnepali_headless_secret', '');
-        }
+        $val = $this->get_compat_option(self::OPTION_SECRET, 'astropress_headless_secret', 'topnepali_headless_secret', '');
         if (!empty($val) && AstroPress_Encryption::is_encrypted($val)) {
             $val = AstroPress_Encryption::decrypt($val);
-        }
-        if (empty($val)) {
-            $val = 'astropress_revalidate_secret';
         }
         return (string) $val;
     }
@@ -254,7 +291,7 @@ class AstroPress {
      * @return bool
      */
     public function has_custom_secret() {
-        return !empty($this->get_custom_secret());
+        return $this->get_custom_secret() !== '';
     }
 
     /**
@@ -265,13 +302,11 @@ class AstroPress {
      */
     public function set_custom_secret($secret) {
         $secret = sanitize_text_field(trim((string) $secret));
-        if (empty($secret)) {
+        if ($secret === '') {
             delete_option(self::OPTION_SECRET);
             delete_option('astropress_headless_secret');
-            $this->cached_secret = '';
         } else {
             update_option(self::OPTION_SECRET, AstroPress_Encryption::encrypt($secret));
-            $this->cached_secret = $secret;
         }
         return $secret;
     }
@@ -302,7 +337,6 @@ class AstroPress {
     public function generate_secret() {
         $secret = wp_generate_password(32, false);
         update_option(self::OPTION_SECRET, AstroPress_Encryption::encrypt($secret));
-        $this->cached_secret = $secret;
         return $secret;
     }
 
@@ -572,6 +606,18 @@ class AstroPress {
             'Content-Type'  => 'application/json',
         );
 
+        $persist_zone = static function ($zone_obj) {
+            $found_id = sanitize_text_field($zone_obj['id']);
+            update_option(self::OPTION_CF_ZONE_ID, $found_id);
+            update_option(self::OPTION_CF_DIRECT_PURGE, '1');
+            if (!empty($zone_obj['account']['id'])) {
+                $acct_id = sanitize_text_field($zone_obj['account']['id']);
+                update_option('astropress_r2_account_id', $acct_id);
+                update_option('r2g_account_id', $acct_id);
+            }
+            return $found_id;
+        };
+
         // 1. Direct targeted lookup by canonical root domain (e.g. ?name=grisma.com.np)
         if (!empty($target_root)) {
             $direct_res = wp_remote_get('https://api.cloudflare.com/client/v4/zones?name=' . rawurlencode($target_root), array(
@@ -581,14 +627,7 @@ class AstroPress {
             if (!is_wp_error($direct_res) && wp_remote_retrieve_response_code($direct_res) === 200) {
                 $db = json_decode(wp_remote_retrieve_body($direct_res), true);
                 if (!empty($db['result'][0]['id'])) {
-                    $found_id = sanitize_text_field($db['result'][0]['id']);
-                    update_option(self::OPTION_CF_ZONE_ID, $found_id);
-                    update_option(self::OPTION_CF_DIRECT_PURGE, '1');
-                    if (!empty($db['result'][0]['account']['id'])) {
-                        update_option('astropress_r2_account_id', sanitize_text_field($db['result'][0]['account']['id']));
-                        update_option('r2g_account_id', sanitize_text_field($db['result'][0]['account']['id']));
-                    }
-                    return $found_id;
+                    return $persist_zone($db['result'][0]);
                 }
             }
         }
@@ -608,26 +647,12 @@ class AstroPress {
                         $z_name === $search_host ||
                         ($search_host && (substr($search_host, -strlen('.' . $z_name)) === '.' . $z_name))
                     ) {
-                        $found_id = sanitize_text_field($z['id']);
-                        update_option(self::OPTION_CF_ZONE_ID, $found_id);
-                        update_option(self::OPTION_CF_DIRECT_PURGE, '1');
-                        if (!empty($z['account']['id'])) {
-                            update_option('astropress_r2_account_id', sanitize_text_field($z['account']['id']));
-                            update_option('r2g_account_id', sanitize_text_field($z['account']['id']));
-                        }
-                        return $found_id;
+                        return $persist_zone($z);
                     }
                 }
                 // If only one zone exists under this scoped token, use it
                 if (!empty($zb['result'][0]['id'])) {
-                    $first_id = sanitize_text_field($zb['result'][0]['id']);
-                    update_option(self::OPTION_CF_ZONE_ID, $first_id);
-                    update_option(self::OPTION_CF_DIRECT_PURGE, '1');
-                    if (!empty($zb['result'][0]['account']['id'])) {
-                        update_option('astropress_r2_account_id', sanitize_text_field($zb['result'][0]['account']['id']));
-                        update_option('r2g_account_id', sanitize_text_field($zb['result'][0]['account']['id']));
-                    }
-                    return $first_id;
+                    return $persist_zone($zb['result'][0]);
                 }
             }
         }
@@ -690,8 +715,8 @@ class AstroPress {
             self::OPTION_PURGE_TAXONOMY    => '1',
             self::OPTION_PURGE_MENU        => '1',
             self::OPTION_LSCWP_SYNC        => '1',
-            self::OPTION_WARM_DELAY        => 5,
-            self::OPTION_WARM_BATCH_SIZE   => 5,
+            self::OPTION_WARM_DELAY        => 1000,
+            self::OPTION_WARM_BATCH_SIZE   => 2,
             self::OPTION_SUBDOMAIN_SHIELD  => '0',
             self::OPTION_SUBDOMAIN_NOINDEX => '0',
             self::OPTION_DEBOUNCE_ENABLED  => '1',

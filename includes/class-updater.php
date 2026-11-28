@@ -744,7 +744,7 @@ class AstroPress_Updater {
     public function filter_auto_update_plugin($update, $item) {
         $plugin_file = $this->get_plugin_basename();
         if (!empty($item->plugin) && ($item->plugin === $plugin_file || stripos($item->plugin, self::PLUGIN_SLUG) !== false)) {
-            return true;
+            return function_exists('astropress') ? astropress()->should_auto_update() : true;
         }
         return $update;
     }
@@ -759,7 +759,12 @@ class AstroPress_Updater {
      */
     public function filter_auto_update_html($html, $plugin_file, $plugin_data) {
         if ($plugin_file === $this->get_plugin_basename() || stripos($plugin_file, self::PLUGIN_SLUG) !== false) {
-            return '<span class="label" style="color:#007017;font-weight:600;">' . esc_html__('Managed via GitHub Releases', 'astropress') . '</span>';
+            $enabled = !function_exists('astropress') || astropress()->should_auto_update();
+            $color   = $enabled ? '#007017' : '#646970';
+            $text    = $enabled
+                ? esc_html__('Managed via GitHub Releases (Enabled)', 'astropress')
+                : esc_html__('Managed via GitHub Releases (Disabled)', 'astropress');
+            return '<span class="label" style="color:' . $color . ';font-weight:600;">' . $text . '</span>';
         }
         return $html;
     }
@@ -833,10 +838,7 @@ class AstroPress_Updater {
      * AJAX action to check for updates and return release list
      */
     public function ajax_check_updates() {
-        check_ajax_referer('astropress_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
+        AstroPress::verify_admin_ajax('manage_options');
 
         delete_transient(self::TRANSIENT_LATEST);
         delete_transient(self::TRANSIENT_RELEASES);

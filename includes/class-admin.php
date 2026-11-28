@@ -269,7 +269,8 @@ class AstroPress_Admin {
         }
 
         // Enqueue Upload Interceptor on all media & editor pages or when enabled
-        if ((int) get_option('r2g_interceptor_enabled', 1) === 1 || $is_editor_or_media || $is_astropress_page) {
+        $interceptor_enabled = (int) $this->core->get_compat_option('astropress_interceptor_enabled', 'astropress_interceptor_enabled', 'r2g_interceptor_enabled', 1);
+        if ($interceptor_enabled === 1 || $is_editor_or_media || $is_astropress_page) {
             wp_enqueue_script(
                 'astropress-upload-interceptor',
                 ASTROPRESS_URL . 'assets/js/upload-interceptor.js',
@@ -285,7 +286,8 @@ class AstroPress_Admin {
     }
 
     public function filter_core_client_side_media_processing($enabled) {
-        return (int) get_option('r2g_interceptor_enabled', 1) === 1 ? false : $enabled;
+        $interceptor_enabled = (int) $this->core->get_compat_option('astropress_interceptor_enabled', 'astropress_interceptor_enabled', 'r2g_interceptor_enabled', 1);
+        return $interceptor_enabled === 1 ? false : $enabled;
     }
 
     public function on_enqueue_block_editor_assets() {
@@ -463,12 +465,8 @@ class AstroPress_Admin {
             }
             $post = get_post($post_id);
             if ($post) {
-                delete_post_meta($post_id, '_astropress_rm_head');
-                delete_post_meta($post_id, '_headless_rm_head');
-                delete_post_meta($post_id, '_astropress_yoast_head');
-                delete_post_meta($post_id, '_astropress_seopress_head');
-                delete_post_meta($post_id, '_astropress_aioseo_head');
-                $slug = $this->core->cache->get_post_slug($post);
+                $this->core->seo->invalidate_post_seo_cache($post_id, $post);
+                $slug = $this->core->cache->get_post_relative_slug($post);
                 $this->core->cache->dispatch_revalidation($slug, $post->post_type, 'update');
             }
             wp_safe_redirect(add_query_arg('astropress_msg', 'purged_single', wp_get_referer() ?: admin_url()));
@@ -499,31 +497,7 @@ class AstroPress_Admin {
      * @return mixed
      */
     public static function get_r2_option($key, $default = '') {
-        $val = get_option('astropress_r2_' . $key, null);
-        if ($val !== null && $val !== false && $val !== '') {
-            return $val;
-        }
-        $val = get_option('astropress_' . $key, null);
-        if ($val !== null && $val !== false && $val !== '') {
-            return $val;
-        }
-        $val = get_option('r2g_' . $key, null);
-        if ($val !== null && $val !== false && $val !== '') {
-            return $val;
-        }
-        $cached = AstroPress::get_discovery_cache();
-        if (!empty($cached) && is_array($cached)) {
-            if ($key === 'account_id' && !empty($cached['account_id'])) {
-                return $cached['account_id'];
-            }
-            if ($key === 'zone_id' && !empty($cached['zone_id'])) {
-                return $cached['zone_id'];
-            }
-            if ($key === 'bucket' && !empty($cached['buckets']) && is_array($cached['buckets']) && !empty($cached['buckets'][0])) {
-                return $cached['buckets'][0];
-            }
-        }
-        return $default;
+        return function_exists('astropress') ? astropress()->get_r2_option($key, $default) : $default;
     }
 
     /**

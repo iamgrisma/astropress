@@ -265,6 +265,68 @@ class AstroPress_Security {
     const HTACCESS_MARKER = 'AstroPress Security Shield';
 
     /**
+     * Write or clear AstroPress security rules in root and wp-content .htaccess files.
+     *
+     * @param bool $remove True to strip rules, false to enforce rules.
+     */
+    protected static function sync_htaccess_markers($remove = false) {
+        if (!function_exists('get_home_path')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        if (!function_exists('insert_with_markers')) {
+            require_once ABSPATH . 'wp-admin/includes/misc.php';
+        }
+
+        $build_deny_block = static function ($comment, $pattern) {
+            return array(
+                $comment,
+                '<FilesMatch "' . $pattern . '">',
+                '    <IfModule mod_authz_core.c>',
+                '        Require all denied',
+                '    </IfModule>',
+                '    <IfModule !mod_authz_core.c>',
+                '        Order allow,deny',
+                '        Deny from all',
+                '    </IfModule>',
+                '</FilesMatch>',
+            );
+        };
+
+        $home_path   = function_exists('get_home_path') ? get_home_path() : ABSPATH;
+        $content_dir = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : ABSPATH . 'wp-content';
+
+        $targets = array(
+            array(
+                'dir'   => null,
+                'file'  => rtrim($home_path, '/') . '/.htaccess',
+                'rules' => $remove ? array() : $build_deny_block(
+                    '# Block public access to debug logs, environment files, and sensitive backups',
+                    '^(debug\.log|.*\.log|\.env.*|wp-config\.php.*|\.git.*)$'
+                ),
+            ),
+            array(
+                'dir'   => $content_dir,
+                'file'  => rtrim($content_dir, '/') . '/.htaccess',
+                'rules' => $remove ? array() : $build_deny_block(
+                    '# Block direct web access to log files in wp-content',
+                    '^(debug\.log|.*\.log)$'
+                ),
+            ),
+        );
+
+        foreach ($targets as $target) {
+            $file = $target['file'];
+            $can_write = file_exists($file)
+                ? is_writable($file)
+                : (!$remove && !empty($target['dir']) && is_dir($target['dir']) && is_writable($target['dir']));
+
+            if ($can_write) {
+                insert_with_markers($file, self::HTACCESS_MARKER, $target['rules']);
+            }
+        }
+    }
+
+    /**
      * Automatically inject Apache/LiteSpeed security rules into root .htaccess and wp-content/.htaccess
      * Blocks direct HTTP access to debug logs, environment files, backups, and version control metadata.
      */
@@ -274,51 +336,7 @@ class AstroPress_Security {
             return;
         }
         set_transient('astropress_htaccess_shield_checked', true, HOUR_IN_SECONDS);
-
-        if (!function_exists('get_home_path')) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-        }
-        if (!function_exists('insert_with_markers')) {
-            require_once ABSPATH . 'wp-admin/includes/misc.php';
-        }
-
-        // 1. Root .htaccess rules
-        $home_path = function_exists('get_home_path') ? get_home_path() : ABSPATH;
-        $root_htaccess = rtrim($home_path, '/') . '/.htaccess';
-        if (file_exists($root_htaccess) && is_writable($root_htaccess)) {
-            $rules = array(
-                '# Block public access to debug logs, environment files, and sensitive backups',
-                '<FilesMatch "^(debug\.log|.*\.log|\.env.*|wp-config\.php.*|\.git.*)$">',
-                '    <IfModule mod_authz_core.c>',
-                '        Require all denied',
-                '    </IfModule>',
-                '    <IfModule !mod_authz_core.c>',
-                '        Order allow,deny',
-                '        Deny from all',
-                '    </IfModule>',
-                '</FilesMatch>',
-            );
-            insert_with_markers($root_htaccess, self::HTACCESS_MARKER, $rules);
-        }
-
-        // 2. Dedicated wp-content/.htaccess shield specifically protecting log files
-        $content_dir = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : ABSPATH . 'wp-content';
-        $content_htaccess = rtrim($content_dir, '/') . '/.htaccess';
-        if (is_dir($content_dir) && (file_exists($content_htaccess) ? is_writable($content_htaccess) : is_writable($content_dir))) {
-            $content_rules = array(
-                '# Block direct web access to log files in wp-content',
-                '<FilesMatch "^(debug\.log|.*\.log)$">',
-                '    <IfModule mod_authz_core.c>',
-                '        Require all denied',
-                '    </IfModule>',
-                '    <IfModule !mod_authz_core.c>',
-                '        Order allow,deny',
-                '        Deny from all',
-                '    </IfModule>',
-                '</FilesMatch>',
-            );
-            insert_with_markers($content_htaccess, self::HTACCESS_MARKER, $content_rules);
-        }
+        self::sync_htaccess_markers(false);
     }
 
     /**
@@ -326,24 +344,6 @@ class AstroPress_Security {
      */
     public static function remove_htaccess_protection() {
         delete_transient('astropress_htaccess_shield_checked');
-
-        if (!function_exists('get_home_path')) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-        }
-        if (!function_exists('insert_with_markers')) {
-            require_once ABSPATH . 'wp-admin/includes/misc.php';
-        }
-
-        $home_path = function_exists('get_home_path') ? get_home_path() : ABSPATH;
-        $root_htaccess = rtrim($home_path, '/') . '/.htaccess';
-        if (file_exists($root_htaccess) && is_writable($root_htaccess)) {
-            insert_with_markers($root_htaccess, self::HTACCESS_MARKER, array());
-        }
-
-        $content_dir = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : ABSPATH . 'wp-content';
-        $content_htaccess = rtrim($content_dir, '/') . '/.htaccess';
-        if (file_exists($content_htaccess) && is_writable($content_htaccess)) {
-            insert_with_markers($content_htaccess, self::HTACCESS_MARKER, array());
-        }
+        self::sync_htaccess_markers(true);
     }
 }

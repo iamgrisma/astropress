@@ -234,7 +234,7 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
             <button type="button" class="button button-secondary" id="astropress-purge-urls-btn">
                 <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge Specific URLs', 'astropress'); ?>
             </button>
-            <button type="button" class="button button-primary" id="astropress-purge-all-zone-btn" style="background:#dc2626; border-color:#b91c1c;">
+            <button type="button" class="button button-primary astropress-purge-all-zone-btn" id="astropress-purge-all-zone-direct-btn" style="background:#dc2626; border-color:#b91c1c;">
                 <span class="dashicons dashicons-trash" style="vertical-align:-2px;"></span> <?php esc_html_e('Purge Everything (Entire Zone)', 'astropress'); ?>
             </button>
         </div>
@@ -428,8 +428,6 @@ $is_cf_ready    = (!empty($token) && !empty($zone_id));
             </div>
             <div id="astropress-builder-status" style="margin-top:8px; display:none;"></div>
         </div>
-
-        <div id="astropress-rule-preset-status" style="margin-bottom:14px;"></div>
 
         <!-- Active Rules Table Container -->
         <h4 style="margin:20px 0 8px 0; font-size:13px; color:#334155; text-transform:uppercase; letter-spacing:0.5px;">

@@ -15,17 +15,60 @@ trait AstroPress_Admin_Ajax_R2 {
      * Supports current, onboarding, and legacy compatibility nonces with mandatory capability checks.
      */
     public function verify_admin_ajax() {
-        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
-        if (empty($nonce) || (
-            !wp_verify_nonce($nonce, 'astropress_admin_nonce') &&
-            !wp_verify_nonce($nonce, 'astropress_onboarding_nonce') &&
-            !wp_verify_nonce($nonce, 'topnepali_admin_nonce') &&
-            !wp_verify_nonce($nonce, 'r2g_admin_nonce')
-        )) {
-            wp_send_json_error(array('message' => esc_html__('Invalid or missing security token (nonce).', 'astropress')), 403);
+        AstroPress::verify_admin_ajax('manage_options');
+    }
+
+    /**
+     * Resolve R2 & Cloudflare credentials from POST payload with saved-option fallback.
+     *
+     * @param string $bucket_post_key
+     * @return array{account_id:string, access_key:string, secret_key:string, cf_token:string, bucket:string, custom_domain:string}
+     */
+    protected function resolve_r2_post_credentials($bucket_post_key = 'bucket') {
+        $post_str = static function ($key) {
+            $val = trim(sanitize_text_field($_POST[$key] ?? ''));
+            return ($val !== '' && $val !== 'undefined') ? $val : '';
+        };
+
+        $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
+        if (!empty($posted_secret) && $posted_secret !== 'undefined' && strpos($posted_secret, '••••') === false) {
+            $secret_key = $posted_secret;
+        } else {
+            $secret_enc = self::get_r2_option('secret_key', '');
+            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
         }
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => esc_html__('Unauthorized permissions.', 'astropress')), 403);
+
+        $raw_cf_token = $post_str('cf_api_token') ?: $post_str('token');
+        $cf_token = (!empty($raw_cf_token) && strpos($raw_cf_token, '••••') === false)
+            ? $raw_cf_token
+            : $this->core->get_cf_api_token();
+
+        return array(
+            'account_id'    => $post_str('account_id') ?: self::get_r2_option('account_id', ''),
+            'access_key'    => $post_str('access_key') ?: self::get_r2_option('access_key', ''),
+            'secret_key'    => $secret_key,
+            'cf_token'      => $cf_token,
+            'bucket'        => $post_str($bucket_post_key) ?: self::get_r2_option('bucket', ''),
+            'custom_domain' => $post_str('custom_domain') ?: self::get_r2_option('custom_domain', ''),
+        );
+    }
+
+    /**
+     * Validate custom CDN domain against allowed WordPress / Frontend host roots or terminate with JSON error.
+     *
+     * @param string $custom_domain
+     */
+    protected function require_allowed_cdn_domain($custom_domain) {
+        $parsed_host = wp_parse_url($custom_domain, PHP_URL_HOST) ?: trim($custom_domain, '/');
+        if (!$this->is_allowed_cdn_domain($parsed_host)) {
+            $roots = $this->get_allowed_domain_roots();
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    esc_html__('CDN Domain "%s" is not permitted. It must be a subdomain or hostname of your WordPress site or Astro frontend (Allowed root domains: %s).', 'astropress'),
+                    esc_html($parsed_host),
+                    esc_html(implode(', ', $roots))
+                ),
+            ));
         }
     }
 
@@ -36,50 +79,18 @@ trait AstroPress_Admin_Ajax_R2 {
      */
     public function ajax_test_connection() {
         $this->verify_admin_ajax();
+        $creds = $this->resolve_r2_post_credentials();
 
-        $raw_account   = trim(sanitize_text_field($_POST['account_id'] ?? ''));
-        $account_id    = ($raw_account !== '' && $raw_account !== 'undefined') ? $raw_account : self::get_r2_option('account_id', '');
-        $raw_access    = trim(sanitize_text_field($_POST['access_key'] ?? ''));
-        $access_key    = ($raw_access !== '' && $raw_access !== 'undefined') ? $raw_access : self::get_r2_option('access_key', '');
-        $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
-
-        if (!empty($posted_secret) && $posted_secret !== 'undefined' && strpos($posted_secret, '••••') === false) {
-            $secret_key = $posted_secret;
-        } else {
-            $secret_enc = self::get_r2_option('secret_key', '');
-            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
-        }
-
-        $raw_cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
-        if (!empty($raw_cf_token) && $raw_cf_token !== 'undefined' && strpos($raw_cf_token, '••••') === false) {
-            $cf_token = $raw_cf_token;
-        } else {
-            $cf_token = $this->core->get_cf_api_token();
-        }
-
-        $raw_bucket    = trim(sanitize_text_field($_POST['bucket'] ?? ''));
-        $bucket        = ($raw_bucket !== '' && $raw_bucket !== 'undefined') ? $raw_bucket : self::get_r2_option('bucket', '');
-        $raw_domain    = trim(sanitize_text_field($_POST['custom_domain'] ?? ''));
-        $custom_domain = ($raw_domain !== '' && $raw_domain !== 'undefined') ? $raw_domain : self::get_r2_option('custom_domain', '');
-
-        $has_s3 = !empty($access_key) && !empty($secret_key);
-        $has_cf = !empty($cf_token);
-
-        if (empty($account_id) || (!$has_s3 && !$has_cf)) {
+        if (empty($creds['account_id']) || ((empty($creds['access_key']) || empty($creds['secret_key'])) && empty($creds['cf_token']))) {
             wp_send_json_error(array('message' => esc_html__('Please enter Cloudflare Account ID and either a Cloudflare API Token (Single-Token Mode) or S3 Access/Secret Keys.', 'astropress')));
         }
-        if (empty($bucket)) {
+        if (empty($creds['bucket'])) {
             wp_send_json_error(array('message' => esc_html__('Please select or enter an R2 Bucket name.', 'astropress')));
         }
 
-        $client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, $bucket, $cf_token);
-        $res = $client->test_connection($custom_domain);
-
-        if ($res['success']) {
-            wp_send_json_success($res);
-        } else {
-            wp_send_json_error($res);
-        }
+        $client = new AstroPress_R2_Client($creds['account_id'], $creds['access_key'], $creds['secret_key'], $creds['bucket'], $creds['cf_token']);
+        $res    = $client->test_connection($creds['custom_domain']);
+        !empty($res['success']) ? wp_send_json_success($res) : wp_send_json_error($res);
     }
 
     /**
@@ -93,24 +104,9 @@ trait AstroPress_Admin_Ajax_R2 {
             wp_send_json_error(array('message' => esc_html__('Please enter a valid bucket name (lowercase letters, numbers, hyphens).', 'astropress')));
         }
 
-        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: self::get_r2_option('account_id', '');
-        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: self::get_r2_option('access_key', '');
-        $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
-
-        if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
-            $secret_key = $posted_secret;
-        } else {
-            $secret_enc = self::get_r2_option('secret_key', '');
-            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
-        }
-
-        $cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
-        if (empty($cf_token) || strpos($cf_token, '••••') !== false) {
-            $cf_token = $this->core->get_cf_api_token();
-        }
-
-        $client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, $bucket_name, $cf_token);
-        $res = $client->create_bucket($bucket_name);
+        $creds  = $this->resolve_r2_post_credentials('bucket_name');
+        $client = new AstroPress_R2_Client($creds['account_id'], $creds['access_key'], $creds['secret_key'], $bucket_name, $creds['cf_token']);
+        $res    = $client->create_bucket($bucket_name);
 
         if (!empty($res['success'])) {
             update_option('r2g_bucket', $bucket_name);
@@ -129,35 +125,15 @@ trait AstroPress_Admin_Ajax_R2 {
      */
     public function ajax_fetch_buckets() {
         $this->verify_admin_ajax();
+        $creds = $this->resolve_r2_post_credentials();
 
-        $account_id    = sanitize_text_field($_POST['account_id'] ?? '') ?: self::get_r2_option('account_id', '');
-        $access_key    = sanitize_text_field($_POST['access_key'] ?? '') ?: self::get_r2_option('access_key', '');
-        $posted_secret = trim(wp_unslash($_POST['secret_key'] ?? ''));
-
-        if (!empty($posted_secret) && strpos($posted_secret, '••••') === false) {
-            $secret_key = $posted_secret;
-        } else {
-            $secret_enc = self::get_r2_option('secret_key', '');
-            $secret_key = !empty($secret_enc) ? AstroPress_Encryption::decrypt($secret_enc) : '';
-        }
-
-        $cf_token = trim(sanitize_text_field($_POST['cf_api_token'] ?? ''));
-        if (empty($cf_token) || strpos($cf_token, '••••') !== false) {
-            $cf_token = $this->core->get_cf_api_token();
-        }
-
-        if (empty($account_id) || (empty($access_key) && empty($cf_token))) {
+        if (empty($creds['account_id']) || (empty($creds['access_key']) && empty($creds['cf_token']))) {
             wp_send_json_error(array('message' => esc_html__('Please provide Cloudflare Account ID and either a Cloudflare API Token or S3 keys.', 'astropress')));
         }
 
-        $client = new AstroPress_R2_Client($account_id, $access_key, $secret_key, '', $cf_token);
-        $res = $client->list_buckets();
-
-        if ($res['success']) {
-            wp_send_json_success($res);
-        } else {
-            wp_send_json_error($res);
-        }
+        $client = new AstroPress_R2_Client($creds['account_id'], $creds['access_key'], $creds['secret_key'], '', $creds['cf_token']);
+        $res    = $client->list_buckets();
+        !empty($res['success']) ? wp_send_json_success($res) : wp_send_json_error($res);
     }
 
     /**
@@ -240,39 +216,16 @@ trait AstroPress_Admin_Ajax_R2 {
      */
     public function ajax_audit_cdn_domain() {
         $this->verify_admin_ajax();
+        $creds   = $this->resolve_r2_post_credentials('bucket_name');
+        $zone_id = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
 
-        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
-        $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: $this->core->get_cf_zone_id();
-        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
-        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
-        $token         = trim(sanitize_text_field($_POST['token'] ?? ''));
-
-        if (empty($token) || strpos($token, '••••') !== false) {
-            $token = $this->core->get_cf_api_token();
-        }
-
-        if (empty($custom_domain)) {
+        if (empty($creds['custom_domain'])) {
             wp_send_json_error(array('message' => esc_html__('Custom domain is required to audit.', 'astropress')));
         }
+        $this->require_allowed_cdn_domain($creds['custom_domain']);
 
-        $parsed_host = wp_parse_url($custom_domain, PHP_URL_HOST) ?: trim($custom_domain, '/');
-        if (!$this->is_allowed_cdn_domain($parsed_host)) {
-            $roots = $this->get_allowed_domain_roots();
-            wp_send_json_error(array(
-                'message' => sprintf(
-                    esc_html__('CDN Domain "%s" is not permitted. It must be a subdomain or hostname of your WordPress site or Astro frontend (Allowed root domains: %s).', 'astropress'),
-                    esc_html($parsed_host),
-                    esc_html(implode(', ', $roots))
-                ),
-            ));
-        }
-
-        $result = $this->core->cache->audit_cdn_domain($custom_domain, $zone_id, $account_id, $bucket_name, $token);
-        if (!empty($result['success'])) {
-            wp_send_json_success($result);
-        } else {
-            wp_send_json_error($result);
-        }
+        $result = $this->core->cache->audit_cdn_domain($creds['custom_domain'], $zone_id, $creds['account_id'], $creds['bucket'], $creds['cf_token']);
+        !empty($result['success']) ? wp_send_json_success($result) : wp_send_json_error($result);
     }
 
     /**
@@ -280,40 +233,17 @@ trait AstroPress_Admin_Ajax_R2 {
      */
     public function ajax_attach_r2_custom_domain() {
         $this->verify_admin_ajax();
+        $creds     = $this->resolve_r2_post_credentials('bucket_name');
+        $zone_id   = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: ($this->core->get_cf_zone_id() ?: $this->resolve_zone_id($creds['cf_token']));
+        $zone_name = trim(sanitize_text_field($_POST['zone_name'] ?? ''));
 
-        $token = trim(sanitize_text_field($_POST['token'] ?? ''));
-        if (empty($token) || strpos($token, '••••') !== false) {
-            $token = $this->core->get_cf_api_token();
-        }
-
-        $custom_domain = trim(sanitize_text_field($_POST['custom_domain'] ?? '')) ?: self::get_r2_option('custom_domain', '');
-        $bucket_name   = trim(sanitize_text_field($_POST['bucket_name'] ?? '')) ?: self::get_r2_option('bucket', '');
-        $zone_id       = trim(sanitize_text_field($_POST['zone_id'] ?? '')) ?: ($this->core->get_cf_zone_id() ?: $this->resolve_zone_id($token));
-        $zone_name     = trim(sanitize_text_field($_POST['zone_name'] ?? ''));
-        $account_id    = trim(sanitize_text_field($_POST['account_id'] ?? '')) ?: self::get_r2_option('account_id', '');
-
-        if (empty($custom_domain)) {
+        if (empty($creds['custom_domain'])) {
             wp_send_json_error(array('message' => esc_html__('Custom domain is required.', 'astropress')));
         }
+        $this->require_allowed_cdn_domain($creds['custom_domain']);
 
-        $parsed_host = wp_parse_url($custom_domain, PHP_URL_HOST) ?: trim($custom_domain, '/');
-        if (!$this->is_allowed_cdn_domain($parsed_host)) {
-            $roots = $this->get_allowed_domain_roots();
-            wp_send_json_error(array(
-                'message' => sprintf(
-                    esc_html__('CDN Domain "%s" is not permitted. It must be a subdomain or hostname of your WordPress site or Astro frontend (Allowed root domains: %s).', 'astropress'),
-                    esc_html($parsed_host),
-                    esc_html(implode(', ', $roots))
-                ),
-            ));
-        }
-
-        $result = $this->core->cache->attach_r2_custom_domain($bucket_name, $custom_domain, $zone_id, $zone_name, $account_id, $token);
-        if (!empty($result['success'])) {
-            wp_send_json_success($result);
-        } else {
-            wp_send_json_error($result);
-        }
+        $result = $this->core->cache->attach_r2_custom_domain($creds['bucket'], $creds['custom_domain'], $zone_id, $zone_name, $creds['account_id'], $creds['cf_token']);
+        !empty($result['success']) ? wp_send_json_success($result) : wp_send_json_error($result);
     }
 
     /**

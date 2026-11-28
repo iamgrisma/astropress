@@ -871,38 +871,16 @@ class AstroPress_Database {
      * AJAX handler for one-click legacy database cleanup.
      */
     public static function ajax_clean_legacy_database() {
-        if (isset($_REQUEST['nonce']) && !isset($_REQUEST['_ajax_nonce'])) {
-            $_REQUEST['_ajax_nonce'] = sanitize_text_field(wp_unslash($_REQUEST['nonce']));
-        }
-
-        check_ajax_referer('astropress_admin_nonce');
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized user permissions.'));
-            return;
-        }
-
-        $result = self::clean_legacy_footprint();
-        wp_send_json_success($result);
+        AstroPress::verify_admin_ajax('manage_options');
+        wp_send_json_success(self::clean_legacy_footprint());
     }
 
     /**
      * AJAX handler to get legacy database footprint.
      */
     public static function ajax_get_legacy_footprint() {
-        if (isset($_REQUEST['nonce']) && !isset($_REQUEST['_ajax_nonce'])) {
-            $_REQUEST['_ajax_nonce'] = sanitize_text_field(wp_unslash($_REQUEST['nonce']));
-        }
-
-        check_ajax_referer('astropress_admin_nonce');
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized user permissions.'));
-            return;
-        }
-
-        $footprint = self::get_legacy_footprint();
-        wp_send_json_success($footprint);
+        AstroPress::verify_admin_ajax('manage_options');
+        wp_send_json_success(self::get_legacy_footprint());
     }
 
     /**

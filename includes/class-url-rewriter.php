@@ -112,6 +112,30 @@ class AstroPress_URL_Rewriter {
     }
 
     /**
+     * Format a relative upload path into an R2 key matching configured path structure.
+     *
+     * @param string $rel Path relative to the uploads base directory.
+     * @return string
+     */
+    protected function build_r2_key($rel) {
+        $rel           = ltrim((string) $rel, '/');
+        $structure     = get_option('astropress_r2_path_structure', get_option('r2g_path_structure', 'wp_content'));
+        $custom_prefix = trim((string) get_option('astropress_r2_path_prefix', get_option('r2g_path_prefix', '')), '/');
+
+        switch ($structure) {
+            case 'uploads_only':
+                return 'uploads/' . $rel;
+            case 'date_only':
+                return $rel;
+            case 'custom':
+                return ($custom_prefix !== '' ? $custom_prefix . '/' : '') . $rel;
+            case 'wp_content':
+            default:
+                return 'wp-content/uploads/' . $rel;
+        }
+    }
+
+    /**
      * Rewrite any WordPress uploads URL to Custom R2 CDN URL
      *
      * @param string $url
@@ -133,48 +157,15 @@ class AstroPress_URL_Rewriter {
 
         $uploads = wp_upload_dir();
         $baseurl = $uploads['baseurl'];
-        $structure = get_option('astropress_r2_path_structure', get_option('r2g_path_structure', 'wp_content'));
-        $custom_prefix = trim(get_option('astropress_r2_path_prefix', get_option('r2g_path_prefix', '')), '/');
 
         if (strpos($url, $baseurl) === 0) {
-            $rel = ltrim(substr($url, strlen($baseurl)), '/');
-            switch ($structure) {
-                case 'uploads_only':
-                    $key = 'uploads/' . $rel;
-                    break;
-                case 'date_only':
-                    $key = $rel;
-                    break;
-                case 'custom':
-                    $key = (!empty($custom_prefix) ? $custom_prefix . '/' : '') . $rel;
-                    break;
-                case 'wp_content':
-                default:
-                    $key = 'wp-content/uploads/' . $rel;
-                    break;
-            }
-            return $cdn_base . '/' . $key;
+            return $cdn_base . '/' . $this->build_r2_key(substr($url, strlen($baseurl)));
         }
 
         $parsed = parse_url($url);
         if (!empty($parsed['path']) && strpos($parsed['path'], '/wp-content/uploads/') !== false) {
-            $rel = ltrim(substr($parsed['path'], strpos($parsed['path'], '/wp-content/uploads/') + 20), '/');
-            switch ($structure) {
-                case 'uploads_only':
-                    $key = 'uploads/' . $rel;
-                    break;
-                case 'date_only':
-                    $key = $rel;
-                    break;
-                case 'custom':
-                    $key = (!empty($custom_prefix) ? $custom_prefix . '/' : '') . $rel;
-                    break;
-                case 'wp_content':
-                default:
-                    $key = 'wp-content/uploads/' . $rel;
-                    break;
-            }
-            return $cdn_base . '/' . $key;
+            $rel = substr($parsed['path'], strpos($parsed['path'], '/wp-content/uploads/') + 20);
+            return $cdn_base . '/' . $this->build_r2_key($rel);
         }
 
         return $url;

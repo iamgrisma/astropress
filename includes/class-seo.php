@@ -100,8 +100,40 @@ class AstroPress_SEO {
         if (empty($url) || !is_string($url)) {
             return $url;
         }
-        $frontend_url = $this->core->get_frontend_url();
-        return str_replace($this->get_origin_hosts(), $frontend_url, $url);
+        return $this->rewrite_origin_urls($url);
+    }
+
+    /**
+     * Rewrite origin WordPress URLs to the production frontend without trailing-slash truncation bugs.
+     *
+     * @param string $value
+     * @param string|null $frontend_url
+     * @return string
+     */
+    public function rewrite_origin_urls($value, $frontend_url = null) {
+        if (empty($value) || !is_string($value)) {
+            return (string) $value;
+        }
+        $target = untrailingslashit((string) ($frontend_url !== null ? $frontend_url : $this->core->get_frontend_url()));
+        if ($target === '') {
+            return $value;
+        }
+        $origins = array();
+        foreach ($this->get_origin_hosts() as $origin) {
+            $clean = untrailingslashit((string) $origin);
+            if ($clean !== '') {
+                $origins[$clean] = true;
+            }
+        }
+        if (empty($origins)) {
+            return $value;
+        }
+        // Sort longest-first so subpath origins match before bare root origins.
+        $origin_list = array_keys($origins);
+        usort($origin_list, static function ($a, $b) {
+            return strlen($b) - strlen($a);
+        });
+        return str_replace($origin_list, $target, $value);
     }
 
     /**
@@ -112,11 +144,7 @@ class AstroPress_SEO {
      * @return string
      */
     public function filter_rank_math_sitemap_url($url, $type = '') {
-        if (empty($url) || !is_string($url)) {
-            return $url;
-        }
-        $frontend_url = $this->core->get_frontend_url();
-        return str_replace($this->get_origin_hosts(), $frontend_url, $url);
+        return $this->filter_rank_math_url($url);
     }
 
     /**
@@ -131,9 +159,8 @@ class AstroPress_SEO {
         if (!is_array($entry)) {
             return $entry;
         }
-        $frontend_url = $this->core->get_frontend_url();
         if (!empty($entry['loc'])) {
-            $entry['loc'] = str_replace($this->get_origin_hosts(), $frontend_url, $entry['loc']);
+            $entry['loc'] = $this->rewrite_origin_urls($entry['loc']);
         }
         return $entry;
     }
@@ -148,8 +175,7 @@ class AstroPress_SEO {
         if (empty($xml) || !is_string($xml)) {
             return $xml;
         }
-        $frontend_url = $this->core->get_frontend_url();
-        return str_replace($this->get_origin_hosts(), $frontend_url, $xml);
+        return $this->rewrite_origin_urls($xml);
     }
 
     /**
@@ -162,11 +188,9 @@ class AstroPress_SEO {
         if (empty($data)) {
             return $data;
         }
-        $frontend_url = $this->core->get_frontend_url();
         $json = wp_json_encode($data);
         if ($json) {
-            $json = str_replace($this->get_origin_hosts(), $frontend_url, $json);
-            $decoded = json_decode($json, true);
+            $decoded = json_decode($this->rewrite_origin_urls($json), true);
             if (is_array($decoded)) {
                 return $decoded;
             }
@@ -288,44 +312,88 @@ class AstroPress_SEO {
         $engine       = $this->detect_active_seo_engine();
         $frontend_url = $this->core->get_frontend_url();
 
-        // 1. Yoast SEO
+        $engine_meta = array(
+            'yoast'     => array('meta_key' => '_astropress_yoast_head', 'legacy_key' => ''),
+            'seopress'  => array('meta_key' => '_astropress_seopress_head', 'legacy_key' => ''),
+            'aioseo'    => array('meta_key' => '_astropress_aioseo_head', 'legacy_key' => ''),
+            'rank_math' => array('meta_key' => '_astropress_rm_head', 'legacy_key' => '_headless_rm_head'),
+            'native'    => array('meta_key' => '_astropress_native_head', 'legacy_key' => ''),
+        );
+        $meta_cfg = $engine_meta[$engine] ?? $engine_meta['native'];
+
+        if ($post_id && !$force) {
+            $cached_head = get_post_meta($post_id, $meta_cfg['meta_key'], true);
+            if (empty($cached_head) && $meta_cfg['legacy_key'] !== '') {
+                $cached_head = get_post_meta($post_id, $meta_cfg['legacy_key'], true);
+            }
+            if (!empty($cached_head)) {
+                return array(
+                    'head'        => $this->rewrite_origin_urls($cached_head, $frontend_url),
+                    'engine_used' => $engine,
+                );
+            }
+        }
+
+        $orig_post = $GLOBALS['post'] ?? null;
+        if ($target_post) {
+            $GLOBALS['post'] = $target_post;
+            setup_postdata($target_post);
+        }
+
+        $head = $this->render_engine_head($engine, $target_post, $post_id, $full_url);
+
+        if ($orig_post) {
+            $GLOBALS['post'] = $orig_post;
+            setup_postdata($orig_post);
+        } else {
+            wp_reset_postdata();
+        }
+
+        $clean_head = !empty($head) ? $this->rewrite_origin_urls(trim($head), $frontend_url) : '';
+        if ($clean_head !== '' && $post_id) {
+            update_post_meta($post_id, $meta_cfg['meta_key'], $clean_head);
+            if ($meta_cfg['legacy_key'] !== '') {
+                update_post_meta($post_id, $meta_cfg['legacy_key'], $clean_head);
+            }
+        }
+
+        return array(
+            'head'        => $clean_head,
+            'engine_used' => $engine,
+        );
+    }
+
+    /**
+     * Render raw head tags for the active SEO engine while global post context is active.
+     *
+     * @param string       $engine
+     * @param WP_Post|null $target_post
+     * @param int          $post_id
+     * @param string       $full_url
+     * @return string
+     */
+    protected function render_engine_head($engine, $target_post, $post_id, $full_url) {
         if ($engine === 'yoast') {
-            if ($post_id) {
-                $cached_head = get_post_meta($post_id, '_astropress_yoast_head', true);
-                if (!empty($cached_head) && !$force) {
-                    return array(
-                        'head'        => str_replace($this->get_origin_hosts(), $frontend_url, $cached_head),
-                        'engine_used' => 'yoast',
-                    );
-                }
-            }
-
             $head = '';
-            $orig_post = $GLOBALS['post'] ?? null;
-            if ($target_post) {
-                $GLOBALS['post'] = $target_post;
-                setup_postdata($target_post);
-            }
-
-            // Official Surface API
             if (class_exists('\Yoast\WP\SEO\Surfaces\Meta_Surface') || function_exists('YoastSEO')) {
                 try {
                     if (function_exists('YoastSEO') && isset(YoastSEO()->meta)) {
                         $meta_surface = YoastSEO()->meta;
-                        if (!empty($full_url) && method_exists($meta_surface, 'for_url')) {
-                            $meta = $meta_surface->for_url($full_url);
-                            if ($meta && method_exists($meta, 'get_head')) {
+                        $targets = array(
+                            !empty($full_url) && method_exists($meta_surface, 'for_url') ? $meta_surface->for_url($full_url) : null,
+                            $post_id && method_exists($meta_surface, 'for_post') ? $meta_surface->for_post($post_id) : null,
+                        );
+                        foreach ($targets as $meta) {
+                            if (!$meta) {
+                                continue;
+                            }
+                            if (method_exists($meta, 'get_head')) {
                                 $head = $meta->get_head();
-                            } elseif ($meta && property_exists($meta, 'html')) {
+                            } elseif (property_exists($meta, 'html')) {
                                 $head = $meta->html;
                             }
-                        }
-                        if (empty($head) && $post_id && method_exists($meta_surface, 'for_post')) {
-                            $meta = $meta_surface->for_post($post_id);
-                            if ($meta && method_exists($meta, 'get_head')) {
-                                $head = $meta->get_head();
-                            } elseif ($meta && property_exists($meta, 'html')) {
-                                $head = $meta->html;
+                            if (!empty($head)) {
+                                break;
                             }
                         }
                     }
@@ -333,197 +401,33 @@ class AstroPress_SEO {
                     $head = '';
                 }
             }
-
-            // Hook fallback
             if (empty($head) && (has_action('wpseo_head') || function_exists('wpseo_head'))) {
                 ob_start();
                 do_action('wpseo_head');
                 $head = ob_get_clean();
             }
-
-            if ($orig_post) {
-                $GLOBALS['post'] = $orig_post;
-                setup_postdata($orig_post);
-            } else {
-                wp_reset_postdata();
-            }
-
-            // Simulation fallback
-            if (empty($head)) {
-                $head = $this->simulate_yoast_head($target_post, $full_url);
-            }
-
-            $clean_head = !empty($head) ? trim($head) : '';
-            if (!empty($clean_head)) {
-                $clean_head = str_replace($this->get_origin_hosts(), $frontend_url, $clean_head);
-                if ($post_id) {
-                    update_post_meta($post_id, '_astropress_yoast_head', $clean_head);
-                }
-            }
-
-            return array(
-                'head'        => $clean_head,
-                'engine_used' => 'yoast',
-            );
+            return !empty($head) ? $head : $this->simulate_yoast_head($target_post, $full_url);
         }
 
-        // 2. SEOPress
         if ($engine === 'seopress') {
-            if ($post_id) {
-                $cached_head = get_post_meta($post_id, '_astropress_seopress_head', true);
-                if (!empty($cached_head) && !$force) {
-                    return array(
-                        'head'        => str_replace($this->get_origin_hosts(), $frontend_url, $cached_head),
-                        'engine_used' => 'seopress',
-                    );
-                }
-            }
-
-            $orig_post = $GLOBALS['post'] ?? null;
-            if ($target_post) {
-                $GLOBALS['post'] = $target_post;
-                setup_postdata($target_post);
-            }
-
-            $head = $this->render_seopress_head($target_post, $full_url);
-
-            if ($orig_post) {
-                $GLOBALS['post'] = $orig_post;
-                setup_postdata($orig_post);
-            } else {
-                wp_reset_postdata();
-            }
-
-            $clean_head = !empty($head) ? trim($head) : '';
-            if (!empty($clean_head)) {
-                $clean_head = str_replace($this->get_origin_hosts(), $frontend_url, $clean_head);
-                if ($post_id) {
-                    update_post_meta($post_id, '_astropress_seopress_head', $clean_head);
-                }
-            }
-
-            return array(
-                'head'        => $clean_head,
-                'engine_used' => 'seopress',
-            );
+            return $this->render_seopress_head($target_post, $full_url);
         }
 
-        // 3. All in One SEO (AIOSEO)
         if ($engine === 'aioseo') {
-            if ($post_id) {
-                $cached_head = get_post_meta($post_id, '_astropress_aioseo_head', true);
-                if (!empty($cached_head) && !$force) {
-                    return array(
-                        'head'        => str_replace($this->get_origin_hosts(), $frontend_url, $cached_head),
-                        'engine_used' => 'aioseo',
-                    );
-                }
-            }
-
-            $orig_post = $GLOBALS['post'] ?? null;
-            if ($target_post) {
-                $GLOBALS['post'] = $target_post;
-                setup_postdata($target_post);
-            }
-
-            $head = $this->render_aioseo_head($target_post, $full_url);
-
-            if ($orig_post) {
-                $GLOBALS['post'] = $orig_post;
-                setup_postdata($orig_post);
-            } else {
-                wp_reset_postdata();
-            }
-
-            $clean_head = !empty($head) ? trim($head) : '';
-            if (!empty($clean_head)) {
-                $clean_head = str_replace($this->get_origin_hosts(), $frontend_url, $clean_head);
-                if ($post_id) {
-                    update_post_meta($post_id, '_astropress_aioseo_head', $clean_head);
-                }
-            }
-
-            return array(
-                'head'        => $clean_head,
-                'engine_used' => 'aioseo',
-            );
+            return $this->render_aioseo_head($target_post, $full_url);
         }
 
-        // 4. Rank Math
         if ($engine === 'rank_math') {
-            if ($post_id) {
-                $cached_head = get_post_meta($post_id, '_astropress_rm_head', true)
-                    ?: get_post_meta($post_id, '_headless_rm_head', true);
-                if (!empty($cached_head) && !$force) {
-                    return array(
-                        'head'        => str_replace($this->get_origin_hosts(), $frontend_url, $cached_head),
-                        'engine_used' => 'rank_math',
-                    );
-                }
-            }
-
             $head = '';
-            // If on frontend where rank_math()->head is active, attempt official action
             if (class_exists('\RankMath\Paper\Paper') && function_exists('rank_math') && !empty(rank_math()->head)) {
-                $orig_post = $GLOBALS['post'] ?? null;
-                if ($target_post) {
-                    $GLOBALS['post'] = $target_post;
-                    setup_postdata($target_post);
-                }
                 ob_start();
                 do_action('rank_math/head');
                 $head = ob_get_clean();
-                if ($orig_post) {
-                    $GLOBALS['post'] = $orig_post;
-                    setup_postdata($orig_post);
-                } else {
-                    wp_reset_postdata();
-                }
             }
-
-            if (empty($head)) {
-                $head = $this->render_rank_math_head($target_post, $full_url);
-            }
-
-            $clean_head = !empty($head) ? trim($head) : '';
-            if (!empty($clean_head)) {
-                $clean_head = str_replace($this->get_origin_hosts(), $frontend_url, $clean_head);
-                if ($post_id) {
-                    update_post_meta($post_id, '_astropress_rm_head', $clean_head);
-                    update_post_meta($post_id, '_headless_rm_head', $clean_head);
-                }
-            }
-
-            return array(
-                'head'        => $clean_head,
-                'engine_used' => 'rank_math',
-            );
+            return !empty($head) ? $head : $this->render_rank_math_head($target_post, $full_url);
         }
 
-        // 5. Native Fallback
-        if ($post_id) {
-            $cached_head = get_post_meta($post_id, '_astropress_native_head', true);
-            if (!empty($cached_head) && !$force) {
-                return array(
-                    'head'        => str_replace($this->get_origin_hosts(), $frontend_url, $cached_head),
-                    'engine_used' => 'native',
-                );
-            }
-        }
-
-        $head = $this->render_native_head($target_post, $full_url);
-        $clean_head = !empty($head) ? trim($head) : '';
-        if (!empty($clean_head)) {
-            $clean_head = str_replace($this->get_origin_hosts(), $frontend_url, $clean_head);
-            if ($post_id) {
-                update_post_meta($post_id, '_astropress_native_head', $clean_head);
-            }
-        }
-
-        return array(
-            'head'        => $clean_head,
-            'engine_used' => 'native',
-        );
+        return $this->render_native_head($target_post, $full_url);
     }
 
     /**
@@ -611,6 +515,94 @@ class AstroPress_SEO {
     }
 
     /**
+     * Resolve shared base post/site metadata for SEO head fallback renderers.
+     *
+     * @param WP_Post|null $target_post
+     * @param string       $full_url
+     * @return array
+     */
+    protected function get_post_head_base($target_post, $full_url) {
+        $frontend_url = $this->core->get_frontend_url();
+        $site_name    = get_bloginfo('name') ?: 'AstroPress';
+        $site_desc    = get_bloginfo('description') ?: '';
+        $post_id      = $target_post ? $target_post->ID : 0;
+
+        $desc = '';
+        if ($target_post) {
+            $desc = !empty($target_post->post_excerpt)
+                ? wp_strip_all_tags($target_post->post_excerpt)
+                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
+        }
+
+        $canonical = $full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url);
+        $thumb_img = '';
+        if ($post_id) {
+            $thumb_id = get_post_thumbnail_id($post_id);
+            if ($thumb_id) {
+                $thumb_img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
+            }
+        }
+
+        return array(
+            'frontend_url' => $frontend_url,
+            'site_name'    => $site_name,
+            'site_desc'    => $site_desc,
+            'post_id'      => $post_id,
+            'title'        => $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name,
+            'desc'         => $desc,
+            'canonical'    => $this->rewrite_origin_urls($canonical, $frontend_url),
+            'thumb_img'    => $thumb_img ? $this->rewrite_origin_urls($thumb_img, $frontend_url) : '',
+        );
+    }
+
+    /**
+     * Normalize SEO engine head overrides onto shared fallback values and rewrite origin URLs.
+     *
+     * @param WP_Post|null $target_post
+     * @param array        $base
+     * @param array        $overrides
+     * @return array Normalized descriptor array ready for assemble_head_tags().
+     */
+    protected function normalize_post_head_data($target_post, array $base, array $overrides = array()) {
+        $frontend_url = $base['frontend_url'];
+        $title        = !empty($overrides['title']) ? $overrides['title'] : $base['title'];
+        $desc         = !empty($overrides['desc']) ? $overrides['desc'] : $base['desc'];
+        $canonical    = !empty($overrides['canonical'])
+            ? $this->rewrite_origin_urls($overrides['canonical'], $frontend_url)
+            : $base['canonical'];
+
+        $og_title = !empty($overrides['og_title']) ? $overrides['og_title'] : $title;
+        $og_desc  = !empty($overrides['og_desc']) ? $overrides['og_desc'] : $desc;
+        $og_img   = !empty($overrides['og_img']) ? $overrides['og_img'] : $base['thumb_img'];
+        $og_img   = $og_img ? $this->rewrite_origin_urls($og_img, $frontend_url) : '';
+
+        $tw_title = !empty($overrides['tw_title']) ? $overrides['tw_title'] : $og_title;
+        $tw_desc  = !empty($overrides['tw_desc']) ? $overrides['tw_desc'] : $og_desc;
+        $tw_img   = !empty($overrides['tw_img']) ? $overrides['tw_img'] : $og_img;
+        $tw_img   = $tw_img ? $this->rewrite_origin_urls($tw_img, $frontend_url) : '';
+
+        return array(
+            'title'                  => $title,
+            'description'            => $desc,
+            'robots'                 => !empty($overrides['robots']) ? $overrides['robots'] : 'index, follow, max-image-preview:large',
+            'canonical'              => $canonical,
+            'og_locale'              => get_locale(),
+            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
+            'og_title'               => $og_title,
+            'og_description'         => $og_desc,
+            'og_url'                 => $canonical,
+            'og_site_name'           => $base['site_name'],
+            'article_published_time' => $target_post ? get_the_date('c', $target_post) : '',
+            'article_modified_time'  => $target_post ? get_the_modified_date('c', $target_post) : '',
+            'og_image'               => $og_img,
+            'twitter_card'           => !empty($overrides['tw_card']) ? $overrides['tw_card'] : 'summary_large_image',
+            'twitter_title'          => $tw_title,
+            'twitter_description'    => $tw_desc,
+            'twitter_image'          => $tw_img,
+        );
+    }
+
+    /**
      * Fallback simulator for Yoast SEO head HTML and JSON-LD schema
      *
      * @param WP_Post|null $target_post
@@ -618,106 +610,75 @@ class AstroPress_SEO {
      * @return string
      */
     protected function simulate_yoast_head($target_post, $full_url) {
-        $frontend_url = $this->core->get_frontend_url();
-        $site_name    = get_bloginfo('name') ?: 'AstroPress';
-        $site_desc    = get_bloginfo('description') ?: '';
-        $post_id      = $target_post ? $target_post->ID : 0;
+        $base    = $this->get_post_head_base($target_post, $full_url);
+        $post_id = $base['post_id'];
 
         $raw_title    = $post_id ? get_post_meta($post_id, '_yoast_wpseo_title', true) : '';
         $raw_desc     = $post_id ? get_post_meta($post_id, '_yoast_wpseo_metadesc', true) : '';
-        $raw_canon    = $post_id ? get_post_meta($post_id, '_yoast_wpseo_canonical', true) : '';
         $raw_og_title = $post_id ? get_post_meta($post_id, '_yoast_wpseo_opengraph-title', true) : '';
         $raw_og_desc  = $post_id ? get_post_meta($post_id, '_yoast_wpseo_opengraph-description', true) : '';
-        $raw_og_img   = $post_id ? get_post_meta($post_id, '_yoast_wpseo_opengraph-image', true) : '';
         $raw_tw_title = $post_id ? get_post_meta($post_id, '_yoast_wpseo_twitter-title', true) : '';
         $raw_tw_desc  = $post_id ? get_post_meta($post_id, '_yoast_wpseo_twitter-description', true) : '';
-        $raw_tw_img   = $post_id ? get_post_meta($post_id, '_yoast_wpseo_twitter-image', true) : '';
 
-        // Title
-        $title = $raw_title ? $this->resolve_seo_template_vars($raw_title, $target_post) : '';
-        if (empty($title)) {
-            $title = $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name;
-        }
-
-        // Description
-        $desc = $raw_desc ? $this->resolve_seo_template_vars($raw_desc, $target_post) : '';
-        if (empty($desc) && $target_post) {
-            $desc = !empty($target_post->post_excerpt)
-                ? wp_strip_all_tags($target_post->post_excerpt)
-                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
-        }
-
-        // Canonical
-        $canonical = $raw_canon ?: ($full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url));
-        $canonical = str_replace($this->get_origin_hosts(), $frontend_url, $canonical);
-
-        // OpenGraph
-        $og_title = $raw_og_title ? $this->resolve_seo_template_vars($raw_og_title, $target_post) : $title;
-        $og_desc  = $raw_og_desc ? $this->resolve_seo_template_vars($raw_og_desc, $target_post) : $desc;
-        $og_img   = $raw_og_img;
-        if (empty($og_img) && $post_id) {
-            $thumb_id = get_post_thumbnail_id($post_id);
-            if ($thumb_id) {
-                $og_img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
-            }
-        }
-        $og_img = $og_img ? str_replace($this->get_origin_hosts(), $frontend_url, $og_img) : '';
-
-        // Twitter
-        $tw_title = $raw_tw_title ? $this->resolve_seo_template_vars($raw_tw_title, $target_post) : $og_title;
-        $tw_desc  = $raw_tw_desc ? $this->resolve_seo_template_vars($raw_tw_desc, $target_post) : $og_desc;
-        $tw_img   = $raw_tw_img ?: $og_img;
-        $tw_img   = $tw_img ? str_replace($this->get_origin_hosts(), $frontend_url, $tw_img) : '';
-
-        // Robots
-        $noindex = $post_id ? get_post_meta($post_id, '_yoast_wpseo_meta-robots-noindex', true) : '0';
+        $noindex  = $post_id ? get_post_meta($post_id, '_yoast_wpseo_meta-robots-noindex', true) : '0';
         $nofollow = $post_id ? get_post_meta($post_id, '_yoast_wpseo_meta-robots-nofollow', true) : '0';
-        $robots_directives = array();
-        $robots_directives[] = ($noindex === '1') ? 'noindex' : 'index';
-        $robots_directives[] = ($nofollow === '1') ? 'nofollow' : 'follow';
-        $robots_directives[] = 'max-snippet:-1';
-        $robots_directives[] = 'max-image-preview:large';
-        $robots_directives[] = 'max-video-preview:-1';
-        $robots_str = implode(', ', $robots_directives);
+        $robots   = implode(', ', array(
+            ($noindex === '1') ? 'noindex' : 'index',
+            ($nofollow === '1') ? 'nofollow' : 'follow',
+            'max-snippet:-1',
+            'max-image-preview:large',
+            'max-video-preview:-1',
+        ));
 
-        $pub_time = $target_post ? get_the_date('c', $target_post) : '';
-        $mod_time = $target_post ? get_the_modified_date('c', $target_post) : '';
+        $tags = $this->normalize_post_head_data($target_post, $base, array(
+            'title'     => $raw_title ? $this->resolve_seo_template_vars($raw_title, $target_post) : '',
+            'desc'      => $raw_desc ? $this->resolve_seo_template_vars($raw_desc, $target_post) : '',
+            'canonical' => $post_id ? get_post_meta($post_id, '_yoast_wpseo_canonical', true) : '',
+            'og_title'  => $raw_og_title ? $this->resolve_seo_template_vars($raw_og_title, $target_post) : '',
+            'og_desc'   => $raw_og_desc ? $this->resolve_seo_template_vars($raw_og_desc, $target_post) : '',
+            'og_img'    => $post_id ? get_post_meta($post_id, '_yoast_wpseo_opengraph-image', true) : '',
+            'tw_title'  => $raw_tw_title ? $this->resolve_seo_template_vars($raw_tw_title, $target_post) : '',
+            'tw_desc'   => $raw_tw_desc ? $this->resolve_seo_template_vars($raw_tw_desc, $target_post) : '',
+            'tw_img'    => $post_id ? get_post_meta($post_id, '_yoast_wpseo_twitter-image', true) : '',
+            'robots'    => $robots,
+        ));
 
-        // Yoast Schema Graph
-        $author_name = $target_post ? (get_the_author_meta('display_name', $target_post->post_author) ?: 'Editorial Team') : 'Editorial Team';
+        $website_id   = rtrim($base['frontend_url'], '/') . '/#website';
+        $canonical    = $tags['canonical'];
+        $author_name  = $target_post ? (get_the_author_meta('display_name', $target_post->post_author) ?: 'Editorial Team') : 'Editorial Team';
         $schema_graph = array(
             '@context' => 'https://schema.org',
             '@graph'   => array(
                 array(
                     '@type'       => 'WebSite',
-                    '@id'         => rtrim($frontend_url, '/') . '/#website',
-                    'url'         => rtrim($frontend_url, '/') . '/',
-                    'name'        => $site_name,
-                    'description' => $site_desc,
-                    'inLanguage'  => get_locale(),
+                    '@id'         => $website_id,
+                    'url'         => rtrim($base['frontend_url'], '/') . '/',
+                    'name'        => $base['site_name'],
+                    'description' => $base['site_desc'],
+                    'inLanguage'  => $tags['og_locale'],
                 ),
                 array(
-                    '@type'              => 'WebPage',
-                    '@id'                => $canonical . '#webpage',
-                    'url'                => $canonical,
-                    'name'               => $title,
-                    'isPartOf'           => array('@id' => rtrim($frontend_url, '/') . '/#website'),
-                    'datePublished'      => $pub_time,
-                    'dateModified'       => $mod_time,
-                    'description'        => $desc,
-                    'breadcrumb'         => array('@id' => $canonical . '#breadcrumb'),
-                    'inLanguage'         => get_locale(),
+                    '@type'         => 'WebPage',
+                    '@id'           => $canonical . '#webpage',
+                    'url'           => $canonical,
+                    'name'          => $tags['title'],
+                    'isPartOf'      => array('@id' => $website_id),
+                    'datePublished' => $tags['article_published_time'],
+                    'dateModified'  => $tags['article_modified_time'],
+                    'description'   => $tags['description'],
+                    'breadcrumb'    => array('@id' => $canonical . '#breadcrumb'),
+                    'inLanguage'    => $tags['og_locale'],
                 ),
             ),
         );
 
-        if (!empty($og_img)) {
+        if (!empty($tags['og_image'])) {
             $schema_graph['@graph'][] = array(
                 '@type'      => 'ImageObject',
                 '@id'        => $canonical . '#primaryimage',
-                'inLanguage' => get_locale(),
-                'url'        => $og_img,
-                'contentUrl' => $og_img,
+                'inLanguage' => $tags['og_locale'],
+                'url'        => $tags['og_image'],
+                'contentUrl' => $tags['og_image'],
             );
         }
 
@@ -726,44 +687,23 @@ class AstroPress_SEO {
                 '@type'            => 'Article',
                 '@id'              => $canonical . '#article',
                 'isPartOf'         => array('@id' => $canonical . '#webpage'),
-                'author'           => array(
-                    '@type' => 'Person',
-                    'name'  => $author_name,
-                ),
-                'headline'         => $title,
-                'datePublished'    => $pub_time,
-                'dateModified'     => $mod_time,
+                'author'           => array('@type' => 'Person', 'name' => $author_name),
+                'headline'         => $tags['title'],
+                'datePublished'    => $tags['article_published_time'],
+                'dateModified'     => $tags['article_modified_time'],
                 'mainEntityOfPage' => array('@id' => $canonical . '#webpage'),
-                'publisher'        => array('@id' => rtrim($frontend_url, '/') . '/#website'),
-                'inLanguage'       => get_locale(),
+                'publisher'        => array('@id' => $website_id),
+                'inLanguage'       => $tags['og_locale'],
             );
-            if (!empty($og_img)) {
+            if (!empty($tags['og_image'])) {
                 $article_schema['image'] = array('@id' => $canonical . '#primaryimage');
             }
             $schema_graph['@graph'][] = $article_schema;
         }
 
-        return $this->assemble_head_tags(array(
-            'title'                  => $title,
-            'description'            => $desc,
-            'robots'                 => $robots_str,
-            'canonical'              => $canonical,
-            'og_locale'              => get_locale(),
-            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
-            'og_title'               => $og_title,
-            'og_description'         => $og_desc,
-            'og_url'                 => $canonical,
-            'og_site_name'           => $site_name,
-            'article_published_time' => $pub_time,
-            'article_modified_time'  => $mod_time,
-            'og_image'               => $og_img,
-            'twitter_card'           => 'summary_large_image',
-            'twitter_title'          => $tw_title,
-            'twitter_description'    => $tw_desc,
-            'twitter_image'          => $tw_img,
-            'json_ld'                => $schema_graph,
-            'schema_class'           => 'yoast-schema-graph',
-        ));
+        $tags['json_ld']      = $schema_graph;
+        $tags['schema_class'] = 'yoast-schema-graph';
+        return $this->assemble_head_tags($tags);
     }
 
     /**
@@ -775,15 +715,12 @@ class AstroPress_SEO {
      * @return string
      */
     protected function render_rank_math_head($target_post, $full_url) {
-        $frontend_url = $this->core->get_frontend_url();
-        $site_name    = get_bloginfo('name') ?: 'AstroPress';
-        $post_id      = $target_post ? $target_post->ID : 0;
-
-        $title = '';
-        $desc  = '';
+        $base              = $this->get_post_head_base($target_post, $full_url);
+        $post_id           = $base['post_id'];
+        $title             = '';
+        $desc              = '';
         $robots_directives = array();
 
-        // 1. Try Rank Math Singular Paper if class exists
         if (class_exists('\RankMath\Paper\Singular') && $target_post) {
             try {
                 $singular = new \RankMath\Paper\Singular();
@@ -803,100 +740,36 @@ class AstroPress_SEO {
             } catch (\Throwable $e) {}
         }
 
-        // 2. Robust Resolution for Rank Math Custom Overrides
         if ($post_id) {
             $raw_title = get_post_meta($post_id, 'rank_math_title', true);
             if (!empty($raw_title)) {
-                $resolved = $this->resolve_seo_template_vars($raw_title, $target_post);
-                if (!empty($resolved)) {
-                    $title = $resolved;
-                }
+                $title = $this->resolve_seo_template_vars($raw_title, $target_post) ?: $title;
             }
-
             $raw_desc = get_post_meta($post_id, 'rank_math_description', true);
             if (!empty($raw_desc)) {
-                $resolved_desc = $this->resolve_seo_template_vars($raw_desc, $target_post);
-                if (!empty($resolved_desc)) {
-                    $desc = $resolved_desc;
-                }
+                $desc = $this->resolve_seo_template_vars($raw_desc, $target_post) ?: $desc;
             }
         }
 
-        // 3. Fallback defaults if still empty
-        if (empty($title)) {
-            $title = $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name;
-        }
-        if (empty($desc) && $target_post) {
-            $desc = !empty($target_post->post_excerpt)
-                ? wp_strip_all_tags($target_post->post_excerpt)
-                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
-        }
-
-        // Canonical
-        $raw_canon = $post_id ? get_post_meta($post_id, 'rank_math_canonical_url', true) : '';
-        $canonical = $raw_canon ?: ($full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url));
-        $canonical = str_replace($this->get_origin_hosts(), $frontend_url, $canonical);
-
-        // Featured Image
-        $thumb_img = '';
-        if ($post_id) {
-            $thumb_id = get_post_thumbnail_id($post_id);
-            if ($thumb_id) {
-                $thumb_img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
-            }
-        }
-        $thumb_img = $thumb_img ? str_replace($this->get_origin_hosts(), $frontend_url, $thumb_img) : '';
-
-        // OpenGraph
-        $og_title = ($post_id ? get_post_meta($post_id, 'rank_math_facebook_title', true) : '') ?: $title;
-        $og_desc  = ($post_id ? get_post_meta($post_id, 'rank_math_facebook_description', true) : '') ?: $desc;
-        $og_img   = ($post_id ? get_post_meta($post_id, 'rank_math_facebook_image', true) : '') ?: $thumb_img;
-        $og_img   = $og_img ? str_replace($this->get_origin_hosts(), $frontend_url, $og_img) : '';
-
-        // Twitter
-        $tw_title = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_title', true) : '') ?: $og_title;
-        $tw_desc  = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_description', true) : '') ?: $og_desc;
-        $tw_img   = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_image', true) : '') ?: $og_img;
-        $tw_img   = $tw_img ? str_replace($this->get_origin_hosts(), $frontend_url, $tw_img) : '';
-        $tw_card  = ($post_id ? get_post_meta($post_id, 'rank_math_twitter_card_type', true) : '') ?: 'summary_large_image';
-
-        // Robots
         if (empty($robots_directives) && $post_id) {
-            $raw_robots = get_post_meta($post_id, 'rank_math_robots', true);
-            if (is_string($raw_robots) && strpos($raw_robots, 'a:') === 0) {
-                $raw_robots = maybe_unserialize($raw_robots);
-            }
-            if (is_array($raw_robots)) {
-                $robots_directives = array_filter($raw_robots);
-            }
+            $robots_directives = $this->normalize_robots_list(get_post_meta($post_id, 'rank_math_robots', true));
         }
-        if (empty($robots_directives)) {
-            $robots_directives = array('index', 'follow', 'max-image-preview:large');
-        }
-        $robots_str = implode(', ', array_unique($robots_directives));
 
-        $pub_time = $target_post ? get_the_date('c', $target_post) : '';
-        $mod_time = $target_post ? get_the_modified_date('c', $target_post) : '';
-
-        return $this->assemble_head_tags(array(
-            'title'                  => $title,
-            'description'            => $desc,
-            'robots'                 => $robots_str,
-            'canonical'              => $canonical,
-            'og_locale'              => get_locale(),
-            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
-            'og_title'               => $og_title,
-            'og_description'         => $og_desc,
-            'og_url'                 => $canonical,
-            'og_site_name'           => $site_name,
-            'article_published_time' => $pub_time,
-            'article_modified_time'  => $mod_time,
-            'og_image'               => $og_img,
-            'twitter_card'           => $tw_card,
-            'twitter_title'          => $tw_title,
-            'twitter_description'    => $tw_desc,
-            'twitter_image'          => $tw_img,
+        $tags = $this->normalize_post_head_data($target_post, $base, array(
+            'title'     => $title,
+            'desc'      => $desc,
+            'canonical' => $post_id ? get_post_meta($post_id, 'rank_math_canonical_url', true) : '',
+            'og_title'  => $post_id ? get_post_meta($post_id, 'rank_math_facebook_title', true) : '',
+            'og_desc'   => $post_id ? get_post_meta($post_id, 'rank_math_facebook_description', true) : '',
+            'og_img'    => $post_id ? get_post_meta($post_id, 'rank_math_facebook_image', true) : '',
+            'tw_title'  => $post_id ? get_post_meta($post_id, 'rank_math_twitter_title', true) : '',
+            'tw_desc'   => $post_id ? get_post_meta($post_id, 'rank_math_twitter_description', true) : '',
+            'tw_img'    => $post_id ? get_post_meta($post_id, 'rank_math_twitter_image', true) : '',
+            'tw_card'   => $post_id ? get_post_meta($post_id, 'rank_math_twitter_card_type', true) : '',
+            'robots'    => !empty($robots_directives) ? implode(', ', array_unique($robots_directives)) : '',
         ));
+
+        return $this->assemble_head_tags($tags);
     }
 
     /**
@@ -907,149 +780,38 @@ class AstroPress_SEO {
      * @return string
      */
     protected function render_seopress_head($target_post, $full_url) {
-        $frontend_url = $this->core->get_frontend_url();
-        $site_name    = get_bloginfo('name') ?: 'AstroPress';
-        $post_id      = $target_post ? $target_post->ID : 0;
-
-        $title = '';
-        if (function_exists('seopress_titles_title')) {
-            $title = seopress_titles_title();
-        }
-        if (empty($title) && $post_id) {
-            $title = get_post_meta($post_id, '_seopress_titles_title', true);
-        }
-        if (empty($title)) {
-            $title = $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name;
-        }
-
-        $desc = '';
-        if (function_exists('seopress_titles_desc')) {
-            $desc = seopress_titles_desc();
-        }
-        if (empty($desc) && $post_id) {
-            $desc = get_post_meta($post_id, '_seopress_titles_desc', true);
-        }
-        if (empty($desc) && $target_post) {
-            $desc = !empty($target_post->post_excerpt)
-                ? wp_strip_all_tags($target_post->post_excerpt)
-                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
-        }
-
-        $canonical = '';
-        if (function_exists('seopress_titles_canonical_url')) {
-            $canonical = seopress_titles_canonical_url();
-        }
-        if (empty($canonical) && $post_id) {
-            $canonical = get_post_meta($post_id, '_seopress_titles_canonical', true);
-        }
-        if (empty($canonical)) {
-            $canonical = $full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url);
-        }
-        $canonical = str_replace($this->get_origin_hosts(), $frontend_url, $canonical);
-
-        $og_title = '';
-        if (function_exists('seopress_social_fb_title')) {
-            $og_title = seopress_social_fb_title();
-        }
-        if (empty($og_title) && $post_id) {
-            $og_title = get_post_meta($post_id, '_seopress_social_fb_title', true);
-        }
-        if (empty($og_title)) {
-            $og_title = $title;
-        }
-
-        $og_desc = '';
-        if (function_exists('seopress_social_fb_desc')) {
-            $og_desc = seopress_social_fb_desc();
-        }
-        if (empty($og_desc) && $post_id) {
-            $og_desc = get_post_meta($post_id, '_seopress_social_fb_desc', true);
-        }
-        if (empty($og_desc)) {
-            $og_desc = $desc;
-        }
-
-        $og_img = '';
-        if (function_exists('seopress_social_fb_img')) {
-            $og_img = seopress_social_fb_img();
-        }
-        if (empty($og_img) && $post_id) {
-            $og_img = get_post_meta($post_id, '_seopress_social_fb_img', true);
-        }
-        if (empty($og_img) && $post_id) {
-            $thumb_id = get_post_thumbnail_id($post_id);
-            if ($thumb_id) {
-                $og_img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
+        $base    = $this->get_post_head_base($target_post, $full_url);
+        $post_id = $base['post_id'];
+        $read    = static function ($fn, $meta_key) use ($post_id) {
+            $val = function_exists($fn) ? $fn() : '';
+            if (empty($val) && $post_id) {
+                $val = get_post_meta($post_id, $meta_key, true);
             }
-        }
-        $og_img = $og_img ? str_replace($this->get_origin_hosts(), $frontend_url, $og_img) : '';
+            return $val;
+        };
 
-        $tw_title = '';
-        if (function_exists('seopress_social_twitter_title')) {
-            $tw_title = seopress_social_twitter_title();
-        }
-        if (empty($tw_title) && $post_id) {
-            $tw_title = get_post_meta($post_id, '_seopress_social_twitter_title', true);
-        }
-        if (empty($tw_title)) {
-            $tw_title = $og_title;
-        }
-
-        $tw_desc = '';
-        if (function_exists('seopress_social_twitter_desc')) {
-            $tw_desc = seopress_social_twitter_desc();
-        }
-        if (empty($tw_desc) && $post_id) {
-            $tw_desc = get_post_meta($post_id, '_seopress_social_twitter_desc', true);
-        }
-        if (empty($tw_desc)) {
-            $tw_desc = $og_desc;
-        }
-
-        $tw_img = '';
-        if (function_exists('seopress_social_twitter_img')) {
-            $tw_img = seopress_social_twitter_img();
-        }
-        if (empty($tw_img) && $post_id) {
-            $tw_img = get_post_meta($post_id, '_seopress_social_twitter_img', true);
-        }
-        if (empty($tw_img)) {
-            $tw_img = $og_img;
-        }
-        $tw_img = $tw_img ? str_replace($this->get_origin_hosts(), $frontend_url, $tw_img) : '';
-
-        $tw_card = $post_id ? (get_post_meta($post_id, '_seopress_social_twitter_card', true) ?: 'summary_large_image') : 'summary_large_image';
-
-        $robots = array();
+        $robots = 'index, follow';
         if ($post_id) {
-            $noindex = get_post_meta($post_id, '_seopress_titles_robots_index', true);
+            $noindex  = get_post_meta($post_id, '_seopress_titles_robots_index', true);
             $nofollow = get_post_meta($post_id, '_seopress_titles_robots_follow', true);
-            $robots[] = ($noindex === 'yes') ? 'noindex' : 'index';
-            $robots[] = ($nofollow === 'yes') ? 'nofollow' : 'follow';
-        } else {
-            $robots = array('index', 'follow');
+            $robots   = (($noindex === 'yes') ? 'noindex' : 'index') . ', ' . (($nofollow === 'yes') ? 'nofollow' : 'follow');
         }
-        $robots_str = implode(', ', $robots);
 
-        return $this->assemble_head_tags(array(
-            'title'                  => $title,
-            'description'            => $desc,
-            'robots'                 => $robots_str,
-            'canonical'              => $canonical,
-            'og_locale'              => get_locale(),
-            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
-            'og_title'               => $og_title,
-            'og_description'         => $og_desc,
-            'og_url'                 => $canonical,
-            'og_site_name'           => $site_name,
-            'article_published_time' => $target_post ? get_the_date('c', $target_post) : '',
-            'article_modified_time'  => $target_post ? get_the_modified_date('c', $target_post) : '',
-            'og_image'               => $og_img,
-            'twitter_card'           => $tw_card,
-            'twitter_title'          => $tw_title,
-            'twitter_description'    => $tw_desc,
-            'twitter_image'          => $tw_img,
+        $tags = $this->normalize_post_head_data($target_post, $base, array(
+            'title'     => $read('seopress_titles_title', '_seopress_titles_title'),
+            'desc'      => $read('seopress_titles_desc', '_seopress_titles_desc'),
+            'canonical' => $read('seopress_titles_canonical_url', '_seopress_titles_canonical'),
+            'og_title'  => $read('seopress_social_fb_title', '_seopress_social_fb_title'),
+            'og_desc'   => $read('seopress_social_fb_desc', '_seopress_social_fb_desc'),
+            'og_img'    => $read('seopress_social_fb_img', '_seopress_social_fb_img'),
+            'tw_title'  => $read('seopress_social_twitter_title', '_seopress_social_twitter_title'),
+            'tw_desc'   => $read('seopress_social_twitter_desc', '_seopress_social_twitter_desc'),
+            'tw_img'    => $read('seopress_social_twitter_img', '_seopress_social_twitter_img'),
+            'tw_card'   => $post_id ? get_post_meta($post_id, '_seopress_social_twitter_card', true) : '',
+            'robots'    => $robots,
         ));
+
+        return $this->assemble_head_tags($tags);
     }
 
     /**
@@ -1060,10 +822,8 @@ class AstroPress_SEO {
      * @return string
      */
     protected function render_aioseo_head($target_post, $full_url) {
-        $frontend_url = $this->core->get_frontend_url();
-        $site_name    = get_bloginfo('name') ?: 'AstroPress';
-        $post_id      = $target_post ? $target_post->ID : 0;
-
+        $base        = $this->get_post_head_base($target_post, $full_url);
+        $post_id     = $base['post_id'];
         $aioseo_meta = null;
         if (function_exists('aioseo') && isset(aioseo()->meta->metaData) && $target_post) {
             try {
@@ -1073,85 +833,40 @@ class AstroPress_SEO {
             }
         }
 
-        $read_meta = function($prop) use ($aioseo_meta) {
-            if (!$aioseo_meta) return null;
-            if (is_object($aioseo_meta)) {
-                if (isset($aioseo_meta->$prop)) return $aioseo_meta->$prop;
-                if (method_exists($aioseo_meta, 'get') && $aioseo_meta->get($prop)) return $aioseo_meta->get($prop);
-            } elseif (is_array($aioseo_meta) && isset($aioseo_meta[$prop])) {
-                return $aioseo_meta[$prop];
+        $read = static function (array $props, $meta_keys) use ($aioseo_meta, $post_id) {
+            if ($aioseo_meta) {
+                foreach ($props as $prop) {
+                    if (is_object($aioseo_meta)) {
+                        if (!empty($aioseo_meta->$prop)) return $aioseo_meta->$prop;
+                        if (method_exists($aioseo_meta, 'get') && $aioseo_meta->get($prop)) return $aioseo_meta->get($prop);
+                    } elseif (is_array($aioseo_meta) && !empty($aioseo_meta[$prop])) {
+                        return $aioseo_meta[$prop];
+                    }
+                }
             }
-            return null;
+            if ($post_id) {
+                foreach ((array) $meta_keys as $k) {
+                    $v = get_post_meta($post_id, $k, true);
+                    if (!empty($v)) return $v;
+                }
+            }
+            return '';
         };
 
-        // Title
-        $title = $read_meta('title');
-        if (empty($title) && $post_id) {
-            $title = get_post_meta($post_id, '_aioseo_title', true);
-        }
-        if (empty($title)) {
-            $title = $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name;
-        }
-
-        // Description
-        $desc = $read_meta('description');
-        if (empty($desc) && $post_id) {
-            $desc = get_post_meta($post_id, '_aioseo_description', true);
-        }
-        if (empty($desc) && $target_post) {
-            $desc = !empty($target_post->post_excerpt)
-                ? wp_strip_all_tags($target_post->post_excerpt)
-                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
-        }
-
-        // Canonical
-        $canonical = $read_meta('canonicalUrl') ?: $read_meta('canonical_url');
-        if (empty($canonical) && $post_id) {
-            $canonical = get_post_meta($post_id, '_aioseo_canonical_url', true);
-        }
-        if (empty($canonical)) {
-            $canonical = $full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url);
-        }
-        $canonical = str_replace($this->get_origin_hosts(), $frontend_url, $canonical);
-
-        // OpenGraph
-        $og_title = $read_meta('og_title') ?: ($post_id ? get_post_meta($post_id, '_aioseo_og_title', true) : '') ?: $title;
-        $og_desc  = $read_meta('og_description') ?: ($post_id ? get_post_meta($post_id, '_aioseo_og_description', true) : '') ?: $desc;
-        $og_img   = $read_meta('og_image_custom_url') ?: $read_meta('og_image_url') ?: ($post_id ? get_post_meta($post_id, '_aioseo_og_image_custom_url', true) : '');
-        if (empty($og_img) && $post_id) {
-            $thumb_id = get_post_thumbnail_id($post_id);
-            if ($thumb_id) {
-                $og_img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
-            }
-        }
-        $og_img = $og_img ? str_replace($this->get_origin_hosts(), $frontend_url, $og_img) : '';
-
-        // Twitter
-        $tw_title = $read_meta('twitter_title') ?: ($post_id ? get_post_meta($post_id, '_aioseo_twitter_title', true) : '') ?: $og_title;
-        $tw_desc  = $read_meta('twitter_description') ?: ($post_id ? get_post_meta($post_id, '_aioseo_twitter_description', true) : '') ?: $og_desc;
-        $tw_img   = $read_meta('twitter_image_custom_url') ?: $read_meta('twitter_image_url') ?: ($post_id ? get_post_meta($post_id, '_aioseo_twitter_image_custom_url', true) : '') ?: $og_img;
-        $tw_img   = $tw_img ? str_replace($this->get_origin_hosts(), $frontend_url, $tw_img) : '';
-        $tw_card  = $read_meta('twitter_card') ?: ($post_id ? get_post_meta($post_id, '_aioseo_twitter_card', true) : '') ?: 'summary_large_image';
-
-        return $this->assemble_head_tags(array(
-            'title'                  => $title,
-            'description'            => $desc,
-            'robots'                 => 'index, follow, max-image-preview:large',
-            'canonical'              => $canonical,
-            'og_locale'              => get_locale(),
-            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
-            'og_title'               => $og_title,
-            'og_description'         => $og_desc,
-            'og_url'                 => $canonical,
-            'og_site_name'           => $site_name,
-            'article_published_time' => $target_post ? get_the_date('c', $target_post) : '',
-            'article_modified_time'  => $target_post ? get_the_modified_date('c', $target_post) : '',
-            'og_image'               => $og_img,
-            'twitter_card'           => $tw_card,
-            'twitter_title'          => $tw_title,
-            'twitter_description'    => $tw_desc,
-            'twitter_image'          => $tw_img,
+        $tags = $this->normalize_post_head_data($target_post, $base, array(
+            'title'     => $read(array('title'), '_aioseo_title'),
+            'desc'      => $read(array('description'), '_aioseo_description'),
+            'canonical' => $read(array('canonicalUrl', 'canonical_url'), '_aioseo_canonical_url'),
+            'og_title'  => $read(array('og_title'), '_aioseo_og_title'),
+            'og_desc'   => $read(array('og_description'), '_aioseo_og_description'),
+            'og_img'    => $read(array('og_image_custom_url', 'og_image_url'), '_aioseo_og_image_custom_url'),
+            'tw_title'  => $read(array('twitter_title'), '_aioseo_twitter_title'),
+            'tw_desc'   => $read(array('twitter_description'), '_aioseo_twitter_description'),
+            'tw_img'    => $read(array('twitter_image_custom_url', 'twitter_image_url'), '_aioseo_twitter_image_custom_url'),
+            'tw_card'   => $read(array('twitter_card'), '_aioseo_twitter_card'),
         ));
+
+        return $this->assemble_head_tags($tags);
     }
 
     /**
@@ -1162,49 +877,8 @@ class AstroPress_SEO {
      * @return string
      */
     protected function render_native_head($target_post, $full_url) {
-        $frontend_url = $this->core->get_frontend_url();
-        $site_name    = get_bloginfo('name') ?: 'AstroPress';
-        $post_id      = $target_post ? $target_post->ID : 0;
-
-        $title = $target_post ? $target_post->post_title . ' — ' . $site_name : $site_name;
-        $desc  = '';
-        if ($target_post) {
-            $desc = !empty($target_post->post_excerpt)
-                ? wp_strip_all_tags($target_post->post_excerpt)
-                : wp_trim_words(wp_strip_all_tags($target_post->post_content), 25);
-        }
-
-        $canonical = $full_url ?: ($target_post ? get_permalink($target_post) : $frontend_url);
-        $canonical = str_replace($this->get_origin_hosts(), $frontend_url, $canonical);
-
-        $img = '';
-        if ($post_id) {
-            $thumb_id = get_post_thumbnail_id($post_id);
-            if ($thumb_id) {
-                $img = wp_get_attachment_image_url($thumb_id, 'full') ?: '';
-            }
-        }
-        $img = $img ? str_replace($this->get_origin_hosts(), $frontend_url, $img) : '';
-
-        return $this->assemble_head_tags(array(
-            'title'                  => $title,
-            'description'            => $desc,
-            'robots'                 => 'index, follow, max-image-preview:large',
-            'canonical'              => $canonical,
-            'og_locale'              => get_locale(),
-            'og_type'                => ($target_post && $target_post->post_type === 'post') ? 'article' : 'website',
-            'og_title'               => $title,
-            'og_description'         => $desc,
-            'og_url'                 => $canonical,
-            'og_site_name'           => $site_name,
-            'article_published_time' => $target_post ? get_the_date('c', $target_post) : '',
-            'article_modified_time'  => $target_post ? get_the_modified_date('c', $target_post) : '',
-            'og_image'               => $img,
-            'twitter_card'           => 'summary_large_image',
-            'twitter_title'          => $title,
-            'twitter_description'    => $desc,
-            'twitter_image'          => $img,
-        ));
+        $base = $this->get_post_head_base($target_post, $full_url);
+        return $this->assemble_head_tags($this->normalize_post_head_data($target_post, $base));
     }
 
     /**
@@ -1214,10 +888,99 @@ class AstroPress_SEO {
      * @param int|WP_Post $post_obj
      * @return string
      */
+    /**
+     * Resolve SEO template placeholders (%title%, %sitename%, etc.) uniformly.
+     *
+     * @param string $template
+     * @param array  $replacements Map of '%var%' => value.
+     * @param string $fallback
+     * @param string $site_name
+     * @return string
+     */
+    protected function finalize_template_resolution($template, array $replacements, $fallback, $site_name) {
+        $resolved = str_ireplace(array_keys($replacements), array_values($replacements), $template);
+        $resolved = preg_replace('/%[a-z0-9_-]+%/i', '', $resolved);
+        $resolved = trim(preg_replace('/\s+/', ' ', $resolved));
+
+        $without_site  = trim(str_ireplace($site_name, '', $resolved));
+        $without_punct = trim(preg_replace('/[\(\)\[\]\-\—\s\|\:\,]/', '', $without_site));
+
+        return $without_punct === '' ? $fallback : $resolved;
+    }
+
+    /**
+     * Query active Rank Math exact redirection rules matching any candidate path.
+     *
+     * @param array $candidate_paths Normalized trim('/', $path) candidates.
+     * @param array $like_terms      SQL LIKE search hints.
+     * @return array|null ['url' => string, 'code' => int]
+     */
+    protected function lookup_rank_math_redirection(array $candidate_paths, array $like_terms) {
+        global $wpdb;
+        $candidate_paths = array_values(array_unique(array_filter(array_map(static function ($p) {
+            return trim((string) $p, '/');
+        }, $candidate_paths))));
+
+        if (empty($candidate_paths) || empty($like_terms) || empty($wpdb) || empty($wpdb->prefix)) {
+            return null;
+        }
+
+        $table_name = $wpdb->prefix . 'rank_math_redirections';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)) !== $table_name) {
+            return null;
+        }
+
+        $like_clauses = array();
+        $params       = array();
+        foreach (array_unique(array_filter($like_terms)) as $hint) {
+            $like_clauses[] = 'sources LIKE %s';
+            $params[]       = '%' . $wpdb->esc_like((string) $hint) . '%';
+        }
+        if (empty($like_clauses)) {
+            return null;
+        }
+
+        $sql  = "SELECT sources, url_to, header_code FROM {$table_name} WHERE status = 'active' AND (" . implode(' OR ', $like_clauses) . ') ORDER BY id DESC LIMIT 20';
+        $rows = $wpdb->get_results($wpdb->prepare($sql, ...$params), ARRAY_A);
+        if (empty($rows)) {
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            $sources = maybe_unserialize($row['sources']);
+            if (!is_array($sources)) {
+                continue;
+            }
+            foreach ($sources as $source_item) {
+                $pattern    = trim((string) ($source_item['pattern'] ?? ''), '/');
+                $comparison = $source_item['comparison'] ?? 'exact';
+                if ($comparison !== 'exact') {
+                    continue;
+                }
+                foreach ($candidate_paths as $candidate) {
+                    if (strcasecmp($pattern, $candidate) === 0) {
+                        return array(
+                            'url'  => $row['url_to'],
+                            'code' => (int) ($row['header_code'] ?: 301),
+                        );
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve SEO template variables
+     *
+     * @param string          $template
+     * @param int|WP_Post     $post_obj
+     * @return string
+     */
     public function resolve_seo_template_vars($template, $post_obj) {
         $target_post = is_numeric($post_obj) ? get_post($post_obj) : $post_obj;
-        $title = $target_post ? $target_post->post_title : '';
-        $site_name = get_bloginfo('name') ?: 'AstroPress';
+        $title       = $target_post ? $target_post->post_title : '';
+        $site_name   = get_bloginfo('name') ?: 'AstroPress';
 
         if (empty($template) || !is_string($template)) {
             return $title;
@@ -1228,75 +991,44 @@ class AstroPress_SEO {
             return $title;
         }
 
-        $excerpt = '';
+        $excerpt     = '';
         $author_name = '';
-        $focuskw = '';
+        $focuskw     = '';
         if ($target_post) {
             $excerpt = !empty($target_post->post_excerpt)
                 ? wp_strip_all_tags($target_post->post_excerpt)
                 : wp_trim_words(wp_strip_all_tags($target_post->post_content), 30);
             $author_name = get_the_author_meta('display_name', $target_post->post_author) ?: '';
-            $focuskw = get_post_meta($target_post->ID, 'rank_math_focus_keyword', true)
+            $focuskw     = get_post_meta($target_post->ID, 'rank_math_focus_keyword', true)
                 ?: get_post_meta($target_post->ID, '_yoast_wpseo_focuskw', true)
                 ?: '';
         }
 
-        $cats = $target_post ? get_the_category($target_post->ID) : array();
+        $cats     = $target_post ? get_the_category($target_post->ID) : array();
         $cat_name = (!empty($cats) && !is_wp_error($cats)) ? $cats[0]->name : '';
 
-        $resolved = str_ireplace(
-            array(
-                '%title%',
-                '%currentyear%',
-                '%currentmonth%',
-                '%currentday%',
-                '%sep%',
-                '%sitename%',
-                '%sitedesc%',
-                '%page%',
-                '%category%',
-                '%excerpt%',
-                '%focuskw%',
-                '%author%',
-                '%date%',
-                '%modified%',
-            ),
-            array(
-                $title,
-                date('Y'),
-                date('F'),
-                date('j'),
-                '—',
-                $site_name,
-                get_bloginfo('description') ?: '',
-                '',
-                $cat_name,
-                $excerpt,
-                $focuskw,
-                $author_name,
-                $target_post ? get_the_date('', $target_post) : '',
-                $target_post ? get_the_modified_date('', $target_post) : '',
-            ),
-            $template
-        );
-
-        $resolved = preg_replace('/%[a-z0-9_-]+%/i', '', $resolved);
-        $resolved = trim(preg_replace('/\s+/', ' ', $resolved));
-
-        $test_without_punct = trim(str_ireplace($site_name, '', $resolved));
-        $test_without_punct = trim(preg_replace('/[\(\)\[\]\-\—\s\|\:\,]/', '', $test_without_punct));
-
-        if (empty($test_without_punct)) {
-            return $title;
-        }
-
-        return $resolved;
+        return $this->finalize_template_resolution($template, array(
+            '%title%'        => $title,
+            '%currentyear%'  => date('Y'),
+            '%currentmonth%' => date('F'),
+            '%currentday%'   => date('j'),
+            '%sep%'          => '—',
+            '%sitename%'     => $site_name,
+            '%sitedesc%'     => get_bloginfo('description') ?: '',
+            '%page%'         => '',
+            '%category%'     => $cat_name,
+            '%excerpt%'      => $excerpt,
+            '%focuskw%'      => $focuskw,
+            '%author%'       => $author_name,
+            '%date%'         => $target_post ? get_the_date('', $target_post) : '',
+            '%modified%'     => $target_post ? get_the_modified_date('', $target_post) : '',
+        ), $title, $site_name);
     }
 
     /**
      * Resolve template variables for taxonomy terms
      *
-     * @param string $template
+     * @param string      $template
      * @param int|WP_Term $term_obj
      * @return string
      */
@@ -1310,106 +1042,48 @@ class AstroPress_SEO {
         $term_desc = $term ? wp_strip_all_tags($term->description) : '';
         $site_name = get_bloginfo('name') ?: 'AstroPress';
 
-        $resolved = str_ireplace(
-            array(
-                '%category%',
-                '%tag%',
-                '%term%',
-                '%title%',
-                '%term_description%',
-                '%sitename%',
-                '%sitedesc%',
-                '%currentyear%',
-                '%currentmonth%',
-                '%currentday%',
-                '%sep%',
-                '%page%',
-            ),
-            array(
-                $term_name,
-                $term_name,
-                $term_name,
-                $term_name,
-                $term_desc,
-                $site_name,
-                get_bloginfo('description') ?: '',
-                date('Y'),
-                date('F'),
-                date('j'),
-                '—',
-                '',
-            ),
-            $template
-        );
-
-        $resolved = preg_replace('/%[a-z0-9_-]+%/i', '', $resolved);
-        $resolved = trim(preg_replace('/\s+/', ' ', $resolved));
-
-        $test_without_punct = trim(str_ireplace($site_name, '', $resolved));
-        $test_without_punct = trim(preg_replace('/[\(\)\[\]\-\—\s\|\:\,]/', '', $test_without_punct));
-
-        if (empty($test_without_punct)) {
-            return $term_name;
-        }
-
-        return $resolved;
+        return $this->finalize_template_resolution($template, array(
+            '%category%'         => $term_name,
+            '%tag%'              => $term_name,
+            '%term%'             => $term_name,
+            '%title%'            => $term_name,
+            '%term_description%' => $term_desc,
+            '%sitename%'         => $site_name,
+            '%sitedesc%'         => get_bloginfo('description') ?: '',
+            '%currentyear%'      => date('Y'),
+            '%currentmonth%'     => date('F'),
+            '%currentday%'       => date('j'),
+            '%sep%'              => '—',
+            '%page%'             => '',
+        ), $term_name, $site_name);
     }
 
     /**
-     * Get structured SEO fields for a post or page
+     * Read the first non-empty post meta value from a prioritized key list.
      *
-     * @param array|int $post_arr
-     * @return array|null
+     * @param int   $post_id
+     * @param array $keys
+     * @param mixed $default
+     * @return mixed
      */
-    public function get_rank_math_seo_fields($post_arr) {
-        $post_id = is_array($post_arr) ? ($post_arr['id'] ?? 0) : $post_arr;
-        if (!$post_id) {
-            return null;
+    protected function get_first_post_meta($post_id, array $keys, $default = null) {
+        foreach ($keys as $key) {
+            $val = get_post_meta($post_id, $key, true);
+            if ($val !== '' && $val !== null && $val !== false && $val !== array()) {
+                return $val;
+            }
         }
+        return $default;
+    }
 
-        $target_post = get_post($post_id);
-        $frontend_url = $this->core->get_frontend_url();
-
-        // Check metadata across Rank Math, Yoast SEO, SEOPress, and AIOSEO
-        $raw_title     = get_post_meta($post_id, 'rank_math_title', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_title', true)
-            ?: get_post_meta($post_id, '_seopress_titles_title', true)
-            ?: get_post_meta($post_id, '_aioseo_title', true);
-
-        $raw_desc      = get_post_meta($post_id, 'rank_math_description', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_metadesc', true)
-            ?: get_post_meta($post_id, '_seopress_titles_desc', true)
-            ?: get_post_meta($post_id, '_aioseo_description', true);
-
-        $raw_canonical = get_post_meta($post_id, 'rank_math_canonical_url', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_canonical', true)
-            ?: get_post_meta($post_id, '_seopress_titles_canonical', true)
-            ?: get_post_meta($post_id, '_aioseo_canonical_url', true);
-
-        $raw_og_title  = get_post_meta($post_id, 'rank_math_facebook_title', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_opengraph-title', true)
-            ?: get_post_meta($post_id, '_seopress_social_fb_title', true)
-            ?: get_post_meta($post_id, '_aioseo_og_title', true);
-
-        $raw_og_desc   = get_post_meta($post_id, 'rank_math_facebook_description', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_opengraph-description', true)
-            ?: get_post_meta($post_id, '_seopress_social_fb_desc', true)
-            ?: get_post_meta($post_id, '_aioseo_og_description', true);
-
-        $raw_tw_title  = get_post_meta($post_id, 'rank_math_twitter_title', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_twitter-title', true)
-            ?: get_post_meta($post_id, '_seopress_social_twitter_title', true)
-            ?: get_post_meta($post_id, '_aioseo_twitter_title', true);
-
-        $raw_tw_desc   = get_post_meta($post_id, 'rank_math_twitter_description', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_twitter-description', true)
-            ?: get_post_meta($post_id, '_seopress_social_twitter_desc', true)
-            ?: get_post_meta($post_id, '_aioseo_twitter_description', true);
-
-        $raw_robots    = get_post_meta($post_id, 'rank_math_robots', true);
-        $raw_adv_rob   = get_post_meta($post_id, 'rank_math_advanced_robots', true);
-
-        // Robots normalization
+    /**
+     * Normalize Rank Math basic and advanced robots meta values into a directive list.
+     *
+     * @param mixed $raw_robots
+     * @param mixed $raw_adv_rob
+     * @return array
+     */
+    protected function normalize_robots_list($raw_robots, $raw_adv_rob = '') {
         if (is_string($raw_robots) && strpos($raw_robots, 'a:') === 0) {
             $raw_robots = maybe_unserialize($raw_robots);
         }
@@ -1435,48 +1109,54 @@ class AstroPress_SEO {
             }
         }
 
-        $primary_cat_id = (int) get_post_meta($post_id, 'rank_math_primary_category', true)
-            ?: (int) get_post_meta($post_id, '_yoast_wpseo_primary_category', true)
-            ?: null;
-        $breadcrumb_title = get_post_meta($post_id, 'rank_math_breadcrumb_title', true)
-            ?: get_post_meta($post_id, '_yoast_wpseo_bctitle', true)
-            ?: null;
-        $pillar_content = get_post_meta($post_id, 'rank_math_pillar_content', true) === 'on'
+        return $robots_list;
+    }
+
+    /**
+     * Get structured SEO fields for a post or page
+     *
+     * @param array|int $post_arr
+     * @return array|null
+     */
+    public function get_rank_math_seo_fields($post_arr) {
+        $post_id = is_array($post_arr) ? ($post_arr['id'] ?? 0) : $post_arr;
+        if (!$post_id) {
+            return null;
+        }
+
+        $target_post  = get_post($post_id);
+        $frontend_url = $this->core->get_frontend_url();
+
+        $raw_title     = $this->get_first_post_meta($post_id, array('rank_math_title', '_yoast_wpseo_title', '_seopress_titles_title', '_aioseo_title'), '');
+        $raw_desc      = $this->get_first_post_meta($post_id, array('rank_math_description', '_yoast_wpseo_metadesc', '_seopress_titles_desc', '_aioseo_description'), '');
+        $raw_canonical = $this->get_first_post_meta($post_id, array('rank_math_canonical_url', '_yoast_wpseo_canonical', '_seopress_titles_canonical', '_aioseo_canonical_url'), '');
+        $raw_og_title  = $this->get_first_post_meta($post_id, array('rank_math_facebook_title', '_yoast_wpseo_opengraph-title', '_seopress_social_fb_title', '_aioseo_og_title'), '');
+        $raw_og_desc   = $this->get_first_post_meta($post_id, array('rank_math_facebook_description', '_yoast_wpseo_opengraph-description', '_seopress_social_fb_desc', '_aioseo_og_description'), '');
+        $raw_tw_title  = $this->get_first_post_meta($post_id, array('rank_math_twitter_title', '_yoast_wpseo_twitter-title', '_seopress_social_twitter_title', '_aioseo_twitter_title'), '');
+        $raw_tw_desc   = $this->get_first_post_meta($post_id, array('rank_math_twitter_description', '_yoast_wpseo_twitter-description', '_seopress_social_twitter_desc', '_aioseo_twitter_description'), '');
+
+        $robots_list = $this->normalize_robots_list(
+            get_post_meta($post_id, 'rank_math_robots', true),
+            get_post_meta($post_id, 'rank_math_advanced_robots', true)
+        );
+
+        $primary_cat_id   = (int) $this->get_first_post_meta($post_id, array('rank_math_primary_category', '_yoast_wpseo_primary_category'), 0) ?: null;
+        $breadcrumb_title = $this->get_first_post_meta($post_id, array('rank_math_breadcrumb_title', '_yoast_wpseo_bctitle'));
+        $pillar_content   = get_post_meta($post_id, 'rank_math_pillar_content', true) === 'on'
             || get_post_meta($post_id, '_yoast_wpseo_is_cornerstone', true) === '1';
 
-        $canonical = $raw_canonical ? str_replace($this->get_origin_hosts(), $frontend_url, $raw_canonical) : null;
+        $canonical = $raw_canonical ? $this->rewrite_origin_urls($raw_canonical, $frontend_url) : null;
 
         // Rank Math Redirection detection
-        $redirect_to = get_post_meta($post_id, 'rank_math_redirection_url', true);
-        $redirect_code = get_post_meta($post_id, 'rank_math_redirection_type', true) ?: '301';
+        $redirect_to   = get_post_meta($post_id, 'rank_math_redirection_url', true);
+        $redirect_code = (int) (get_post_meta($post_id, 'rank_math_redirection_type', true) ?: 301);
 
-        global $wpdb;
-        if (!empty($wpdb) && !empty($wpdb->prefix)) {
-            $table_name = $wpdb->prefix . 'rank_math_redirections';
-            if (empty($redirect_to) && $target_post && $wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name) {
-                $slug = ($target_post->post_type === 'page') ? get_page_uri($target_post->ID) : $target_post->post_name;
-                if ($slug) {
-                    $rows = $wpdb->get_results($wpdb->prepare(
-                        "SELECT sources, url_to, header_code FROM {$table_name} WHERE status = 'active' AND sources LIKE %s ORDER BY id DESC LIMIT 10",
-                        '%' . $wpdb->esc_like($target_post->post_name) . '%'
-                    ), ARRAY_A);
-                    if (!empty($rows)) {
-                        foreach ($rows as $row) {
-                            $sources = maybe_unserialize($row['sources']);
-                            if (is_array($sources)) {
-                                foreach ($sources as $source_item) {
-                                    $pattern = trim(isset($source_item['pattern']) ? $source_item['pattern'] : '', '/');
-                                    $comparison = isset($source_item['comparison']) ? $source_item['comparison'] : 'exact';
-                                    if ($comparison === 'exact' && strcasecmp($pattern, $slug) === 0) {
-                                        $redirect_to = $row['url_to'];
-                                        $redirect_code = $row['header_code'] ?: '301';
-                                        break 2;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        if (empty($redirect_to) && $target_post) {
+            $slug  = ($target_post->post_type === 'page') ? get_page_uri($target_post->ID) : $target_post->post_name;
+            $match = $this->lookup_rank_math_redirection(array($slug), array($target_post->post_name));
+            if ($match) {
+                $redirect_to   = $match['url'];
+                $redirect_code = $match['code'];
             }
         }
 
@@ -1485,29 +1165,18 @@ class AstroPress_SEO {
             'title'               => $this->resolve_seo_template_vars($raw_title, $target_post) ?: ($target_post ? $target_post->post_title : null),
             'description'         => $this->resolve_seo_template_vars($raw_desc, $target_post) ?: null,
             'canonical_url'       => $canonical,
-            'focus_keyword'       => get_post_meta($post_id, 'rank_math_focus_keyword', true)
-                ?: get_post_meta($post_id, '_yoast_wpseo_focuskw', true)
-                ?: get_post_meta($post_id, '_seopress_analysis_target_kw', true)
-                ?: null,
+            'focus_keyword'       => $this->get_first_post_meta($post_id, array('rank_math_focus_keyword', '_yoast_wpseo_focuskw', '_seopress_analysis_target_kw')),
             'robots'              => !empty($robots_list) ? $robots_list : null,
             'og_title'            => $this->resolve_seo_template_vars($raw_og_title, $target_post) ?: null,
             'og_description'      => $this->resolve_seo_template_vars($raw_og_desc, $target_post) ?: null,
-            'og_image'            => get_post_meta($post_id, 'rank_math_facebook_image', true)
-                ?: get_post_meta($post_id, '_yoast_wpseo_opengraph-image', true)
-                ?: get_post_meta($post_id, '_seopress_social_fb_img', true)
-                ?: get_post_meta($post_id, '_aioseo_og_image_custom_url', true)
-                ?: null,
+            'og_image'            => $this->get_first_post_meta($post_id, array('rank_math_facebook_image', '_yoast_wpseo_opengraph-image', '_seopress_social_fb_img', '_aioseo_og_image_custom_url')),
             'twitter_title'       => $this->resolve_seo_template_vars($raw_tw_title, $target_post) ?: null,
             'twitter_desc'        => $this->resolve_seo_template_vars($raw_tw_desc, $target_post) ?: null,
-            'twitter_image'       => get_post_meta($post_id, 'rank_math_twitter_image', true)
-                ?: get_post_meta($post_id, '_yoast_wpseo_twitter-image', true)
-                ?: get_post_meta($post_id, '_seopress_social_twitter_img', true)
-                ?: get_post_meta($post_id, '_aioseo_twitter_image_custom_url', true)
-                ?: null,
+            'twitter_image'       => $this->get_first_post_meta($post_id, array('rank_math_twitter_image', '_yoast_wpseo_twitter-image', '_seopress_social_twitter_img', '_aioseo_twitter_image_custom_url')),
             'primary_category_id' => $primary_cat_id,
             'breadcrumb_title'    => $breadcrumb_title,
             'pillar_content'      => $pillar_content,
-            'redirect_url'        => $redirect_to ? str_replace($this->get_origin_hosts(), $frontend_url, $redirect_to) : null,
+            'redirect_url'        => $redirect_to ? $this->rewrite_origin_urls($redirect_to, $frontend_url) : null,
             'redirect_type'       => $redirect_to ? (int) $redirect_code : null,
         );
     }
@@ -1529,101 +1198,40 @@ class AstroPress_SEO {
             return null;
         }
 
-        $frontend_url = $this->core->get_frontend_url();
-
-        $raw_title     = get_term_meta($term_id, 'rank_math_title', true);
-        $raw_desc      = get_term_meta($term_id, 'rank_math_description', true);
+        $frontend_url  = $this->core->get_frontend_url();
         $raw_canonical = get_term_meta($term_id, 'rank_math_canonical_url', true);
-        $raw_robots    = get_term_meta($term_id, 'rank_math_robots', true);
-        $raw_adv_rob   = get_term_meta($term_id, 'rank_math_advanced_robots', true);
-        $raw_focuskw   = get_term_meta($term_id, 'rank_math_focus_keyword', true);
-        $raw_og_title  = get_term_meta($term_id, 'rank_math_facebook_title', true);
-        $raw_og_desc   = get_term_meta($term_id, 'rank_math_facebook_description', true);
         $raw_og_image  = get_term_meta($term_id, 'rank_math_facebook_image', true);
-        $raw_tw_title  = get_term_meta($term_id, 'rank_math_twitter_title', true);
-        $raw_tw_desc   = get_term_meta($term_id, 'rank_math_twitter_description', true);
         $raw_tw_image  = get_term_meta($term_id, 'rank_math_twitter_image', true);
 
-        if (is_string($raw_robots) && strpos($raw_robots, 'a:') === 0) {
-            $raw_robots = maybe_unserialize($raw_robots);
-        }
-        $robots_list = array();
-        if (is_array($raw_robots)) {
-            foreach ($raw_robots as $r) {
-                if ($r && is_string($r)) {
-                    $robots_list[] = trim($r);
-                }
-            }
-        } elseif (is_string($raw_robots) && !empty($raw_robots)) {
-            $robots_list[] = trim($raw_robots);
-        }
-
-        if (is_string($raw_adv_rob) && strpos($raw_adv_rob, 'a:') === 0) {
-            $raw_adv_rob = maybe_unserialize($raw_adv_rob);
-        }
-        if (is_array($raw_adv_rob)) {
-            foreach ($raw_adv_rob as $directive => $val) {
-                if ($val !== '' && $val !== false) {
-                    $robots_list[] = "{$directive}:{$val}";
-                }
-            }
-        }
-
-        $canonical = $raw_canonical ? str_replace($this->get_origin_hosts(), $frontend_url, $raw_canonical) : null;
+        $robots_list = $this->normalize_robots_list(
+            get_term_meta($term_id, 'rank_math_robots', true),
+            get_term_meta($term_id, 'rank_math_advanced_robots', true)
+        );
 
         // Check Rank Math redirections table for exact term path match
-        $redirect_to = null;
-        $redirect_code = '301';
-        global $wpdb;
-        if (!empty($wpdb) && !empty($wpdb->prefix)) {
-            $table_name = $wpdb->prefix . 'rank_math_redirections';
-            if ($wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name) {
-                $term_path = trim($this->core->cache->get_term_path($term), '/');
-                $term_slug = trim($term->slug, '/');
-                $category_prefix_path = 'category/' . $term_slug;
-
-                $rows = $wpdb->get_results($wpdb->prepare(
-                    "SELECT sources, url_to, header_code FROM {$table_name} WHERE status = 'active' AND (sources LIKE %s OR sources LIKE %s) ORDER BY id DESC LIMIT 20",
-                    '%' . $wpdb->esc_like($term_slug) . '%',
-                    '%' . $wpdb->esc_like($category_prefix_path) . '%'
-                ), ARRAY_A);
-
-                if (!empty($rows)) {
-                    foreach ($rows as $row) {
-                        $sources = maybe_unserialize($row['sources']);
-                        if (is_array($sources)) {
-                            foreach ($sources as $source_item) {
-                                $pattern = trim(isset($source_item['pattern']) ? $source_item['pattern'] : '', '/');
-                                $comparison = isset($source_item['comparison']) ? $source_item['comparison'] : 'exact';
-                                if ($comparison === 'exact' && (
-                                    strcasecmp($pattern, $term_slug) === 0 ||
-                                    strcasecmp($pattern, $term_path) === 0 ||
-                                    strcasecmp($pattern, $category_prefix_path) === 0
-                                )) {
-                                    $redirect_to = $row['url_to'];
-                                    $redirect_code = $row['header_code'] ?: '301';
-                                    break 2;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        $term_path            = trim($this->core->cache->get_term_path($term), '/');
+        $term_slug            = trim($term->slug, '/');
+        $category_prefix_path = 'category/' . $term_slug;
+        $match                = $this->lookup_rank_math_redirection(
+            array($term_slug, $term_path, $category_prefix_path),
+            array($term_slug, $category_prefix_path)
+        );
+        $redirect_to   = $match ? $match['url'] : null;
+        $redirect_code = $match ? $match['code'] : 301;
 
         return array(
-            'title'          => $this->resolve_term_seo_template_vars($raw_title, $term) ?: null,
-            'description'    => $this->resolve_term_seo_template_vars($raw_desc, $term) ?: ($term->description ?: null),
-            'canonical_url'  => $canonical,
-            'focus_keyword'  => $raw_focuskw ?: null,
+            'title'          => $this->resolve_term_seo_template_vars(get_term_meta($term_id, 'rank_math_title', true), $term) ?: null,
+            'description'    => $this->resolve_term_seo_template_vars(get_term_meta($term_id, 'rank_math_description', true), $term) ?: ($term->description ?: null),
+            'canonical_url'  => $raw_canonical ? $this->rewrite_origin_urls($raw_canonical, $frontend_url) : null,
+            'focus_keyword'  => get_term_meta($term_id, 'rank_math_focus_keyword', true) ?: null,
             'robots'         => !empty($robots_list) ? $robots_list : null,
-            'og_title'       => $this->resolve_term_seo_template_vars($raw_og_title, $term) ?: null,
-            'og_description' => $this->resolve_term_seo_template_vars($raw_og_desc, $term) ?: null,
-            'og_image'       => $raw_og_image ? str_replace($this->get_origin_hosts(), $frontend_url, $raw_og_image) : null,
-            'twitter_title'  => $this->resolve_term_seo_template_vars($raw_tw_title, $term) ?: null,
-            'twitter_desc'   => $this->resolve_term_seo_template_vars($raw_tw_desc, $term) ?: null,
-            'twitter_image'  => $raw_tw_image ? str_replace($this->get_origin_hosts(), $frontend_url, $raw_tw_image) : null,
-            'redirect_url'   => $redirect_to ? str_replace($this->get_origin_hosts(), $frontend_url, $redirect_to) : null,
+            'og_title'       => $this->resolve_term_seo_template_vars(get_term_meta($term_id, 'rank_math_facebook_title', true), $term) ?: null,
+            'og_description' => $this->resolve_term_seo_template_vars(get_term_meta($term_id, 'rank_math_facebook_description', true), $term) ?: null,
+            'og_image'       => $raw_og_image ? $this->rewrite_origin_urls($raw_og_image, $frontend_url) : null,
+            'twitter_title'  => $this->resolve_term_seo_template_vars(get_term_meta($term_id, 'rank_math_twitter_title', true), $term) ?: null,
+            'twitter_desc'   => $this->resolve_term_seo_template_vars(get_term_meta($term_id, 'rank_math_twitter_description', true), $term) ?: null,
+            'twitter_image'  => $raw_tw_image ? $this->rewrite_origin_urls($raw_tw_image, $frontend_url) : null,
+            'redirect_url'   => $redirect_to ? $this->rewrite_origin_urls($redirect_to, $frontend_url) : null,
             'redirect_type'  => $redirect_to ? (int) $redirect_code : null,
         );
     }

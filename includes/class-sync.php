@@ -44,15 +44,7 @@ class AstroPress_Sync {
     }
 
     private function verify_request() {
-        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? $_REQUEST['nonce'] ?? ''));
-        if (!empty($nonce) && (
-            wp_verify_nonce($nonce, 'astropress_admin_nonce') ||
-            wp_verify_nonce($nonce, 'astropress_onboarding_nonce') ||
-            wp_verify_nonce($nonce, 'r2g_admin_nonce')
-        )) {
-            return current_user_can('manage_options');
-        }
-        return false;
+        return AstroPress::user_can_admin_ajax('manage_options');
     }
 
     public function ajax_bulk_sync_batch() {
@@ -286,7 +278,12 @@ class AstroPress_Sync {
             ));
         }
 
-        $cdn_base = untrailingslashit(get_option('r2g_custom_domain', '') ?: get_option('r2g_public_url', ''));
+        $raw_cdn_base = AstroPress_Admin::get_r2_option('custom_domain', '')
+            ?: AstroPress_Admin::get_r2_option('public_url', '');
+        $cdn_base = untrailingslashit(trim((string) $raw_cdn_base));
+        if ($cdn_base !== '' && !preg_match('#^https?://#i', $cdn_base)) {
+            $cdn_base = 'https://' . ltrim($cdn_base, '/');
+        }
         $audited = 0;
         $missing_local = 0;
         $missing_r2 = 0;

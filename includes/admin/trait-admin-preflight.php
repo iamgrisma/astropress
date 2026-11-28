@@ -145,33 +145,7 @@ trait AstroPress_Admin_Preflight {
      * @return string
      */
     public function extract_root_domain($host) {
-        $host = strtolower(trim((string) $host));
-        $host = preg_replace('#^https?://#i', '', $host);
-        $host = explode('/', $host)[0];
-        $host = explode(':', $host)[0];
-
-        if (empty($host) || filter_var($host, FILTER_VALIDATE_IP)) {
-            return $host;
-        }
-
-        $parts = explode('.', $host);
-        $count = count($parts);
-        if ($count <= 2) {
-            return $host;
-        }
-
-        $multi_tlds = array(
-            'com.np', 'org.np', 'edu.np', 'gov.np', 'net.np', 'mil.np',
-            'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk',
-            'co.in', 'net.in', 'org.in', 'gen.in',
-            'com.au', 'net.au', 'org.au', 'edu.au',
-        );
-        $last_two = $parts[$count - 2] . '.' . $parts[$count - 1];
-        if (in_array($last_two, $multi_tlds, true) && $count >= 3) {
-            return $parts[$count - 3] . '.' . $last_two;
-        }
-
-        return $parts[$count - 2] . '.' . $parts[$count - 1];
+        return AstroPress::get_root_domain($host);
     }
 
     /**

@@ -24,8 +24,9 @@ if (!defined('ABSPATH')) {
                 <pre><code id="code-revalidate">import type { APIRoute } from 'astro';
 
 export const POST: APIRoute = async ({ request, locals }) => {
+  const cfEnv = (globalThis as any).__CF_ENV__ || {};
   const secret = request.headers.get('x-revalidate-secret');
-  const expectedSecret = (locals as any)?.runtime?.env?.REVALIDATE_SECRET || process.env.REVALIDATE_SECRET;
+  const expectedSecret = cfEnv.REVALIDATE_SECRET || (locals as any)?.runtime?.env?.REVALIDATE_SECRET || process.env.REVALIDATE_SECRET;
 
   // Reject unauthorized requests if REVALIDATE_SECRET is configured in environment
   if (expectedSecret && secret !== expectedSecret) {
@@ -34,23 +35,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   try {
     const payload = await request.clone().json().catch(() => ({}));
-    const { slug, type, action, urls } = payload;
+    const { slug, type, action, urls, full_urls, cf_api_token, cf_zone_id } = payload;
 
     // Instant handshake for AstroPress connection detection
     if (type === 'test' || action === 'ping' || slug === 'test-connection') {
       return new Response(JSON.stringify({ success: true, status: 'connected', framework: 'Astro SSR' }), { status: 200 });
     }
 
-    // Purge affected routes from caches.default
-    const affected = Array.isArray(urls) ? urls : (slug ? ['/' + slug] : ['/']);
-    try {
-      const cache = (globalThis as any).caches?.default;
-      if (cache) {
-        for (const u of affected) {
-          await cache.delete(new Request(new URL(u, request.url).href));
-        }
+    // Purge affected URLs at Cloudflare Zone Cache API (do not rely on caches.default in Workers)
+    const affected = Array.isArray(full_urls) && full_urls.length > 0
+      ? full_urls
+      : (Array.isArray(urls) ? urls : (slug ? ['/' + slug] : ['/']))
+          .map((u: string) => new URL(u, request.url).href);
+
+    if (cf_api_token && cf_zone_id && affected.length > 0) {
+      for (let i = 0; i < affected.length; i += 30) {
+        await fetch(`https://api.cloudflare.com/client/v4/zones/${cf_zone_id}/purge_cache`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cf_api_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: affected.slice(i, i + 30) }),
+        });
       }
-    } catch {}
+    }
 
     return new Response(JSON.stringify({
       success: true,
@@ -103,6 +109,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
                 <pre><code id="code-env"># .env or Cloudflare Pages > Settings > Environment Variables
 REVALIDATE_SECRET=<?php echo esc_html($secret ?: 'your_revalidate_secret_token'); ?>
 
+WP_URL=<?php echo esc_html(home_url()); ?>
 WP_API_URL=<?php echo esc_html(home_url()); ?>
 
 CDN_MEDIA_URL=https://<?php echo esc_html($custom_domain); ?>
@@ -126,10 +133,13 @@ CDN_MEDIA_URL=https://<?php echo esc_html($custom_domain); ?>
  * 3. In request context, falls back dynamically to https://wp.{rootDomain}
  */
 export function getWordPressApiUrl(request?: Request): string {
-  // 1. Explicit Environment Variable (Recommended)
-  const envUrl = (import.meta.env.WP_API_URL || import.meta.env.API_URL || process.env.WP_API_URL || process.env.API_URL);
+  // 1. Explicit Runtime / Environment Variable (Recommended)
+  const cfEnv = typeof globalThis !== 'undefined' ? (globalThis as any).__CF_ENV__ : undefined;
+  const envUrl = cfEnv?.WP_URL || cfEnv?.WORDPRESS_URL || cfEnv?.WP_API_URL
+    || import.meta.env.WP_URL || import.meta.env.WP_API_URL
+    || (typeof process !== 'undefined' ? (process.env.WP_URL || process.env.WP_API_URL || process.env.API_URL) : undefined);
   if (envUrl) {
-    return envUrl.replace(/\/+$/, '');
+    return String(envUrl).replace(/\/+$/, '');
   }
 
   // 2. Derive https://wp.{rootDomain} from current incoming request

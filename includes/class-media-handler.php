@@ -634,24 +634,12 @@ class AstroPress_Media_Handler {
 
         $compressed_size = file_exists($file_path) ? filesize($file_path) : $original_size;
 
-        // Postmeta (Both AstroPress and R2G for compatibility)
-        update_post_meta($attachment_id, '_astropress_synced', 1);
-        update_post_meta($attachment_id, '_astropress_key', $main_r2_key);
-        update_post_meta($attachment_id, '_astropress_keys', $uploaded_keys);
-        update_post_meta($attachment_id, '_astropress_synced_at', current_time('mysql'));
-        delete_post_meta($attachment_id, '_astropress_local_deleted');
-
-        update_post_meta($attachment_id, '_r2g_synced', 1);
-        update_post_meta($attachment_id, '_r2g_key', $main_r2_key);
-        update_post_meta($attachment_id, '_r2g_keys', $uploaded_keys);
-        update_post_meta($attachment_id, '_r2g_synced_at', current_time('mysql'));
-        delete_post_meta($attachment_id, '_r2g_local_deleted');
-
+        self::mark_offload_meta($attachment_id, $main_r2_key, $uploaded_keys);
         AstroPress_Database::mark_synced($attachment_id, $main_r2_key, $compressed_size, $original_size, $thumb_count);
 
         if (!$is_bulk_sync) {
             $opts = self::get_effective_upload_options();
-            $storage_mode = $opts['storage_mode'] ?? get_option('astropress_r2_storage_mode', get_option('r2g_storage_mode', 'both'));
+            $storage_mode = $opts['storage_mode'] ?? astropress()->get_r2_option('storage_mode', 'both');
             if ($storage_mode === 'r2_only') {
                 if (empty($metadata)) {
                     $metadata = wp_get_attachment_metadata($attachment_id);
@@ -682,9 +670,9 @@ class AstroPress_Media_Handler {
             return false;
         }
 
-        $cleanup_scope = get_option('astropress_r2_cleanup_scope', get_option('r2g_cleanup_scope', 'all'));
-        $paths = array($file_path);
-        $upload_sizes_mode = get_option('astropress_r2_upload_sizes', get_option('r2g_upload_sizes', 'all'));
+        $cleanup_scope     = astropress()->get_r2_option('cleanup_scope', 'all');
+        $paths             = array($file_path);
+        $upload_sizes_mode = astropress()->get_r2_option('upload_sizes', 'all');
         if ($cleanup_scope === 'all' && $upload_sizes_mode === 'all' && !empty($metadata['sizes']) && is_array($metadata['sizes'])) {
             $dir = dirname($file_path);
             foreach ($metadata['sizes'] as $size_info) {
@@ -723,15 +711,12 @@ class AstroPress_Media_Handler {
             }
         }
 
-        update_post_meta($attachment_id, '_astropress_local_deleted', 1);
-        update_post_meta($attachment_id, '_r2g_local_deleted', 1);
-
-        AstroPress_Database::set_has_local($attachment_id, false);
+        self::sync_local_deleted_meta($attachment_id, true);
         return true;
     }
 
     public static function download_from_r2_to_local($attachment_id) {
-        $custom_domain = get_option('astropress_r2_custom_domain', get_option('r2g_custom_domain', ''));
+        $custom_domain = astropress()->get_r2_option('custom_domain', '');
         if (empty($custom_domain)) {
             return false;
         }
@@ -741,14 +726,8 @@ class AstroPress_Media_Handler {
             return false;
         }
         $metadata = wp_get_attachment_metadata($attachment_id);
-        $main_key = get_post_meta($attachment_id, '_astropress_key', true);
-        if (empty($main_key)) {
-            $main_key = get_post_meta($attachment_id, '_r2g_key', true);
-        }
-
-        if (empty($main_key)) {
-            $main_key = self::get_r2_key_from_path($file_path);
-        }
+        $r2_info  = self::resolve_attachment_r2_keys($attachment_id, $file_path);
+        $main_key = $r2_info['main_key'];
         if (empty($main_key)) {
             return false;
         }
@@ -785,9 +764,7 @@ class AstroPress_Media_Handler {
             }
         }
 
-        delete_post_meta($attachment_id, '_astropress_local_deleted');
-        delete_post_meta($attachment_id, '_r2g_local_deleted');
-        AstroPress_Database::set_has_local($attachment_id, true);
+        self::sync_local_deleted_meta($attachment_id, false);
         return true;
     }
 
@@ -889,41 +866,85 @@ class AstroPress_Media_Handler {
         return true;
     }
 
+    /**
+     * Resolve stored primary R2 object key or array of all synced keys for an attachment.
+     *
+     * @param int    $attachment_id
+     * @param string $file_path
+     * @return array{main_key: string, keys: array}
+     */
+    protected static function resolve_attachment_r2_keys($attachment_id, $file_path = '') {
+        $keys = get_post_meta($attachment_id, '_astropress_keys', true);
+        if (empty($keys) || !is_array($keys)) {
+            $keys = get_post_meta($attachment_id, '_r2g_keys', true);
+        }
+        $main_key = get_post_meta($attachment_id, '_astropress_key', true)
+            ?: get_post_meta($attachment_id, '_r2g_key', true);
+        if (empty($main_key)) {
+            $path     = $file_path ?: get_attached_file($attachment_id);
+            $main_key = $path ? self::get_r2_key_from_path($path) : '';
+        }
+        if (empty($keys) || !is_array($keys)) {
+            $keys = $main_key ? array($main_key) : array();
+        }
+        return array(
+            'main_key' => (string) $main_key,
+            'keys'     => $keys,
+        );
+    }
+
+    /**
+     * Update mirrored AstroPress and legacy R2G offload metadata on an attachment.
+     *
+     * @param int   $attachment_id
+     * @param string $main_key
+     * @param array $uploaded_keys
+     */
+    protected static function mark_offload_meta($attachment_id, $main_key, array $uploaded_keys) {
+        $now = current_time('mysql');
+        foreach (array('_astropress', '_r2g') as $prefix) {
+            update_post_meta($attachment_id, "{$prefix}_synced", 1);
+            update_post_meta($attachment_id, "{$prefix}_key", $main_key);
+            update_post_meta($attachment_id, "{$prefix}_keys", $uploaded_keys);
+            update_post_meta($attachment_id, "{$prefix}_synced_at", $now);
+            delete_post_meta($attachment_id, "{$prefix}_local_deleted");
+        }
+    }
+
+    /**
+     * Toggle `_astropress_local_deleted` and `_r2g_local_deleted` meta uniformly.
+     *
+     * @param int  $attachment_id
+     * @param bool $deleted
+     */
+    protected static function sync_local_deleted_meta($attachment_id, $deleted) {
+        foreach (array('_astropress_local_deleted', '_r2g_local_deleted') as $meta_key) {
+            if ($deleted) {
+                update_post_meta($attachment_id, $meta_key, 1);
+            } else {
+                delete_post_meta($attachment_id, $meta_key);
+            }
+        }
+        if (class_exists('AstroPress_Database')) {
+            AstroPress_Database::set_has_local($attachment_id, !$deleted);
+        }
+    }
     public static function delete_from_r2($attachment_id) {
         $client = astropress()->get_r2_client();
         if (!$client || !$client->is_configured()) {
             return false;
         }
 
-        $keys = get_post_meta($attachment_id, '_astropress_keys', true);
-        if (empty($keys) || !is_array($keys)) {
-            $keys = get_post_meta($attachment_id, '_r2g_keys', true);
-        }
-        if (empty($keys) || !is_array($keys)) {
-            $main_key = get_post_meta($attachment_id, '_astropress_key', true);
-            if (empty($main_key)) {
-                $main_key = get_post_meta($attachment_id, '_r2g_key', true);
-            }
-            if (empty($main_key)) {
-                $file_path = get_attached_file($attachment_id);
-                $main_key = self::get_r2_key_from_path($file_path);
-            }
-            $keys = $main_key ? array($main_key) : array();
-        }
-
-        foreach ($keys as $k) {
+        $r2_info = self::resolve_attachment_r2_keys($attachment_id);
+        foreach ($r2_info['keys'] as $k) {
             $client->delete_object($k);
         }
 
-        delete_post_meta($attachment_id, '_astropress_synced');
-        delete_post_meta($attachment_id, '_astropress_key');
-        delete_post_meta($attachment_id, '_astropress_keys');
-        delete_post_meta($attachment_id, '_astropress_synced_at');
-
-        delete_post_meta($attachment_id, '_r2g_synced');
-        delete_post_meta($attachment_id, '_r2g_key');
-        delete_post_meta($attachment_id, '_r2g_keys');
-        delete_post_meta($attachment_id, '_r2g_synced_at');
+        foreach (array('_astropress', '_r2g') as $prefix) {
+            foreach (array('synced', 'key', 'keys', 'synced_at') as $suffix) {
+                delete_post_meta($attachment_id, "{$prefix}_{$suffix}");
+            }
+        }
 
         $file_path = get_attached_file($attachment_id);
         $has_local = !empty($file_path) && file_exists($file_path) && (filesize($file_path) > 300);
@@ -1108,43 +1129,16 @@ class AstroPress_Media_Handler {
                 $deleted = $this->delete_local_files($attachment_id);
 
                 if ($deleted) {
-                    update_post_meta($attachment_id, '_astropress_local_deleted', 1);
-                    update_post_meta($attachment_id, '_r2g_local_deleted', 1);
-
-                    if (class_exists('AstroPress_Database')) {
-                        AstroPress_Database::set_has_local($attachment_id, false);
-                    }
-                    $wpdb->update(
-                        $wpdb->prefix . 'astropress_media',
-                        array('has_local' => 0),
-                        array('attachment_id' => $attachment_id)
-                    );
-
+                    self::sync_local_deleted_meta($attachment_id, true);
                     $pruned_count++;
                     $total_bytes += $attachment_bytes;
                 } elseif ($file_path && !file_exists($file_path)) {
                     // Local file was already deleted from disk; verify R2 object before flagging
-                    $main_key = get_post_meta($attachment_id, '_astropress_key', true);
-                    if (empty($main_key)) {
-                        $main_key = get_post_meta($attachment_id, '_r2g_key', true);
-                    }
-                    if (empty($main_key)) {
-                        $main_key = self::get_r2_key_from_path($file_path);
-                    }
+                    $r2_info  = self::resolve_attachment_r2_keys($attachment_id, $file_path);
+                    $main_key = $r2_info['main_key'];
 
                     if ($main_key && $client->object_exists($main_key)) {
-                        update_post_meta($attachment_id, '_astropress_local_deleted', 1);
-                        update_post_meta($attachment_id, '_r2g_local_deleted', 1);
-
-                        if (class_exists('AstroPress_Database')) {
-                            AstroPress_Database::set_has_local($attachment_id, false);
-                        }
-                        $wpdb->update(
-                            $wpdb->prefix . 'astropress_media',
-                            array('has_local' => 0),
-                            array('attachment_id' => $attachment_id)
-                        );
-
+                        self::sync_local_deleted_meta($attachment_id, true);
                         $pruned_count++;
                     }
                 }
